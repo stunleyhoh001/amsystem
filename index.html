@@ -9,9 +9,9 @@
   <body>
     <header class="app-header">
       <div>
-        <p class="eyebrow">Affiliate Recharge System</p>
+        <p class="eyebrow">Firebase Affiliate System</p>
         <h1>一分钟联盟营销系统</h1>
-        <p class="subtitle">用户端负责充值、推荐、奖励和提现；后台端负责规则、审核和运营管理。</p>
+        <p class="subtitle">Firebase Google 登录、云端数据、用户端和后台端双界面。</p>
       </div>
       <div class="header-actions">
         <button class="switch active" data-view="memberView">用户界面</button>
@@ -25,16 +25,15 @@
       <section id="memberView" class="view active">
         <section class="member-hero">
           <div class="panel login-panel">
-            <h2>用户登录 / 注册</h2>
-            <form id="loginForm" class="stack">
-              <label>选择演示用户<select name="loginUser"></select></label>
-              <button class="button primary" type="submit">进入用户中心</button>
-            </form>
+            <h2>用户登录</h2>
+            <div class="google-login">
+              <button id="firebaseLoginBtn" class="button primary" type="button">使用 Google 登录</button>
+              <button id="firebaseLogoutBtn" class="button ghost" type="button">退出登录</button>
+              <p id="authStatus" class="help-text">正在连接 Firebase...</p>
+            </div>
             <form id="registerForm" class="stack split-form">
-              <label>姓名<input name="name" placeholder="新用户姓名" required /></label>
-              <label>手机号或邮箱<input name="account" placeholder="手机号或邮箱" required /></label>
               <label>推荐码<input name="inviteCode" placeholder="可选：推荐人邀请码" /></label>
-              <button class="button ghost" type="submit">注册新用户</button>
+              <button class="button ghost" type="submit">绑定推荐人</button>
             </form>
           </div>
 
@@ -229,6 +228,6 @@
     </main>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js"></script>
+    <script type="module" src="./app.js"></script>
   </body>
 </html>

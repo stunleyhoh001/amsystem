@@ -1,5 +1,41 @@
-const STORAGE_KEY = "oneMinuteAffiliateDualV1";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+import {
+  doc,
+  getDoc,
+  getFirestore,
+  serverTimestamp,
+  setDoc,
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+const STORAGE_KEY = "oneMinuteAffiliateFirebaseFallback";
+const SYSTEM_DOC_PATH = ["affiliateSystems", "main"];
 const CONFIRM_DAYS = 7;
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDvPQgQiMVSqTsSe00D75k8bwMoFTjm164",
+  authDomain: "amsystem-faafb.firebaseapp.com",
+  projectId: "amsystem-faafb",
+  storageBucket: "amsystem-faafb.firebasestorage.app",
+  messagingSenderId: "526690797426",
+  appId: "1:526690797426:web:6206d7ffb46abfcc98bfeb",
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const systemRef = doc(db, ...SYSTEM_DOC_PATH);
+
+let firebaseReady = false;
+let cloudAvailable = false;
+let firebaseUser = null;
+let state = null;
 
 function futureDate(days) {
   const date = new Date();
@@ -13,37 +49,57 @@ function pastDate(days) {
   return date.toISOString();
 }
 
-const seedData = {
-  currentUserId: "u_1002",
-  plans: [
-    { id: "plan_rm180", name: "RM180 启动配套", amount: 180, points: 18000, slots: 10, validDays: 30, firstRate: 20, repeatRate: 8 },
-    { id: "plan_rm580", name: "RM580 进阶配套", amount: 580, points: 58000, slots: 35, validDays: 60, firstRate: 25, repeatRate: 10 },
-  ],
-  users: [
-    { id: "u_1001", name: "李明", account: "liming@example.com", inviteCode: "LM1001", referrerId: "", level: "推广用户", points: 18000, slots: 10, packageUntil: futureDate(20), frozen: false },
-    { id: "u_1002", name: "王芳", account: "13800000002", inviteCode: "WF1002", referrerId: "u_1001", level: "高级推广用户", points: 58000, slots: 35, packageUntil: futureDate(45), frozen: false },
-    { id: "u_1003", name: "陈杰", account: "chenjie@example.com", inviteCode: "CJ1003", referrerId: "u_1001", level: "普通用户", points: 0, slots: 0, packageUntil: "", frozen: false },
-  ],
-  orders: [],
-  pointLogs: [],
-  rewards: [],
-  withdraws: [],
-};
-
-let state = loadState();
-
-function loadState() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved) return JSON.parse(saved);
-  const initial = structuredClone(seedData);
-  createOrder(initial, "u_1002", "plan_rm580", "first", "paid", pastDate(8));
-  createOrder(initial, "u_1003", "plan_rm180", "first", "paid", pastDate(1));
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
-  return initial;
+function createSeedData() {
+  const data = {
+    currentUserId: "u_1002",
+    plans: [
+      { id: "plan_rm180", name: "RM180 启动配套", amount: 180, points: 18000, slots: 10, validDays: 30, firstRate: 20, repeatRate: 8 },
+      { id: "plan_rm580", name: "RM580 进阶配套", amount: 580, points: 58000, slots: 35, validDays: 60, firstRate: 25, repeatRate: 10 },
+    ],
+    users: [
+      { id: "u_1001", name: "李明", account: "liming@example.com", inviteCode: "LM1001", referrerId: "", level: "推广用户", points: 18000, slots: 10, packageUntil: futureDate(20), frozen: false },
+      { id: "u_1002", name: "王芳", account: "13800000002", inviteCode: "WF1002", referrerId: "u_1001", level: "高级推广用户", points: 58000, slots: 35, packageUntil: futureDate(45), frozen: false },
+      { id: "u_1003", name: "陈杰", account: "chenjie@example.com", inviteCode: "CJ1003", referrerId: "u_1001", level: "普通用户", points: 0, slots: 0, packageUntil: "", frozen: false },
+    ],
+    orders: [],
+    pointLogs: [],
+    rewards: [],
+    withdraws: [],
+  };
+  createOrder(data, "u_1002", "plan_rm580", "first", "paid", pastDate(8));
+  createOrder(data, "u_1003", "plan_rm180", "first", "paid", pastDate(1));
+  return data;
 }
 
-function saveState() {
+async function loadState() {
+  try {
+    const snapshot = await getDoc(systemRef);
+    if (snapshot.exists()) {
+      cloudAvailable = true;
+      return snapshot.data().state;
+    }
+    const seeded = createSeedData();
+    await setDoc(systemRef, { state: seeded, updatedAt: serverTimestamp() });
+    cloudAvailable = true;
+    return seeded;
+  } catch (error) {
+    console.warn("Firestore unavailable, using local fallback.", error);
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? JSON.parse(saved) : createSeedData();
+  }
+}
+
+async function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (!firebaseUser) return;
+  try {
+    await setDoc(systemRef, { state, updatedAt: serverTimestamp() }, { merge: true });
+    cloudAvailable = true;
+  } catch (error) {
+    cloudAvailable = false;
+    console.warn("Firestore save failed, fallback remains local.", error);
+    toast("Firestore 保存失败，已暂存本地");
+  }
 }
 
 function id(prefix) {
@@ -81,8 +137,8 @@ function currentUser() {
   return findUser(state.currentUserId) || state.users[0];
 }
 
-function directReferralCount(userId) {
-  return state.users.filter((user) => user.referrerId === userId).length;
+function directReferralCount(userId, data = state) {
+  return data.users.filter((user) => user.referrerId === userId).length;
 }
 
 function isActivePackage(user) {
@@ -135,8 +191,8 @@ function createReward(data, order, buyer, plan) {
   if (!buyer.referrerId) return;
   const referrer = data.users.find((item) => item.id === buyer.referrerId);
   if (!referrer || referrer.frozen) return;
-  if (directReferralCountForData(data, referrer.id) > (referrer.slots || 0)) return;
-  if (order.type === "repeat" && !isActivePackageForUser(referrer)) return;
+  if (directReferralCount(referrer.id, data) > (referrer.slots || 0)) return;
+  if (order.type === "repeat" && !isActivePackage(referrer)) return;
   const rate = order.type === "first" ? plan.firstRate : plan.repeatRate;
   data.rewards.push({
     id: id("rew"),
@@ -150,14 +206,6 @@ function createReward(data, order, buyer, plan) {
     confirmAfter: addDays(order.createdAt, CONFIRM_DAYS),
     createdAt: order.createdAt,
   });
-}
-
-function directReferralCountForData(data, userId) {
-  return data.users.filter((user) => user.referrerId === userId).length;
-}
-
-function isActivePackageForUser(user) {
-  return Boolean(user.packageUntil) && new Date(user.packageUntil) > new Date() && !user.frozen;
 }
 
 function labelStatus(status) {
@@ -181,11 +229,45 @@ function toast(message) {
   setTimeout(() => toastEl.classList.remove("show"), 1800);
 }
 
-function fillSelects() {
-  const userOptions = state.users.map((user) => `<option value="${user.id}">${user.name}（${user.inviteCode}）</option>`).join("");
-  document.querySelector("[name='loginUser']").innerHTML = userOptions;
-  document.querySelector("[name='loginUser']").value = currentUser().id;
-  document.querySelector("#pointsForm [name='userId']").innerHTML = userOptions;
+function upsertFirebaseUser(userCredential) {
+  const googleUser = userCredential;
+  const account = googleUser.email || googleUser.uid;
+  let user = state.users.find((item) => item.firebaseUid === googleUser.uid || item.account === account);
+  if (!user) {
+    user = {
+      id: googleUser.uid,
+      firebaseUid: googleUser.uid,
+      name: googleUser.displayName || account,
+      account,
+      photoURL: googleUser.photoURL || "",
+      inviteCode: `${(googleUser.displayName || "G").slice(0, 1).toUpperCase()}${Math.floor(1000 + Math.random() * 9000)}`,
+      referrerId: "",
+      level: "普通用户",
+      points: 0,
+      slots: 0,
+      packageUntil: "",
+      frozen: false,
+    };
+    state.users.push(user);
+  } else {
+    user.firebaseUid = googleUser.uid;
+    user.name = googleUser.displayName || user.name;
+    user.account = account;
+    user.photoURL = googleUser.photoURL || user.photoURL || "";
+  }
+  state.currentUserId = user.id;
+}
+
+function updateAuthStatus() {
+  const status = document.querySelector("#authStatus");
+  if (!status) return;
+  if (firebaseUser) {
+    status.textContent = `已登录：${firebaseUser.email || firebaseUser.displayName}`;
+  } else if (firebaseReady) {
+    status.textContent = "请使用 Google 登录。";
+  } else {
+    status.textContent = "正在连接 Firebase...";
+  }
 }
 
 function renderMember() {
@@ -262,19 +344,15 @@ function renderMemberWithdraws(user) {
 }
 
 function renderAdmin() {
-  renderAdminMetrics();
+  document.querySelector("#metricUsers").textContent = state.users.length;
+  document.querySelector("#metricSales").textContent = money(state.orders.filter((order) => order.status === "paid").reduce((sum, order) => sum + order.amount, 0));
+  document.querySelector("#metricPendingRewards").textContent = money(state.rewards.filter((reward) => reward.status === "pending").reduce((sum, reward) => sum + reward.amount, 0));
+  document.querySelector("#metricWithdraws").textContent = money(state.withdraws.filter((item) => item.status === "pending").reduce((sum, item) => sum + item.amount, 0));
   renderAdminPlans();
   renderAdminUsers();
   renderAdminOrders();
   renderAdminRewards();
   renderAdminWithdraws();
-}
-
-function renderAdminMetrics() {
-  document.querySelector("#metricUsers").textContent = state.users.length;
-  document.querySelector("#metricSales").textContent = money(state.orders.filter((order) => order.status === "paid").reduce((sum, order) => sum + order.amount, 0));
-  document.querySelector("#metricPendingRewards").textContent = money(state.rewards.filter((reward) => reward.status === "pending").reduce((sum, reward) => sum + reward.amount, 0));
-  document.querySelector("#metricWithdraws").textContent = money(state.withdraws.filter((item) => item.status === "pending").reduce((sum, item) => sum + item.amount, 0));
 }
 
 function renderAdminPlans() {
@@ -288,21 +366,21 @@ function renderAdminPlans() {
 }
 
 function renderAdminUsers() {
-  const rows = state.users.map((user) => {
+  const userOptions = state.users.map((user) => `<option value="${user.id}">${user.name}（${user.inviteCode}）</option>`).join("");
+  document.querySelector("#pointsForm [name='userId']").innerHTML = userOptions;
+  document.querySelector("#adminUserTable").innerHTML = state.users.map((user) => {
     const referrer = findUser(user.referrerId);
     const [statusClass, statusLabel] = packageStatus(user);
     return `<tr><td>${user.name}</td><td>${user.account}</td><td>${user.inviteCode}</td><td>${referrer?.name || "无"}</td><td>${points(user.points)}</td><td><span class="tag ${statusClass}">${statusLabel}</span></td><td>${directReferralCount(user.id)} / ${user.slots || 0}</td><td><span class="tag ${user.frozen ? "frozen" : "active"}">${user.frozen ? "已冻结" : "正常"}</span></td><td><button class="link" data-freeze-user="${user.id}">${user.frozen ? "解冻" : "冻结"}</button></td></tr>`;
   }).join("");
-  document.querySelector("#adminUserTable").innerHTML = rows;
 }
 
 function renderAdminOrders() {
-  const rows = state.orders.slice().reverse().map((order) => {
+  document.querySelector("#adminOrderTable").innerHTML = state.orders.slice().reverse().map((order) => {
     const user = findUser(order.userId);
     const plan = findPlan(order.planId);
     return `<tr><td>${order.id}</td><td>${user?.name || "-"}</td><td>${plan?.name || "-"}</td><td>${order.type === "first" ? "首充" : "复购"}</td><td>${money(order.amount)}</td><td>${points(order.points)}</td><td><span class="tag ${order.status}">${labelStatus(order.status)}</span></td><td>${new Date(order.createdAt).toLocaleString("zh-CN")}</td></tr>`;
   }).join("");
-  document.querySelector("#adminOrderTable").innerHTML = rows;
 }
 
 function renderAdminRewards() {
@@ -324,7 +402,8 @@ function renderAdminWithdraws() {
 }
 
 function renderAll() {
-  fillSelects();
+  if (!state) return;
+  updateAuthStatus();
   renderMember();
   renderAdmin();
 }
@@ -350,43 +429,39 @@ document.querySelectorAll(".tabs").forEach((tabs) => {
   });
 });
 
-document.querySelector("#loginForm").addEventListener("submit", (event) => {
-  event.preventDefault();
-  state.currentUserId = new FormData(event.currentTarget).get("loginUser");
-  saveState();
-  renderAll();
-  toast("已切换用户");
+document.querySelector("#firebaseLoginBtn").addEventListener("click", async () => {
+  try {
+    const provider = new GoogleAuthProvider();
+    await signInWithPopup(auth, provider);
+  } catch (error) {
+    console.error(error);
+    toast("Google 登录失败，请检查 Firebase 授权域名");
+  }
 });
 
-document.querySelector("#registerForm").addEventListener("submit", (event) => {
+document.querySelector("#firebaseLogoutBtn").addEventListener("click", async () => {
+  await signOut(auth);
+  toast("已退出登录");
+});
+
+document.querySelector("#registerForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
-  const inviteCode = form.get("inviteCode").trim();
-  const referrer = state.users.find((user) => user.inviteCode === inviteCode);
-  if (inviteCode && !referrer) return toast("推荐码不存在");
-  if (referrer && directReferralCount(referrer.id) >= (referrer.slots || 0)) return toast("推荐人名额已满");
-  const name = form.get("name").trim();
-  const user = {
-    id: id("u"),
-    name,
-    account: form.get("account").trim(),
-    inviteCode: `${name.slice(0, 1).toUpperCase()}${Math.floor(1000 + Math.random() * 9000)}`,
-    referrerId: referrer?.id || "",
-    level: "普通用户",
-    points: 0,
-    slots: 0,
-    packageUntil: "",
-    frozen: false,
-  };
-  state.users.push(user);
-  state.currentUserId = user.id;
+  const user = currentUser();
+  const inviteCode = new FormData(event.currentTarget).get("inviteCode").trim();
+  if (!inviteCode) return toast("请输入推荐码");
+  if (user.referrerId) return toast("你已经绑定推荐人，不能更换");
+  const referrer = state.users.find((item) => item.inviteCode === inviteCode);
+  if (!referrer) return toast("推荐码不存在");
+  if (referrer.id === user.id) return toast("不能绑定自己");
+  if (directReferralCount(referrer.id) >= (referrer.slots || 0)) return toast("推荐人名额已满");
+  user.referrerId = referrer.id;
   event.currentTarget.reset();
-  saveState();
+  await saveState();
   renderAll();
-  toast("注册成功，已进入用户中心");
+  toast("推荐人已绑定");
 });
 
-document.querySelector("#planForm").addEventListener("submit", (event) => {
+document.querySelector("#planForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
   state.plans.push({
@@ -400,12 +475,12 @@ document.querySelector("#planForm").addEventListener("submit", (event) => {
     repeatRate: Number(form.get("repeatRate")),
   });
   event.currentTarget.reset();
-  saveState();
+  await saveState();
   renderAll();
   toast("配套规则已新增");
 });
 
-document.querySelector("#pointsForm").addEventListener("submit", (event) => {
+document.querySelector("#pointsForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
   const user = findUser(form.get("userId"));
@@ -413,12 +488,12 @@ document.querySelector("#pointsForm").addEventListener("submit", (event) => {
   user.points += change;
   state.pointLogs.push({ id: id("log"), userId: user.id, change, balance: user.points, source: "admin", note: form.get("note").trim(), createdAt: new Date().toISOString() });
   event.currentTarget.reset();
-  saveState();
+  await saveState();
   renderAll();
   toast("积分已调整");
 });
 
-document.querySelector("#withdrawForm").addEventListener("submit", (event) => {
+document.querySelector("#withdrawForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const user = currentUser();
   const form = new FormData(event.currentTarget);
@@ -426,12 +501,12 @@ document.querySelector("#withdrawForm").addEventListener("submit", (event) => {
   if (amount > confirmedAvailable(user.id)) return toast("可提现奖励不足");
   state.withdraws.push({ id: id("wd"), userId: user.id, amount, method: form.get("method").trim(), account: form.get("account").trim(), status: "pending", createdAt: new Date().toISOString() });
   event.currentTarget.reset();
-  saveState();
+  await saveState();
   renderAll();
   toast("提现申请已提交，等待后台审核");
 });
 
-document.querySelector("#confirmDueBtn").addEventListener("click", () => {
+document.querySelector("#confirmDueBtn").addEventListener("click", async () => {
   let count = 0;
   state.rewards.forEach((reward) => {
     if (reward.status === "pending" && new Date(reward.confirmAfter) <= new Date()) {
@@ -439,7 +514,7 @@ document.querySelector("#confirmDueBtn").addEventListener("click", () => {
       count += 1;
     }
   });
-  saveState();
+  await saveState();
   renderAll();
   toast(count ? `已确认 ${count} 笔奖励` : "暂无到期可确认奖励");
 });
@@ -447,8 +522,9 @@ document.querySelector("#confirmDueBtn").addEventListener("click", () => {
 document.body.addEventListener("click", async (event) => {
   const buyPlan = event.target.closest("[data-buy-plan]");
   if (buyPlan) {
+    if (!firebaseUser) return toast("请先使用 Google 登录");
     createOrder(state, currentUser().id, buyPlan.dataset.buyPlan, buyPlan.dataset.buyType, "paid");
-    saveState();
+    await saveState();
     renderAll();
     toast("配套申请已模拟支付成功");
     return;
@@ -464,7 +540,7 @@ document.body.addEventListener("click", async (event) => {
   if (freezeUser) {
     const user = findUser(freezeUser.dataset.freezeUser);
     user.frozen = !user.frozen;
-    saveState();
+    await saveState();
     renderAll();
     toast(user.frozen ? "用户已冻结" : "用户已解冻");
     return;
@@ -477,7 +553,7 @@ document.body.addEventListener("click", async (event) => {
     if (rewardAction.dataset.confirmReward) reward.status = "confirmed";
     if (rewardAction.dataset.cancelReward) reward.status = "cancelled";
     if (rewardAction.dataset.freezeReward) reward.status = "frozen";
-    saveState();
+    await saveState();
     renderAll();
     toast("奖励状态已更新");
     return;
@@ -490,7 +566,7 @@ document.body.addEventListener("click", async (event) => {
     if (withdrawAction.dataset.approveWithdraw) withdraw.status = "approved";
     if (withdrawAction.dataset.rejectWithdraw) withdraw.status = "rejected";
     if (withdrawAction.dataset.payWithdraw) withdraw.status = "paidout";
-    saveState();
+    await saveState();
     renderAll();
     toast("提现状态已更新");
   }
@@ -506,11 +582,32 @@ document.querySelector("#exportBtn").addEventListener("click", () => {
   URL.revokeObjectURL(url);
 });
 
-document.querySelector("#resetBtn").addEventListener("click", () => {
-  localStorage.removeItem(STORAGE_KEY);
-  state = loadState();
+document.querySelector("#resetBtn").addEventListener("click", async () => {
+  state = createSeedData();
+  await saveState();
   renderAll();
   toast("演示数据已重置");
 });
 
+onAuthStateChanged(auth, async (user) => {
+  firebaseUser = user;
+  firebaseReady = true;
+  if (!state) state = await loadState();
+  if (user) {
+    try {
+      const snapshot = await getDoc(systemRef);
+      if (snapshot.exists()) {
+        state = snapshot.data().state;
+        cloudAvailable = true;
+      }
+    } catch (error) {
+      console.warn("Could not reload cloud state after login.", error);
+    }
+    upsertFirebaseUser(user);
+    await saveState();
+  }
+  renderAll();
+});
+
+state = await loadState();
 renderAll();
