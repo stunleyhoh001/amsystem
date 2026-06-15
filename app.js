@@ -106,6 +106,10 @@ function createSeedData() {
 }
 
 async function loadState() {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (!firebaseUser) {
+    return saved ? JSON.parse(saved) : createSeedData();
+  }
   try {
     const snapshot = await getDoc(systemRef);
     const seeded = createSeedData();
@@ -143,7 +147,6 @@ async function loadState() {
     return seeded;
   } catch (error) {
     console.warn("Firestore unavailable, using local fallback.", error);
-    const saved = localStorage.getItem(STORAGE_KEY);
     return saved ? JSON.parse(saved) : createSeedData();
   }
 }
@@ -986,6 +989,7 @@ document.querySelector("#resetBtn").addEventListener("click", async () => {
 onAuthStateChanged(auth, async (user) => {
   firebaseUser = user;
   firebaseReady = true;
+  renderAll();
   if (!state) state = await loadState();
   if (user) {
     try {
@@ -1001,5 +1005,5 @@ onAuthStateChanged(auth, async (user) => {
   renderAll();
 });
 
-state = await loadState();
+state = localStorage.getItem(STORAGE_KEY) ? JSON.parse(localStorage.getItem(STORAGE_KEY)) : createSeedData();
 renderAll();
