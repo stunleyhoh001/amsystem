@@ -630,7 +630,8 @@ function renderAdminUsers() {
 }
 
 function renderAdminOrders() {
-  document.querySelector("#adminOrderTable").innerHTML = state.orders.slice().reverse().map((order) => {
+  const orders = filteredOrders();
+  document.querySelector("#adminOrderTable").innerHTML = orders.slice().reverse().map((order) => {
     const user = findUser(order.userId);
     const plan = findPlan(order.planId);
     const actions = order.status === "pending"
@@ -643,7 +644,8 @@ function renderAdminOrders() {
 }
 
 function renderAdminRewards() {
-  const rows = state.rewards.slice().reverse().map((reward) => {
+  const rewards = filteredRewards();
+  const rows = rewards.slice().reverse().map((reward) => {
     const user = findUser(reward.userId);
     const sourceUser = findUser(reward.sourceUserId);
     const canConfirm = reward.status === "pending" && new Date(reward.confirmAfter) <= new Date();
@@ -653,11 +655,16 @@ function renderAdminRewards() {
 }
 
 function renderAdminWithdraws() {
-  const rows = state.withdraws.slice().reverse().map((item) => {
+  const withdraws = filteredWithdraws();
+  const rows = withdraws.slice().reverse().map((item) => {
     const user = findUser(item.userId);
     return `<tr><td>${item.id}</td><td>${user?.name || "-"}</td><td>${money(item.amount)}</td><td>${item.method}</td><td>${item.account}</td><td><span class="tag ${item.status}">${labelStatus(item.status)}</span></td><td>${new Date(item.createdAt).toLocaleString("zh-CN")}</td><td class="actions">${item.status === "pending" ? `<button class="link" data-approve-withdraw="${item.id}">通过</button><button class="link" data-reject-withdraw="${item.id}">拒绝</button>` : ""}${item.status === "approved" ? `<button class="link" data-pay-withdraw="${item.id}">标记打款</button>` : ""}</td></tr>`;
   }).join("");
   document.querySelector("#adminWithdrawTable").innerHTML = rows || `<tr><td colspan="8">暂无提现申请</td></tr>`;
+}
+
+function getSelectValue(selector, fallback) {
+  return document.querySelector(selector)?.value || fallback;
 }
 
 function renderAdminLogs() {
@@ -685,6 +692,40 @@ function addAdminLog(action, target, detail = "") {
     detail,
     createdAt: new Date().toISOString(),
   });
+}
+
+function csvEscape(value) {
+  const text = String(value ?? "");
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function downloadCsv(filename, headers, rows) {
+  const content = [
+    headers.map(csvEscape).join(","),
+    ...rows.map((row) => row.map(csvEscape).join(",")),
+  ].join("\n");
+  const blob = new Blob([`\uFEFF${content}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function filteredOrders() {
+  const statusFilter = getSelectValue("#orderStatusFilter", "all");
+  return state.orders.filter((order) => statusFilter === "all" || order.status === statusFilter);
+}
+
+function filteredRewards() {
+  const statusFilter = getSelectValue("#rewardStatusFilter", "all");
+  return state.rewards.filter((reward) => statusFilter === "all" || reward.status === statusFilter);
+}
+
+function filteredWithdraws() {
+  const statusFilter = getSelectValue("#withdrawStatusFilter", "all");
+  return state.withdraws.filter((item) => statusFilter === "all" || item.status === statusFilter);
 }
 
 function updateAuthStatusClean() {
@@ -756,6 +797,10 @@ document.querySelectorAll(".tabs").forEach((tabs) => {
   });
 });
 
+["#orderStatusFilter", "#rewardStatusFilter", "#withdrawStatusFilter"].forEach((selector) => {
+  document.querySelector(selector)?.addEventListener("change", renderAll);
+});
+
 document.querySelector("#firebaseLoginBtn").addEventListener("click", async () => {
   try {
     const provider = new GoogleAuthProvider();
@@ -776,6 +821,44 @@ document.querySelector("#testFirestoreBtn").addEventListener("click", async () =
   state.lastSyncTestAt = new Date().toISOString();
   await saveState();
   renderAll();
+});
+
+document.querySelector("#exportOrdersBtn")?.addEventListener("click", () => {
+  if (!requireAdmin()) return;
+  downloadCsv(
+    `amsystem-orders-${new Date().toISOString().slice(0, 10)}.csv`,
+    ["订单号", "用户", "配套", "类型", "金额", "付款方式", "付款参考号", "状态", "时间"],
+    filteredOrders().map((order) => {
+      const user = findUser(order.userId);
+      const plan = findPlan(order.planId);
+      return [order.id, user?.name || "", plan?.name || "", order.type, order.amount, paymentMethodText(order.paymentMethod), order.paymentRef || "", labelStatus(order.status), order.createdAt];
+    })
+  );
+});
+
+document.querySelector("#exportRewardsBtn")?.addEventListener("click", () => {
+  if (!requireAdmin()) return;
+  downloadCsv(
+    `amsystem-rewards-${new Date().toISOString().slice(0, 10)}.csv`,
+    ["奖励ID", "奖励人", "来源用户", "订单", "类型", "比例", "金额", "状态", "可确认日"],
+    filteredRewards().map((reward) => {
+      const user = findUser(reward.userId);
+      const sourceUser = findUser(reward.sourceUserId);
+      return [reward.id, user?.name || "", sourceUser?.name || "", reward.orderId, reward.type, reward.rate, reward.amount, labelStatus(reward.status), reward.confirmAfter];
+    })
+  );
+});
+
+document.querySelector("#exportWithdrawsBtn")?.addEventListener("click", () => {
+  if (!requireAdmin()) return;
+  downloadCsv(
+    `amsystem-withdraws-${new Date().toISOString().slice(0, 10)}.csv`,
+    ["提现ID", "用户", "金额", "方式", "账号", "状态", "时间"],
+    filteredWithdraws().map((item) => {
+      const user = findUser(item.userId);
+      return [item.id, user?.name || "", item.amount, item.method, item.account, labelStatus(item.status), item.createdAt];
+    })
+  );
 });
 
 document.querySelector("#registerForm").addEventListener("submit", async (event) => {
