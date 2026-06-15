@@ -15,6 +15,12 @@ import {
   serverTimestamp,
   setDoc,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import {
+  getDownloadURL,
+  getStorage,
+  ref as storageRef,
+  uploadBytes,
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
 const SYSTEM_DOC_PATH = ["amsystem", "main"];
@@ -36,6 +42,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app);
 const systemRef = doc(db, ...SYSTEM_DOC_PATH);
 const usersRef = collection(db, USER_COLLECTION);
 
@@ -315,6 +322,9 @@ function createOrder(data, userId, planId, type, status = "paid", createdAt = ne
     paymentMethod: paymentInfo.method || "",
     paymentRef: paymentInfo.ref || "",
     paymentNote: paymentInfo.note || "",
+    proofName: paymentInfo.proofName || "",
+    proofPath: paymentInfo.proofPath || "",
+    proofUrl: paymentInfo.proofUrl || "",
     createdAt,
   };
   data.orders.push(order);
@@ -381,6 +391,20 @@ function paymentMethodText(method) {
     usdt: "USDT",
     cash: "现金",
   }[method] || method || "";
+}
+
+async function uploadPaymentProof(file, orderId) {
+  if (!file) return {};
+  const maxSize = 5 * 1024 * 1024;
+  if (file.size > maxSize) {
+    throw new Error("付款证明不能超过 5MB");
+  }
+  const safeName = file.name.replace(/[^\w.\-]+/g, "_");
+  const path = `paymentProofs/${firebaseUser.uid}/${orderId}-${Date.now()}-${safeName}`;
+  const proofRef = storageRef(storage, path);
+  await uploadBytes(proofRef, file, { contentType: file.type || "application/octet-stream" });
+  const url = await getDownloadURL(proofRef);
+  return { proofName: file.name, proofPath: path, proofUrl: url };
 }
 
 function toast(message) {
@@ -546,7 +570,8 @@ function renderAdminOrders() {
     const actions = order.status === "pending"
       ? `<button class="link" data-confirm-order="${order.id}">确认付款</button><button class="link" data-cancel-order="${order.id}">取消订单</button>`
       : "";
-    const paymentText = `${paymentMethodText(order.paymentMethod)} ${order.paymentRef || ""}${order.paymentNote ? ` / ${order.paymentNote}` : ""}`.trim() || "-";
+    const proofLink = order.proofUrl ? ` / <a class="link" href="${order.proofUrl}" target="_blank" rel="noopener">查看凭证</a>` : "";
+    const paymentText = `${paymentMethodText(order.paymentMethod)} ${order.paymentRef || ""}${order.paymentNote ? ` / ${order.paymentNote}` : ""}${proofLink}`.trim() || "-";
     return `<tr><td>${order.id}</td><td>${user?.name || "-"}</td><td>${plan?.name || "-"}</td><td>${order.type === "first" ? "首充" : "复购"}</td><td>${money(order.amount)}</td><td>${paymentText}</td><td>${points(order.points)}</td><td><span class="tag ${order.status}">${labelStatus(order.status)}</span></td><td>${new Date(order.createdAt).toLocaleString("zh-CN")}</td><td class="actions">${actions}</td></tr>`;
   }).join("");
 }
@@ -779,7 +804,17 @@ document.body.addEventListener("click", async (event) => {
       note: paymentForm.get("paymentNote").trim(),
     };
     if (!paymentInfo.ref) return toast("请先填写付款参考号");
-    createOrder(state, currentUser().id, buyPlan.dataset.buyPlan, buyPlan.dataset.buyType, "pending", new Date().toISOString(), paymentInfo);
+    const order = createOrder(state, currentUser().id, buyPlan.dataset.buyPlan, buyPlan.dataset.buyType, "pending", new Date().toISOString(), paymentInfo);
+    const proofFile = document.querySelector("#paymentInfoForm [name='paymentProof']").files[0];
+    if (proofFile) {
+      try {
+        Object.assign(order, await uploadPaymentProof(proofFile, order.id));
+      } catch (error) {
+        state.orders = state.orders.filter((item) => item.id !== order.id);
+        toast(error.message || "付款证明上传失败");
+        return;
+      }
+    }
     await saveState();
     renderAll();
     toast("配套申请已提交，等待后台确认付款");
