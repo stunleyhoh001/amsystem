@@ -23,10 +23,6 @@ import {
   ref as storageRef,
   uploadBytes,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
-import {
-  getFunctions,
-  httpsCallable,
-} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
 const SYSTEM_DOC_PATH = ["amsystem", "main"];
@@ -38,7 +34,7 @@ const POINT_LOG_COLLECTION = "amsystemPointLogs";
 const ADMIN_LOG_COLLECTION = "amsystemAdminLogs";
 const CONFIRM_DAYS = 7;
 const ADMIN_EMAILS = [
-  "your-admin-email@gmail.com",
+  "stanleyhoh79@gmail.com",
 ];
 
 const firebaseConfig = {
@@ -54,8 +50,6 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
-const functions = getFunctions(app);
-const confirmOrderFunction = httpsCallable(functions, "confirmOrder");
 const systemRef = doc(db, ...SYSTEM_DOC_PATH);
 const usersRef = collection(db, USER_COLLECTION);
 const ordersRef = collection(db, ORDER_COLLECTION);
@@ -69,6 +63,27 @@ let cloudAvailable = false;
 let firebaseUser = null;
 let state = null;
 let syncMessage = "Firestore：等待检测";
+
+window.addEventListener("error", (event) => {
+  const status = document.querySelector("#authStatus");
+  if (status) status.textContent = `脚本错误：${event.message}`;
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  const status = document.querySelector("#authStatus");
+  const message = event.reason?.message || event.reason?.code || "未知异步错误";
+  if (status) status.textContent = `异步错误：${message}`;
+});
+
+function setAuthStatusText(message) {
+  const status = document.querySelector("#authStatus");
+  if (status) status.textContent = message;
+}
+
+function setSyncStatusText(message) {
+  const syncStatus = document.querySelector("#syncStatus");
+  if (syncStatus) syncStatus.textContent = message;
+}
 
 function futureDate(days) {
   const date = new Date();
@@ -471,6 +486,13 @@ async function uploadPaymentProof(file, orderId) {
   await uploadBytes(proofRef, file, { contentType: file.type || "application/octet-stream" });
   const url = await getDownloadURL(proofRef);
   return { proofName: file.name, proofPath: path, proofUrl: url };
+}
+
+async function callConfirmOrderFunction(orderId) {
+  const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js");
+  const functions = getFunctions(app);
+  const confirmOrderFunction = httpsCallable(functions, "confirmOrder");
+  return confirmOrderFunction({ orderId });
 }
 
 function toast(message) {
@@ -982,7 +1004,7 @@ document.body.addEventListener("click", async (event) => {
     const order = state.orders.find((item) => item.id === confirmOrder.dataset.confirmOrder);
     if (!order || order.status !== "pending") return toast("订单状态不可确认");
     try {
-      await confirmOrderFunction({ orderId: order.id });
+      await callConfirmOrderFunction(order.id);
       state = await loadState();
       renderAll();
       toast("订单已由云函数确认，积分和奖励已生成");
@@ -1088,5 +1110,15 @@ onAuthStateChanged(auth, async (user) => {
   renderAll();
 });
 
+setAuthStatusText("脚本已加载，正在等待 Firebase 登录状态...");
+setSyncStatusText("Firestore：等待登录后检测");
+
 state = localStorage.getItem(STORAGE_KEY) ? JSON.parse(localStorage.getItem(STORAGE_KEY)) : createSeedData();
 renderAll();
+
+setTimeout(() => {
+  if (!firebaseReady) {
+    setAuthStatusText("Firebase 登录状态未返回，请强制刷新或检查浏览器缓存。");
+    setSyncStatusText("Firestore：尚未开始检测");
+  }
+}, 5000);

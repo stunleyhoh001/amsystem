@@ -98,4 +98,47 @@ exports.confirmOrder = onCall(async (request) => {
 
     const pointLogRef = db.collection("amsystemPointLogs").doc();
     tx.set(pointLogRef, {
+      id: pointLogRef.id,
+      userId: order.userId,
+      change: Number(plan.points || 0),
+      balance: newBalance,
+      source: order.id,
+      note: `${plan.name} points issued`,
+      createdAt: paidAt,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
 
+    if (user.referrerId) {
+      const referrerRef = db.collection("amsystemUsers").doc(user.referrerId);
+      const referrerSnap = await tx.get(referrerRef);
+      if (referrerSnap.exists) {
+        const referrer = referrerSnap.data();
+        const referrerActive = referrer.packageUntil && new Date(referrer.packageUntil) > new Date() && !referrer.frozen;
+        const shouldReward = order.type === "first" || (order.type === "repeat" && referrerActive);
+
+        if (shouldReward) {
+          const rate = order.type === "first" ? Number(plan.firstRate || 0) : Number(plan.repeatRate || 0);
+          const amount = Number((Number(order.amount || 0) * (rate / 100)).toFixed(2));
+          const rewardRef = db.collection("amsystemRewards").doc();
+          tx.set(rewardRef, {
+            id: rewardRef.id,
+            userId: user.referrerId,
+            sourceUserId: order.userId,
+            orderId: order.id,
+            type: order.type,
+            rate,
+            amount,
+            status: "pending",
+            confirmAfter: addDays(paidAt, CONFIRM_DAYS),
+            createdAt: paidAt,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+      }
+    }
+
+    await createAdminLog(tx, "确认付款", order.id, `Amount ${money(order.amount)}`, adminEmail);
+  });
+
+  return { ok: true };
+});

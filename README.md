@@ -20,7 +20,7 @@ Firebase 版双界面联盟营销系统原型。
 在 `app.js` 和 `firestore.rules`、`storage.rules` 里，把：
 
 ```txt
-your-admin-email@gmail.com
+stanleyhoh79@gmail.com
 ```
 
 改成你的管理员 Google 邮箱。
@@ -109,7 +109,7 @@ confirmOrder
 部署前，请把 `functions/index.js` 里的：
 
 ```txt
-your-admin-email@gmail.com
+stanleyhoh79@gmail.com
 ```
 
 改成你的管理员邮箱。
