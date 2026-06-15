@@ -303,19 +303,29 @@ function createOrder(data, userId, planId, type, status = "paid", createdAt = ne
     type,
     status,
     amount: plan.amount,
-    points: status === "paid" ? plan.points : 0,
+    points: 0,
     createdAt,
   };
   data.orders.push(order);
   if (status === "paid") {
-    user.points += plan.points;
-    user.slots = Math.max(user.slots || 0, plan.slots);
-    user.packageUntil = addDays(createdAt, plan.validDays);
-    user.level = plan.amount >= 580 ? "高级推广用户" : "推广用户";
-    data.pointLogs.push({ id: id("log"), userId, change: plan.points, balance: user.points, source: order.id, note: `${plan.name} 积分发放`, createdAt });
-    createReward(data, order, user, plan);
+    applyPaidOrder(data, order, createdAt);
   }
   return order;
+}
+
+function applyPaidOrder(data, order, paidAt = new Date().toISOString()) {
+  const user = data.users.find((item) => item.id === order.userId);
+  const plan = data.plans.find((item) => item.id === order.planId);
+  if (!user || !plan || order.points > 0) return;
+  order.status = "paid";
+  order.points = plan.points;
+  order.paidAt = paidAt;
+  user.points += plan.points;
+  user.slots = Math.max(user.slots || 0, plan.slots);
+  user.packageUntil = addDays(paidAt, plan.validDays);
+  user.level = plan.amount >= 580 ? "高级推广用户" : "推广用户";
+  data.pointLogs.push({ id: id("log"), userId: user.id, change: plan.points, balance: user.points, source: order.id, note: `${plan.name} 积分发放`, createdAt: paidAt });
+  createReward(data, order, user, plan);
 }
 
 function createReward(data, order, buyer, plan) {
@@ -512,7 +522,10 @@ function renderAdminOrders() {
   document.querySelector("#adminOrderTable").innerHTML = state.orders.slice().reverse().map((order) => {
     const user = findUser(order.userId);
     const plan = findPlan(order.planId);
-    return `<tr><td>${order.id}</td><td>${user?.name || "-"}</td><td>${plan?.name || "-"}</td><td>${order.type === "first" ? "首充" : "复购"}</td><td>${money(order.amount)}</td><td>${points(order.points)}</td><td><span class="tag ${order.status}">${labelStatus(order.status)}</span></td><td>${new Date(order.createdAt).toLocaleString("zh-CN")}</td></tr>`;
+    const actions = order.status === "pending"
+      ? `<button class="link" data-confirm-order="${order.id}">确认付款</button><button class="link" data-cancel-order="${order.id}">取消订单</button>`
+      : "";
+    return `<tr><td>${order.id}</td><td>${user?.name || "-"}</td><td>${plan?.name || "-"}</td><td>${order.type === "first" ? "首充" : "复购"}</td><td>${money(order.amount)}</td><td>${points(order.points)}</td><td><span class="tag ${order.status}">${labelStatus(order.status)}</span></td><td>${new Date(order.createdAt).toLocaleString("zh-CN")}</td><td class="actions">${actions}</td></tr>`;
   }).join("");
 }
 
@@ -556,7 +569,7 @@ function renderAdminLocked() {
   document.querySelector("#metricWithdraws").textContent = "-";
   document.querySelector("#adminPlanList").innerHTML = `<article class="plan-card"><strong>后台已锁定</strong><span>请使用管理员 Google 邮箱登录。</span></article>`;
   document.querySelector("#adminUserTable").innerHTML = `<tr><td colspan="9">无管理员权限</td></tr>`;
-  document.querySelector("#adminOrderTable").innerHTML = `<tr><td colspan="8">无管理员权限</td></tr>`;
+  document.querySelector("#adminOrderTable").innerHTML = `<tr><td colspan="9">无管理员权限</td></tr>`;
   document.querySelector("#adminRewardTable").innerHTML = `<tr><td colspan="8">无管理员权限</td></tr>`;
   document.querySelector("#adminWithdrawTable").innerHTML = `<tr><td colspan="8">无管理员权限</td></tr>`;
 }
@@ -704,16 +717,40 @@ document.body.addEventListener("click", async (event) => {
   const buyPlan = event.target.closest("[data-buy-plan]");
   if (buyPlan) {
     if (!firebaseUser) return toast("请先使用 Google 登录");
-    createOrder(state, currentUser().id, buyPlan.dataset.buyPlan, buyPlan.dataset.buyType, "paid");
+    createOrder(state, currentUser().id, buyPlan.dataset.buyPlan, buyPlan.dataset.buyType, "pending");
     await saveState();
     renderAll();
-    toast("配套申请已模拟支付成功");
+    toast("配套申请已提交，等待后台确认付款");
     return;
   }
 
   if (event.target.closest("#copyInviteBtn")) {
     await navigator.clipboard.writeText(document.querySelector("#inviteLink").textContent);
     toast("推荐链接已复制");
+    return;
+  }
+
+  const confirmOrder = event.target.closest("[data-confirm-order]");
+  if (confirmOrder) {
+    if (!requireAdmin()) return;
+    const order = state.orders.find((item) => item.id === confirmOrder.dataset.confirmOrder);
+    if (!order || order.status !== "pending") return toast("订单状态不可确认");
+    applyPaidOrder(state, order);
+    await saveState();
+    renderAll();
+    toast("订单已确认付款，积分和奖励已生成");
+    return;
+  }
+
+  const cancelOrder = event.target.closest("[data-cancel-order]");
+  if (cancelOrder) {
+    if (!requireAdmin()) return;
+    const order = state.orders.find((item) => item.id === cancelOrder.dataset.cancelOrder);
+    if (!order || order.status !== "pending") return toast("订单状态不可取消");
+    order.status = "cancelled";
+    await saveState();
+    renderAll();
+    toast("订单已取消");
     return;
   }
 
