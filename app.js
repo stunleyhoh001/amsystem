@@ -73,6 +73,7 @@ function createSeedData() {
     pointLogs: [],
     rewards: [],
     withdraws: [],
+    adminLogs: [],
   };
   createOrder(data, "u_1002", "plan_rm580", "first", "paid", pastDate(8));
   createOrder(data, "u_1003", "plan_rm180", "first", "paid", pastDate(1));
@@ -95,7 +96,11 @@ async function loadState() {
       return composeStateFromUserDoc(snapshot, userSnapshot, seeded);
     }
     if (snapshot.exists()) {
-      return { ...seeded, plans: Array.isArray(snapshot.data().plans) ? snapshot.data().plans : seeded.plans };
+      return {
+        ...seeded,
+        plans: Array.isArray(snapshot.data().plans) ? snapshot.data().plans : seeded.plans,
+        adminLogs: Array.isArray(snapshot.data().adminLogs) ? snapshot.data().adminLogs : [],
+      };
     }
     return seeded;
   } catch (error) {
@@ -114,7 +119,7 @@ async function saveState() {
   try {
     const cloudState = splitStateForCloud(state);
     if (isAdmin()) {
-      await setDoc(systemRef, { plans: cloudState.plans, updatedAt: serverTimestamp() });
+      await setDoc(systemRef, { plans: cloudState.plans, adminLogs: data.adminLogs || [], updatedAt: serverTimestamp() });
       await Promise.all(
         cloudState.users.map((user) =>
           setDoc(doc(db, USER_COLLECTION, user.id), { ...user, updatedAt: serverTimestamp() }, { merge: true })
@@ -165,6 +170,7 @@ function composeStateFromCloud(systemSnapshot, usersSnapshot, fallback) {
     pointLogs: pointLogs.length ? pointLogs : fallback.pointLogs,
     rewards: rewards.length ? rewards : fallback.rewards,
     withdraws: withdraws.length ? withdraws : fallback.withdraws,
+    adminLogs: systemSnapshot.exists() && Array.isArray(systemSnapshot.data().adminLogs) ? systemSnapshot.data().adminLogs : [],
   };
 }
 
@@ -196,6 +202,7 @@ function composeStateFromUserDoc(systemSnapshot, userSnapshot, fallback) {
     pointLogs: Array.isArray(data.pointLogs) ? data.pointLogs : [],
     rewards: Array.isArray(data.rewards) ? data.rewards : [],
     withdraws: Array.isArray(data.withdraws) ? data.withdraws : [],
+    adminLogs: systemSnapshot.exists() && Array.isArray(systemSnapshot.data().adminLogs) ? systemSnapshot.data().adminLogs : [],
   };
 }
 
@@ -219,6 +226,7 @@ function normalizeUserDoc(id, data) {
 function splitStateForCloud(data) {
   return {
     plans: data.plans,
+    adminLogs: data.adminLogs || [],
     users: data.users.map((user) => ({
       ...user,
       orders: data.orders.filter((order) => order.userId === user.id),
@@ -508,6 +516,7 @@ function renderAdmin() {
   renderAdminOrders();
   renderAdminRewards();
   renderAdminWithdraws();
+  renderAdminLogs();
 }
 
 function renderAdminPlans() {
@@ -560,6 +569,33 @@ function renderAdminWithdraws() {
   document.querySelector("#adminWithdrawTable").innerHTML = rows || `<tr><td colspan="8">暂无提现申请</td></tr>`;
 }
 
+function renderAdminLogs() {
+  const logs = Array.isArray(state.adminLogs) ? state.adminLogs : [];
+  const rows = logs.slice().reverse().slice(0, 100).map((log) => `
+    <tr>
+      <td>${new Date(log.createdAt).toLocaleString("zh-CN")}</td>
+      <td>${log.adminEmail || "-"}</td>
+      <td>${log.action}</td>
+      <td>${log.target || "-"}</td>
+      <td>${log.detail || "-"}</td>
+    </tr>
+  `).join("");
+  document.querySelector("#adminLogTable").innerHTML = rows || `<tr><td colspan="5">暂无操作日志</td></tr>`;
+}
+
+function addAdminLog(action, target, detail = "") {
+  if (!Array.isArray(state.adminLogs)) state.adminLogs = [];
+  state.adminLogs.push({
+    id: id("alog"),
+    adminUid: firebaseUser?.uid || "",
+    adminEmail: firebaseUser?.email || "",
+    action,
+    target,
+    detail,
+    createdAt: new Date().toISOString(),
+  });
+}
+
 function updateAuthStatusClean() {
   const status = document.querySelector("#authStatus");
   if (status) {
@@ -585,6 +621,9 @@ function renderAdminLocked() {
   document.querySelector("#adminOrderTable").innerHTML = `<tr><td colspan="10">无管理员权限</td></tr>`;
   document.querySelector("#adminRewardTable").innerHTML = `<tr><td colspan="8">无管理员权限</td></tr>`;
   document.querySelector("#adminWithdrawTable").innerHTML = `<tr><td colspan="8">无管理员权限</td></tr>`;
+  if (document.querySelector("#adminLogTable")) {
+    document.querySelector("#adminLogTable").innerHTML = `<tr><td colspan="5">无管理员权限</td></tr>`;
+  }
 }
 
 function requireAdmin() {
@@ -679,6 +718,7 @@ document.querySelector("#planForm").addEventListener("submit", async (event) => 
     firstRate: Number(form.get("firstRate")),
     repeatRate: Number(form.get("repeatRate")),
   });
+  addAdminLog("新增配套", form.get("name").trim(), `金额 ${form.get("amount")} / 积分 ${form.get("points")}`);
   event.currentTarget.reset();
   await saveState();
   renderAll();
@@ -693,6 +733,7 @@ document.querySelector("#pointsForm").addEventListener("submit", async (event) =
   const change = Number(form.get("points"));
   user.points += change;
   state.pointLogs.push({ id: id("log"), userId: user.id, change, balance: user.points, source: "admin", note: form.get("note").trim(), createdAt: new Date().toISOString() });
+  addAdminLog("调整积分", user.name, `变动 ${change}，备注：${form.get("note").trim()}`);
   event.currentTarget.reset();
   await saveState();
   renderAll();
@@ -719,6 +760,7 @@ document.querySelector("#confirmDueBtn").addEventListener("click", async () => {
     if (reward.status === "pending" && new Date(reward.confirmAfter) <= new Date()) {
       reward.status = "confirmed";
       count += 1;
+      addAdminLog("确认到期奖励", reward.orderId, `奖励 ${money(reward.amount)}`);
     }
   });
   await saveState();
@@ -756,6 +798,7 @@ document.body.addEventListener("click", async (event) => {
     const order = state.orders.find((item) => item.id === confirmOrder.dataset.confirmOrder);
     if (!order || order.status !== "pending") return toast("订单状态不可确认");
     applyPaidOrder(state, order);
+    addAdminLog("确认付款", order.id, `金额 ${money(order.amount)}`);
     await saveState();
     renderAll();
     toast("订单已确认付款，积分和奖励已生成");
@@ -768,6 +811,7 @@ document.body.addEventListener("click", async (event) => {
     const order = state.orders.find((item) => item.id === cancelOrder.dataset.cancelOrder);
     if (!order || order.status !== "pending") return toast("订单状态不可取消");
     order.status = "cancelled";
+    addAdminLog("取消订单", order.id, `金额 ${money(order.amount)}`);
     await saveState();
     renderAll();
     toast("订单已取消");
@@ -779,6 +823,7 @@ document.body.addEventListener("click", async (event) => {
     if (!requireAdmin()) return;
     const user = findUser(freezeUser.dataset.freezeUser);
     user.frozen = !user.frozen;
+    addAdminLog(user.frozen ? "冻结用户" : "解冻用户", user.name, user.account);
     await saveState();
     renderAll();
     toast(user.frozen ? "用户已冻结" : "用户已解冻");
@@ -793,6 +838,7 @@ document.body.addEventListener("click", async (event) => {
     if (rewardAction.dataset.confirmReward) reward.status = "confirmed";
     if (rewardAction.dataset.cancelReward) reward.status = "cancelled";
     if (rewardAction.dataset.freezeReward) reward.status = "frozen";
+    addAdminLog("更新奖励状态", reward.orderId, `${reward.status} / ${money(reward.amount)}`);
     await saveState();
     renderAll();
     toast("奖励状态已更新");
@@ -807,6 +853,7 @@ document.body.addEventListener("click", async (event) => {
     if (withdrawAction.dataset.approveWithdraw) withdraw.status = "approved";
     if (withdrawAction.dataset.rejectWithdraw) withdraw.status = "rejected";
     if (withdrawAction.dataset.payWithdraw) withdraw.status = "paidout";
+    addAdminLog("更新提现状态", withdraw.id, `${withdraw.status} / ${money(withdraw.amount)}`);
     await saveState();
     renderAll();
     toast("提现状态已更新");

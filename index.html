@@ -186,6 +186,7 @@
               <button class="tab" data-tab="adminOrders">订单管理</button>
               <button class="tab" data-tab="adminRewards">奖励审核</button>
               <button class="tab" data-tab="adminWithdraws">提现审核</button>
+              <button class="tab" data-tab="adminLogs">操作日志</button>
             </nav>
 
             <section id="adminUsers" class="tab-panel active">
@@ -240,6 +241,18 @@
                   <table>
                     <thead><tr><th>编号</th><th>用户</th><th>金额</th><th>方式</th><th>账号</th><th>状态</th><th>时间</th><th>操作</th></tr></thead>
                     <tbody id="adminWithdrawTable"></tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+
+            <section id="adminLogs" class="tab-panel">
+              <div class="panel">
+                <div class="panel-head"><h2>操作日志</h2></div>
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>时间</th><th>管理员</th><th>动作</th><th>对象</th><th>详情</th></tr></thead>
+                    <tbody id="adminLogTable"></tbody>
                   </table>
                 </div>
               </div>
