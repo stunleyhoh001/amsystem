@@ -354,7 +354,29 @@
 
             <section id="adminLogs" class="tab-panel">
               <div class="panel">
-                <div class="panel-head"><h2>操作日志</h2></div>
+                <div class="panel-head">
+                  <h2>操作日志</h2>
+                  <div class="actions">
+                    <button id="exportLogsBtn" class="button ghost" type="button">导出日志</button>
+                  </div>
+                </div>
+                <div class="filter-bar">
+                  <label>搜索日志<input id="logSearchInput" placeholder="管理员 / 动作 / 对象 / 详情" /></label>
+                  <label>动作类型
+                    <select id="logActionFilter">
+                      <option value="all">全部动作</option>
+                    </select>
+                  </label>
+                  <label>显示数量
+                    <select id="logLimitFilter">
+                      <option value="50">最新 50 条</option>
+                      <option value="100">最新 100 条</option>
+                      <option value="200" selected>最新 200 条</option>
+                      <option value="all">全部</option>
+                    </select>
+                  </label>
+                  <button id="clearLogFiltersBtn" class="button ghost" type="button">清除筛选</button>
+                </div>
                 <div class="table-wrap">
                   <table>
                     <thead><tr><th>时间</th><th>管理员</th><th>动作</th><th>对象</th><th>详情</th></tr></thead>
@@ -369,6 +391,6 @@
     </main>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="./app.js?v=20260616-6"></script>
+    <script type="module" src="./app.js?v=20260616-7"></script>
   </body>
 </html>

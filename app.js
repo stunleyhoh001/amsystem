@@ -803,8 +803,11 @@ function getInputValue(selector) {
 }
 
 function renderAdminLogs() {
-  const logs = Array.isArray(state.adminLogs) ? state.adminLogs : [];
-  const rows = logs.slice().reverse().slice(0, 100).map((log) => `
+  renderLogActionOptions();
+  const logs = filteredLogs();
+  const limit = getSelectValue("#logLimitFilter", "200");
+  const visibleLogs = limit === "all" ? logs : logs.slice(0, Number(limit));
+  const rows = visibleLogs.map((log) => `
     <tr>
       <td>${new Date(log.createdAt).toLocaleString("zh-CN")}</td>
       <td>${log.adminEmail || "-"}</td>
@@ -813,7 +816,19 @@ function renderAdminLogs() {
       <td>${log.detail || "-"}</td>
     </tr>
   `).join("");
-  document.querySelector("#adminLogTable").innerHTML = rows || `<tr><td colspan="5">暂无操作日志</td></tr>`;
+  document.querySelector("#adminLogTable").innerHTML = rows || `<tr><td colspan="5">没有符合条件的操作日志</td></tr>`;
+}
+
+function renderLogActionOptions() {
+  const select = document.querySelector("#logActionFilter");
+  if (!select) return;
+  const currentValue = select.value || "all";
+  const actions = [...new Set((state.adminLogs || []).map((log) => log.action).filter(Boolean))].sort();
+  select.innerHTML = [
+    `<option value="all">全部动作</option>`,
+    ...actions.map((action) => `<option value="${action}">${action}</option>`),
+  ].join("");
+  select.value = actions.includes(currentValue) ? currentValue : "all";
 }
 
 function addAdminLog(action, target, detail = "") {
@@ -948,6 +963,25 @@ function filteredWithdraws() {
   });
 }
 
+function filteredLogs() {
+  const keyword = getInputValue("#logSearchInput").toLowerCase();
+  const actionFilter = getSelectValue("#logActionFilter", "all");
+  return (state.adminLogs || [])
+    .filter((log) => {
+      const searchable = [
+        log.adminEmail,
+        log.action,
+        log.target,
+        log.detail,
+      ].join(" ").toLowerCase();
+      const matchesKeyword = !keyword || searchable.includes(keyword);
+      const matchesAction = actionFilter === "all" || log.action === actionFilter;
+      return matchesKeyword && matchesAction;
+    })
+    .slice()
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
 function updateAuthStatusClean() {
   const status = document.querySelector("#authStatus");
   if (status) {
@@ -1017,7 +1051,7 @@ document.querySelectorAll(".tabs").forEach((tabs) => {
   });
 });
 
-["#orderStatusFilter", "#orderTypeFilter", "#rewardStatusFilter", "#rewardTypeFilter", "#withdrawStatusFilter", "#userPackageFilter", "#userAccountFilter"].forEach((selector) => {
+["#orderStatusFilter", "#orderTypeFilter", "#rewardStatusFilter", "#rewardTypeFilter", "#withdrawStatusFilter", "#userPackageFilter", "#userAccountFilter", "#logActionFilter", "#logLimitFilter"].forEach((selector) => {
   document.querySelector(selector)?.addEventListener("change", renderAll);
 });
 
@@ -1026,6 +1060,7 @@ document.querySelector("#orderSearchInput")?.addEventListener("input", renderAll
 document.querySelector("#rewardSearchInput")?.addEventListener("input", renderAll);
 document.querySelector("#withdrawSearchInput")?.addEventListener("input", renderAll);
 document.querySelector("#withdrawMinAmount")?.addEventListener("input", renderAll);
+document.querySelector("#logSearchInput")?.addEventListener("input", renderAll);
 
 document.querySelector("#clearUserFiltersBtn")?.addEventListener("click", () => {
   const searchInput = document.querySelector("#userSearchInput");
@@ -1064,6 +1099,16 @@ document.querySelector("#clearWithdrawFiltersBtn")?.addEventListener("click", ()
   if (searchInput) searchInput.value = "";
   if (statusFilter) statusFilter.value = "all";
   if (minAmountInput) minAmountInput.value = "";
+  renderAll();
+});
+
+document.querySelector("#clearLogFiltersBtn")?.addEventListener("click", () => {
+  const searchInput = document.querySelector("#logSearchInput");
+  const actionFilter = document.querySelector("#logActionFilter");
+  const limitFilter = document.querySelector("#logLimitFilter");
+  if (searchInput) searchInput.value = "";
+  if (actionFilter) actionFilter.value = "all";
+  if (limitFilter) limitFilter.value = "200";
   renderAll();
 });
 
@@ -1149,6 +1194,22 @@ document.querySelector("#exportWithdrawsBtn")?.addEventListener("click", () => {
       const user = findUser(item.userId);
       return [item.id, user?.name || "", item.amount, item.method, item.account, labelStatus(item.status), item.createdAt];
     })
+  );
+});
+
+document.querySelector("#exportLogsBtn")?.addEventListener("click", () => {
+  if (!requireAdmin()) return;
+  downloadCsv(
+    `amsystem-admin-logs-${new Date().toISOString().slice(0, 10)}.csv`,
+    ["日志ID", "时间", "管理员", "动作", "对象", "详情"],
+    filteredLogs().map((log) => [
+      log.id,
+      log.createdAt,
+      log.adminEmail || "",
+      log.action || "",
+      log.target || "",
+      log.detail || "",
+    ])
   );
 });
 
