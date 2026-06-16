@@ -23,6 +23,7 @@ service cloud.firestore {
         && request.resource.data.firebaseUid == userId
         && request.resource.data.points == 0
         && request.resource.data.slots == 0
+        && request.resource.data.repeatCredits == 0
         && request.resource.data.packageUntil == ""
         && request.resource.data.frozen == false;
     }
@@ -34,6 +35,8 @@ service cloud.firestore {
           "firebaseUid",
           "points",
           "slots",
+          "repeatCredits",
+          "repeatCreditQueueAt",
           "packageUntil",
           "level",
           "frozen"
