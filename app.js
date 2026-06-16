@@ -787,7 +787,8 @@ function renderRewardRules() {
     <article class="rule-card">
       <strong>${plan.name}</strong>
       <span>首充奖励：下线首次购买 ${money(plan.amount)}，推荐人获得 ${money(plan.amount * plan.firstRate / 100)}。</span>
-      <span>下线复购奖励：下线复购时，推荐人配套有效才获得 ${money(plan.amount * plan.repeatRate / 100)}。</span>
+      <span>复购资格：用户复购后获得 ${planRepeatCredits(plan)} 个复购奖励资格。</span>
+      <span>资格奖励：后续复购订单会自动派发给资格池用户，每次资格奖励约 ${money(plan.amount * plan.repeatRate / 100)}，并扣 1 个资格。</span>
       <span>奖励先待确认，${CONFIRM_DAYS} 天后由后台确认。</span>
     </article>
   `).join("");
@@ -796,7 +797,7 @@ function renderRewardRules() {
 function renderMemberRewards(user) {
   const rows = state.rewards.filter((reward) => reward.userId === user.id).slice().reverse().map((reward) => {
     const sourceUser = findUser(reward.sourceUserId);
-    return `<tr><td>${sourceUser?.name || "-"}</td><td>${reward.orderId}</td><td>${reward.type === "first" ? "首充奖励" : "下线复购奖励"}</td><td>${reward.rate}%</td><td>${money(reward.amount)}</td><td><span class="tag ${reward.status}">${labelStatus(reward.status)}</span></td><td>${new Date(reward.confirmAfter).toLocaleDateString("zh-CN")}</td></tr>`;
+    return `<tr><td>${sourceUser?.name || "-"}</td><td>${reward.orderId}</td><td>${rewardTypeText(reward)}</td><td>${reward.rate}%</td><td>${money(reward.amount)}</td><td><span class="tag ${reward.status}">${labelStatus(reward.status)}</span></td><td>${new Date(reward.confirmAfter).toLocaleDateString("zh-CN")}</td></tr>`;
   }).join("");
   document.querySelector("#memberRewardTable").innerHTML = rows || `<tr><td colspan="7">暂无奖励</td></tr>`;
 }
@@ -823,8 +824,8 @@ function renderAdminPlans() {
   document.querySelector("#adminPlanList").innerHTML = state.plans.map((plan) => `
     <article class="plan-card">
       <strong>${plan.name} · ${money(plan.amount)}</strong>
-      <span>积分 ${points(plan.points)} / 名额 ${plan.slots} / 有效期 ${plan.validDays} 天</span>
-      <span>首充 ${plan.firstRate}% / 复购 ${plan.repeatRate}%</span>
+      <span>积分 ${points(plan.points)} / 推荐名额 ${plan.slots} / 复购资格 ${planRepeatCredits(plan)} 个</span>
+      <span>有效期 ${plan.validDays} 天 / 首充 ${plan.firstRate}% / 资格复购 ${plan.repeatRate}%</span>
     </article>
   `).join("");
 }
@@ -836,8 +837,8 @@ function renderAdminUsers() {
   document.querySelector("#adminUserTable").innerHTML = users.map((user) => {
     const referrer = findUser(user.referrerId);
     const [statusClass, statusLabel] = packageStatus(user);
-    return `<tr><td>${user.name}</td><td>${user.account}</td><td>${user.phone || "-"}</td><td>${user.inviteCode}</td><td>${referrer?.name || "无"}</td><td>${points(user.points)}</td><td><span class="tag ${statusClass}">${statusLabel}</span></td><td>${directReferralCount(user.id)} / ${user.slots || 0}</td><td><span class="tag ${user.frozen ? "frozen" : "active"}">${user.frozen ? "已冻结" : "正常"}</span></td><td><button class="link" data-freeze-user="${user.id}">${user.frozen ? "解冻" : "冻结"}</button></td></tr>`;
-  }).join("") || `<tr><td colspan="10">没有符合条件的用户</td></tr>`;
+    return `<tr><td>${user.name}</td><td>${user.account}</td><td>${user.phone || "-"}</td><td>${user.inviteCode}</td><td>${referrer?.name || "无"}</td><td>${points(user.points)}</td><td><span class="tag ${statusClass}">${statusLabel}</span></td><td>${directReferralCount(user.id)} / ${user.slots || 0}</td><td>${points(user.repeatCredits || 0)}</td><td><span class="tag ${user.frozen ? "frozen" : "active"}">${user.frozen ? "已冻结" : "正常"}</span></td><td><button class="link" data-freeze-user="${user.id}">${user.frozen ? "解冻" : "冻结"}</button></td></tr>`;
+  }).join("") || `<tr><td colspan="11">没有符合条件的用户</td></tr>`;
 }
 
 function renderAdminOrders() {
@@ -1084,7 +1085,7 @@ function renderAdminLocked() {
   document.querySelector("#metricPendingRewards").textContent = "-";
   document.querySelector("#metricWithdraws").textContent = "-";
   document.querySelector("#adminPlanList").innerHTML = `<article class="plan-card"><strong>后台已锁定</strong><span>请使用管理员 Google 邮箱登录。</span></article>`;
-  document.querySelector("#adminUserTable").innerHTML = `<tr><td colspan="10">无管理员权限</td></tr>`;
+  document.querySelector("#adminUserTable").innerHTML = `<tr><td colspan="11">无管理员权限</td></tr>`;
   document.querySelector("#adminOrderTable").innerHTML = `<tr><td colspan="10">无管理员权限</td></tr>`;
   document.querySelector("#adminRewardTable").innerHTML = `<tr><td colspan="8">无管理员权限</td></tr>`;
   document.querySelector("#adminWithdrawTable").innerHTML = `<tr><td colspan="8">无管理员权限</td></tr>`;
@@ -1219,7 +1220,7 @@ document.querySelector("#exportUsersBtn")?.addEventListener("click", () => {
   if (!requireAdmin()) return;
   downloadCsv(
     `amsystem-users-${new Date().toISOString().slice(0, 10)}.csv`,
-    ["用户ID", "姓名", "账号", "手机", "邀请码", "推荐人", "积分", "推荐名额", "已用名额", "配套状态", "账号状态"],
+    ["用户ID", "姓名", "账号", "手机", "邀请码", "推荐人", "积分", "推荐名额", "已用名额", "复购资格", "配套状态", "账号状态"],
     filteredUsers().map((user) => {
       const referrer = findUser(user.referrerId);
       const [, statusLabel] = packageStatus(user);
@@ -1233,6 +1234,7 @@ document.querySelector("#exportUsersBtn")?.addEventListener("click", () => {
         user.points,
         user.slots || 0,
         directReferralCount(user.id),
+        user.repeatCredits || 0,
         statusLabel,
         user.frozen ? "已冻结" : "正常",
       ];
@@ -1261,7 +1263,7 @@ document.querySelector("#exportRewardsBtn")?.addEventListener("click", () => {
     filteredRewards().map((reward) => {
       const user = findUser(reward.userId);
       const sourceUser = findUser(reward.sourceUserId);
-      return [reward.id, user?.name || "", sourceUser?.name || "", reward.orderId, reward.type, reward.rate, reward.amount, labelStatus(reward.status), reward.confirmAfter];
+      return [reward.id, user?.name || "", sourceUser?.name || "", reward.orderId, rewardTypeText(reward), reward.rate, reward.amount, labelStatus(reward.status), reward.confirmAfter];
     })
   );
 });
@@ -1339,6 +1341,7 @@ document.querySelector("#planForm").addEventListener("submit", async (event) => 
     amount: Number(form.get("amount")),
     points: Number(form.get("points")),
     slots: Number(form.get("slots")),
+    repeatCredits: Number(form.get("repeatCredits")),
     validDays: Number(form.get("validDays")),
     firstRate: Number(form.get("firstRate")),
     repeatRate: Number(form.get("repeatRate")),
