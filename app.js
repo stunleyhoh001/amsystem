@@ -90,7 +90,18 @@ function setAuthStatusText(message) {
 
 function setSyncStatusText(message) {
   const syncStatus = document.querySelector("#syncStatus");
-  if (syncStatus) syncStatus.textContent = message;
+  if (syncStatus) syncStatus.textContent = readableSyncMessage(message);
+}
+
+function readableSyncMessage(message) {
+  const text = String(message || "");
+  if (text.includes("permission-denied")) {
+    return "Firestore：权限被拒绝。请发布最新 firestore.rules，然后点“测试云端保存”。资料已暂存在本地。";
+  }
+  if (text.includes("storage/unauthorized")) {
+    return "Storage：付款证明上传权限不足。请检查 storage.rules 是否已发布。";
+  }
+  return text;
 }
 
 function futureDate(days) {
@@ -884,7 +895,7 @@ function updateAuthStatus() {
     status.textContent = "正在连接 Firebase...";
   }
   const syncStatus = document.querySelector("#syncStatus");
-  if (syncStatus) syncStatus.textContent = syncMessage;
+  if (syncStatus) syncStatus.textContent = readableSyncMessage(syncMessage);
 }
 
 function renderMember() {
@@ -1493,7 +1504,7 @@ function updateAuthStatusClean() {
     }
   }
   const syncStatus = document.querySelector("#syncStatus");
-  if (syncStatus) syncStatus.textContent = syncMessage;
+  if (syncStatus) syncStatus.textContent = readableSyncMessage(syncMessage);
 }
 
 function renderAdminLocked() {
@@ -1654,6 +1665,7 @@ document.querySelector("#testFirestoreBtn").addEventListener("click", async () =
   state.lastSyncTestAt = new Date().toISOString();
   await saveState();
   renderAll();
+  toast(cloudAvailable ? "云端保存成功" : "云端保存失败，请看状态提示");
 });
 
 document.querySelector("#exportUsersBtn")?.addEventListener("click", () => {
