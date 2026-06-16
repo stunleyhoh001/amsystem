@@ -81,8 +81,9 @@ main { padding: 0 clamp(18px, 4vw, 48px) 40px; }
 
 .member-hero {
   display: grid;
-  grid-template-columns: 360px minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(300px, 0.95fr) minmax(460px, 1.35fr) minmax(340px, 1fr);
   gap: 18px;
+  align-items: stretch;
   margin-bottom: 18px;
 }
 .split-form {
@@ -96,6 +97,10 @@ main { padding: 0 clamp(18px, 4vw, 48px) 40px; }
   border-bottom: 1px solid var(--line);
   margin-bottom: 16px;
   padding-bottom: 16px;
+}
+.login-panel .button,
+.profile-card .button {
+  width: 100%;
 }
 .google-placeholder {
   display: inline-flex;
@@ -114,6 +119,9 @@ main { padding: 0 clamp(18px, 4vw, 48px) 40px; }
   display: grid;
   align-content: center;
 }
+.account-card h2 {
+  overflow-wrap: anywhere;
+}
 .profile-card .panel-head {
   margin-bottom: 12px;
 }
@@ -122,16 +130,36 @@ main { padding: 0 clamp(18px, 4vw, 48px) 40px; }
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
 }
+.account-card .mini-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
 .mini-grid span, .metrics article {
   padding: 16px;
   border-radius: 8px;
   background: #f8faff;
+  min-width: 0;
 }
 .mini-grid strong, .metrics strong {
   display: block;
   margin-top: 8px;
   font-size: 24px;
   color: var(--text);
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.account-card .mini-grid span {
+  min-height: 112px;
+}
+.account-card .mini-grid strong {
+  font-size: clamp(24px, 2.3vw, 36px);
+}
+.account-card #memberPlanStatus {
+  display: inline-flex;
+  margin-top: 8px;
+  font-size: 20px;
+  line-height: 1.25;
+  white-space: normal;
+  word-break: keep-all;
 }
 .metrics { margin-bottom: 18px; }
 .metrics span { color: var(--muted); }
@@ -250,6 +278,14 @@ th { color: var(--muted); font-size: 13px; }
   .member-hero, .layout { grid-template-columns: 1fr; }
   .sidebar { position: static; }
   .mini-grid, .metrics, .grid-form, .grid-form.compact, .filter-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1181px) and (max-width: 1500px) {
+  .member-hero {
+    grid-template-columns: minmax(290px, 0.9fr) minmax(420px, 1.3fr) minmax(320px, 1fr);
+  }
+  .panel {
+    padding: 18px;
+  }
 }
 @media (max-width: 720px) {
   .app-header, .panel-head { align-items: stretch; flex-direction: column; }
