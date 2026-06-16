@@ -673,9 +673,7 @@ function createFirstReward(data, order, buyer, plan, paidAt = order.createdAt) {
 }
 
 function createRepeatPoolReward(data, order, buyer, plan, paidAt = order.createdAt) {
-  const receiver = data.users
-    .filter((user) => user.id !== buyer.id && !user.frozen && Number(user.repeatCredits || 0) > 0)
-    .sort((a, b) => new Date(a.repeatCreditQueueAt || "9999-12-31") - new Date(b.repeatCreditQueueAt || "9999-12-31"))[0];
+  const receiver = nextRepeatReceiver(data, buyer.id);
   const rate = Number(plan.repeatRate || 0);
   if (!receiver || rate <= 0) return;
   receiver.repeatCredits = Math.max(Number(receiver.repeatCredits || 0) - 1, 0);
@@ -696,6 +694,37 @@ function createRepeatPoolReward(data, order, buyer, plan, paidAt = order.created
     confirmAfter: addDays(paidAt, CONFIRM_DAYS),
     createdAt: paidAt,
   });
+}
+
+function nextRepeatReceiver(data, buyerId) {
+  return data.users
+    .filter((user) => user.id !== buyerId && !user.frozen && Number(user.repeatCredits || 0) > 0)
+    .sort((a, b) => new Date(a.repeatCreditQueueAt || "9999-12-31") - new Date(b.repeatCreditQueueAt || "9999-12-31"))[0];
+}
+
+function orderConfirmPreview(order) {
+  const user = findUser(order.userId);
+  const plan = findPlan(order.planId);
+  if (!user || !plan) return "订单资料不完整，仍要继续确认吗？";
+  const lines = [
+    `确认订单：${order.id}`,
+    `用户：${user.name} / ${user.account}`,
+    `配套：${plan.name}，金额 ${money(order.amount)}`,
+    `积分：+${points(plan.points)}`,
+  ];
+  if (order.type === "repeat") {
+    const receiver = nextRepeatReceiver(state, user.id);
+    const reward = +(order.amount * (Number(plan.repeatRate || 0) / 100)).toFixed(2);
+    lines.push(`复购资格：买家 +${planRepeatCredits(plan)} 个`);
+    lines.push(`复购冷却：${planRepeatCooldownHours(plan)} 小时`);
+    lines.push(receiver ? `资格池奖励：${receiver.name} 将扣 1 个资格，奖励 ${money(reward)} 分 ${REPEAT_RELEASE_DAYS.length} 期释放` : "资格池奖励：目前没有可接收资格池奖励的用户");
+  } else {
+    const referrer = findUser(user.referrerId);
+    const reward = +(order.amount * (Number(plan.firstRate || 0) / 100)).toFixed(2);
+    lines.push(referrer ? `首充奖励：${referrer.name} 预计获得 ${money(reward)}` : "首充奖励：没有绑定推荐人");
+  }
+  lines.push("确定要确认付款吗？");
+  return lines.join("\n");
 }
 
 function labelStatus(status) {
@@ -1854,6 +1883,7 @@ document.body.addEventListener("click", async (event) => {
     if (!requireAdmin()) return;
     const order = state.orders.find((item) => item.id === confirmOrder.dataset.confirmOrder);
     if (!order || order.status !== "pending") return toast("订单状态不可确认");
+    if (!window.confirm(orderConfirmPreview(order))) return;
     try {
       await callConfirmOrderFunction(order.id);
       state = await loadState();
