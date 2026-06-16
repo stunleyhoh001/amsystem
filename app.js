@@ -951,6 +951,14 @@ function renderMemberOrderProofStatuses(user) {
     proofLine.className = "muted-line proof-status";
     proofLine.textContent = proofStatusText(order);
     statusCell.appendChild(proofLine);
+    if (order.status === "pending" && !order.proofUrl) {
+      const retryButton = document.createElement("button");
+      retryButton.className = "link proof-retry";
+      retryButton.type = "button";
+      retryButton.dataset.retryProof = order.id;
+      retryButton.textContent = "补传凭证";
+      statusCell.appendChild(retryButton);
+    }
   });
 }
 
@@ -1873,6 +1881,30 @@ document.querySelector("#confirmDueBtn").addEventListener("click", async () => {
 });
 
 document.body.addEventListener("click", async (event) => {
+  const retryProof = event.target.closest("[data-retry-proof]");
+  if (retryProof) {
+    if (!firebaseUser) return toast("请先使用 Google 登录");
+    const order = state.orders.find((item) => item.id === retryProof.dataset.retryProof && item.userId === currentUser().id);
+    if (!order || order.status !== "pending") return toast("只有待确认订单可以补传凭证");
+    const proofFile = document.querySelector("#paymentInfoForm [name='paymentProof']").files[0];
+    if (!proofFile) return toast("请先在付款资料选择付款证明文件");
+    try {
+      toast("正在补传付款证明...");
+      Object.assign(order, await withTimeout(uploadPaymentProof(proofFile, order.id), 15000, "付款证明上传超时"));
+      await saveState();
+      renderAll();
+      toast("付款证明已补传");
+    } catch (error) {
+      order.proofName = proofFile.name;
+      order.proofStatus = "failed";
+      order.proofError = error.message || "upload failed";
+      await saveState();
+      renderAll();
+      toast(error.message || "付款证明补传失败");
+    }
+    return;
+  }
+
   const buyPlan = event.target.closest("[data-buy-plan]");
   if (buyPlan) {
     if (!firebaseUser) return toast("请先使用 Google 登录");
