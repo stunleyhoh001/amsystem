@@ -253,6 +253,21 @@ async function saveState() {
   }
 }
 
+function firestoreErrorHint(error) {
+  const code = error?.code || error?.name || "unknown";
+  const message = error?.message || "";
+  if (code === "permission-denied") {
+    return "Firestore：保存失败 permission-denied。请先发布最新 firestore.rules，然后回到页面点“测试云端保存”。本次资料已暂存在本地。";
+  }
+  if (code === "storage/unauthorized") {
+    return "Storage：付款证明上传权限不足。请检查 storage.rules 是否已发布；订单资料会先暂存在本地。";
+  }
+  if (code === "unavailable" || message.toLowerCase().includes("network")) {
+    return "Firestore：网络暂时不可用。本次资料已暂存在本地，稍后点“测试云端保存”可重新同步。";
+  }
+  return `Firestore：保存失败 ${code} - ${message}`;
+}
+
 function snapshotDocs(snapshot) {
   return snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
 }
