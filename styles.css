@@ -124,6 +124,12 @@ main { padding: 0 clamp(18px, 4vw, 48px) 40px; }
 .help-text {
   font-size: 13px;
 }
+.muted-line {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 13px;
+}
 .account-card {
   display: grid;
   align-content: center;

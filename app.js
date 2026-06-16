@@ -566,6 +566,8 @@ function createOrder(data, userId, planId, type, status = "paid", createdAt = ne
     proofName: paymentInfo.proofName || "",
     proofPath: paymentInfo.proofPath || "",
     proofUrl: paymentInfo.proofUrl || "",
+    proofStatus: paymentInfo.proofStatus || "none",
+    proofError: paymentInfo.proofError || "",
     createdAt,
   };
   data.orders.push(order);
@@ -764,6 +766,13 @@ function rewardNextDateText(reward) {
   return new Date(reward.confirmAfter).toLocaleDateString("zh-CN");
 }
 
+function proofStatusText(order) {
+  if (order.proofStatus === "uploaded" || order.proofUrl) return "凭证已上传";
+  if (order.proofStatus === "failed") return `凭证上传失败${order.proofError ? `：${order.proofError}` : ""}`;
+  if (order.proofName) return `凭证待补传：${order.proofName}`;
+  return "未上传凭证";
+}
+
 function paymentMethodText(method) {
   return {
     bank: "银行转账",
@@ -784,7 +793,7 @@ async function uploadPaymentProof(file, orderId) {
   const proofRef = storageRef(storage, path);
   await uploadBytes(proofRef, file, { contentType: file.type || "application/octet-stream" });
   const url = await getDownloadURL(proofRef);
-  return { proofName: file.name, proofPath: path, proofUrl: url };
+  return { proofName: file.name, proofPath: path, proofUrl: url, proofStatus: "uploaded", proofError: "" };
 }
 
 async function callConfirmOrderFunction(orderId) {
@@ -1156,7 +1165,8 @@ function renderAdminOrders() {
       ? `<button class="link" data-confirm-order="${order.id}">确认付款</button><button class="link" data-cancel-order="${order.id}">取消订单</button>`
       : "";
     const proofLink = order.proofUrl ? ` / <a class="link" href="${order.proofUrl}" target="_blank" rel="noopener">查看凭证</a>` : "";
-    const paymentText = `${paymentMethodText(order.paymentMethod)} ${order.paymentRef || ""}${order.paymentNote ? ` / ${order.paymentNote}` : ""}${proofLink}`.trim() || "-";
+    const proofText = ` / ${proofStatusText(order)}`;
+    const paymentText = `${paymentMethodText(order.paymentMethod)} ${order.paymentRef || ""}${order.paymentNote ? ` / ${order.paymentNote}` : ""}${proofText}${proofLink}`.trim() || "-";
     return `<tr><td>${order.id}</td><td>${user?.name || "-"}</td><td>${plan?.name || "-"}</td><td>${order.type === "first" ? "首充" : "复购"}</td><td>${money(order.amount)}</td><td>${paymentText}</td><td>${points(order.points)}</td><td><span class="tag ${order.status}">${labelStatus(order.status)}</span></td><td>${new Date(order.createdAt).toLocaleString("zh-CN")}</td><td class="actions">${actions}</td></tr>`;
   }).join("");
   document.querySelector("#adminOrderTable").innerHTML = rows || `<tr><td colspan="10">没有符合条件的订单</td></tr>`;
@@ -1874,6 +1884,8 @@ document.body.addEventListener("click", async (event) => {
       } catch (error) {
         console.warn("Payment proof upload skipped.", error);
         order.proofName = proofFile.name;
+        order.proofStatus = "failed";
+        order.proofError = error.message || "upload failed";
         order.paymentNote = `${order.paymentNote || ""} / 付款证明暂未上传：${error.message || "upload failed"}`.trim();
         toast(error.message || "付款证明上传失败");
       }
