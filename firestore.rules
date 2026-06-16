@@ -162,6 +162,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /amsystemRepeatCreditLogs/{logId} {
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == resource.data.userId);
+      allow write: if isAdmin();
+    }
+
     match /amsystemAdminLogs/{logId} {
       allow read, write: if isAdmin();
     }

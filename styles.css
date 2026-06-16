@@ -24,6 +24,10 @@ button, input, select { font: inherit; }
 h1, h2, p { margin-top: 0; }
 h1 { margin-bottom: 8px; font-size: clamp(28px, 4vw, 44px); }
 h2 { margin-bottom: 12px; font-size: 19px; }
+.subhead {
+  margin: 22px 0 10px;
+  font-size: 16px;
+}
 
 .app-header {
   display: flex;

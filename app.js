@@ -31,6 +31,7 @@ const ORDER_COLLECTION = "amsystemOrders";
 const REWARD_COLLECTION = "amsystemRewards";
 const WITHDRAW_COLLECTION = "amsystemWithdraws";
 const POINT_LOG_COLLECTION = "amsystemPointLogs";
+const REPEAT_CREDIT_LOG_COLLECTION = "amsystemRepeatCreditLogs";
 const ADMIN_LOG_COLLECTION = "amsystemAdminLogs";
 const INVITE_COLLECTION = "amsystemInviteCodes";
 const REFERRAL_COLLECTION = "amsystemReferrals";
@@ -58,6 +59,7 @@ const ordersRef = collection(db, ORDER_COLLECTION);
 const rewardsRef = collection(db, REWARD_COLLECTION);
 const withdrawsRef = collection(db, WITHDRAW_COLLECTION);
 const pointLogsRef = collection(db, POINT_LOG_COLLECTION);
+const repeatCreditLogsRef = collection(db, REPEAT_CREDIT_LOG_COLLECTION);
 const adminLogsRef = collection(db, ADMIN_LOG_COLLECTION);
 const invitesRef = collection(db, INVITE_COLLECTION);
 const referralsRef = collection(db, REFERRAL_COLLECTION);
@@ -117,6 +119,7 @@ function createSeedData() {
     pointLogs: [],
     rewards: [],
     withdraws: [],
+    repeatCreditLogs: [],
     referrals: [],
     adminLogs: [],
   };
@@ -142,6 +145,7 @@ async function loadState() {
         rewards: snapshotDocs(await getDocs(rewardsRef)),
         withdraws: snapshotDocs(await getDocs(withdrawsRef)),
         pointLogs: snapshotDocs(await getDocs(pointLogsRef)),
+        repeatCreditLogs: snapshotDocs(await getDocs(repeatCreditLogsRef)),
         referrals: snapshotDocs(await getDocs(referralsRef)),
         adminLogs: snapshotDocs(await getDocs(adminLogsRef)),
       };
@@ -156,6 +160,7 @@ async function loadState() {
         rewards: snapshotDocs(await getDocs(query(rewardsRef, where("userId", "==", firebaseUser.uid)))),
         withdraws: snapshotDocs(await getDocs(query(withdrawsRef, where("userId", "==", firebaseUser.uid)))),
         pointLogs: snapshotDocs(await getDocs(query(pointLogsRef, where("userId", "==", firebaseUser.uid)))),
+        repeatCreditLogs: snapshotDocs(await getDocs(query(repeatCreditLogsRef, where("userId", "==", firebaseUser.uid)))),
         referrals: snapshotDocs(await getDocs(query(referralsRef, where("referrerId", "==", firebaseUser.uid)))),
       };
       return composeStateFromUserDoc(snapshot, userSnapshot, seeded, records);
@@ -200,6 +205,9 @@ async function saveState() {
           ),
           ...cloudState.pointLogs.map((log) =>
             setDoc(doc(db, POINT_LOG_COLLECTION, log.id), { ...log, updatedAt: serverTimestamp() }, { merge: true })
+          ),
+          ...cloudState.repeatCreditLogs.map((log) =>
+            setDoc(doc(db, REPEAT_CREDIT_LOG_COLLECTION, log.id), { ...log, updatedAt: serverTimestamp() }, { merge: true })
           ),
           ...cloudState.invites.map((invite) =>
             setDoc(doc(db, INVITE_COLLECTION, invite.id), { ...invite, updatedAt: serverTimestamp() }, { merge: true })
@@ -257,6 +265,7 @@ function composeStateFromCloud(systemSnapshot, usersSnapshot, fallback, records 
   const users = [];
   const orders = [...(records.orders || [])];
   const pointLogs = [...(records.pointLogs || [])];
+  const repeatCreditLogs = [...(records.repeatCreditLogs || [])];
   const rewards = [...(records.rewards || [])];
   const withdraws = [...(records.withdraws || [])];
   const referrals = [...(records.referrals || [])];
@@ -266,6 +275,7 @@ function composeStateFromCloud(systemSnapshot, usersSnapshot, fallback, records 
     users.push(normalizeUserDoc(snapshot.id, data));
     if (!records.orders?.length) orders.push(...(Array.isArray(data.orders) ? data.orders : []));
     if (!records.pointLogs?.length) pointLogs.push(...(Array.isArray(data.pointLogs) ? data.pointLogs : []));
+    if (!records.repeatCreditLogs?.length) repeatCreditLogs.push(...(Array.isArray(data.repeatCreditLogs) ? data.repeatCreditLogs : []));
     if (!records.rewards?.length) rewards.push(...(Array.isArray(data.rewards) ? data.rewards : []));
     if (!records.withdraws?.length) withdraws.push(...(Array.isArray(data.withdraws) ? data.withdraws : []));
   });
@@ -276,6 +286,7 @@ function composeStateFromCloud(systemSnapshot, usersSnapshot, fallback, records 
     users: users.length ? users : fallback.users,
     orders: orders.length ? orders : fallback.orders,
     pointLogs: pointLogs.length ? pointLogs : fallback.pointLogs,
+    repeatCreditLogs: repeatCreditLogs.length ? repeatCreditLogs : (fallback.repeatCreditLogs || []),
     rewards: rewards.length ? rewards : fallback.rewards,
     withdraws: withdraws.length ? withdraws : fallback.withdraws,
     referrals: referrals.length ? referrals : fallback.referrals,
@@ -296,6 +307,7 @@ function composeStateFromUserDoc(systemSnapshot, userSnapshot, fallback, records
       users: [],
       orders: records.orders || [],
       pointLogs: records.pointLogs || [],
+      repeatCreditLogs: records.repeatCreditLogs || [],
       rewards: records.rewards || [],
       withdraws: records.withdraws || [],
       referrals: records.referrals || [],
@@ -310,6 +322,7 @@ function composeStateFromUserDoc(systemSnapshot, userSnapshot, fallback, records
     users: [user],
     orders: records.orders?.length ? records.orders : (Array.isArray(data.orders) ? data.orders : []),
     pointLogs: records.pointLogs?.length ? records.pointLogs : (Array.isArray(data.pointLogs) ? data.pointLogs : []),
+    repeatCreditLogs: records.repeatCreditLogs?.length ? records.repeatCreditLogs : (Array.isArray(data.repeatCreditLogs) ? data.repeatCreditLogs : []),
     rewards: records.rewards?.length ? records.rewards : (Array.isArray(data.rewards) ? data.rewards : []),
     withdraws: records.withdraws?.length ? records.withdraws : (Array.isArray(data.withdraws) ? data.withdraws : []),
     referrals: records.referrals?.length ? records.referrals : (Array.isArray(data.referrals) ? data.referrals : []),
@@ -348,6 +361,7 @@ function splitStateForCloud(data) {
     rewards: data.rewards || [],
     withdraws: data.withdraws || [],
     pointLogs: data.pointLogs || [],
+    repeatCreditLogs: data.repeatCreditLogs || [],
     invites: data.users.map(inviteDocForUser).filter((invite) => invite.id),
     referrals: referralDocsForState(data),
   };
@@ -533,7 +547,7 @@ function applyPaidOrder(data, order, paidAt = new Date().toISOString()) {
   user.level = plan.amount >= 580 ? "高级推广用户" : "推广用户";
   data.pointLogs.push({ id: id("log"), userId: user.id, change: plan.points, balance: user.points, source: order.id, note: `${plan.name} 积分发放`, createdAt: paidAt });
   if (order.type === "repeat") {
-    grantRepeatCredits(user, plan, paidAt);
+    grantRepeatCredits(data, user, plan, paidAt);
     createRepeatPoolReward(data, order, user, plan, paidAt);
   } else {
     createFirstReward(data, order, user, plan, paidAt);
@@ -544,7 +558,7 @@ function planRepeatCredits(plan) {
   return Number(plan.repeatCredits ?? 10);
 }
 
-function grantRepeatCredits(user, plan, paidAt) {
+function grantRepeatCredits(data, user, plan, paidAt) {
   const credits = planRepeatCredits(plan);
   if (credits <= 0) return;
   const currentCredits = Number(user.repeatCredits || 0);
@@ -552,6 +566,7 @@ function grantRepeatCredits(user, plan, paidAt) {
   if (!user.repeatCreditQueueAt || currentCredits <= 0) {
     user.repeatCreditQueueAt = paidAt;
   }
+  addRepeatCreditLog(data, user.id, credits, user.repeatCredits, "earned", "", `${plan.name} repeat purchase`, paidAt);
 }
 
 function createFirstReward(data, order, buyer, plan, paidAt = order.createdAt) {
@@ -583,6 +598,7 @@ function createRepeatPoolReward(data, order, buyer, plan, paidAt = order.created
   if (!receiver || rate <= 0) return;
   receiver.repeatCredits = Math.max(Number(receiver.repeatCredits || 0) - 1, 0);
   if (receiver.repeatCredits <= 0) receiver.repeatCreditQueueAt = "";
+  addRepeatCreditLog(data, receiver.id, -1, receiver.repeatCredits, "used", order.id, `Repeat pool reward from ${buyer.name || buyer.account}`, paidAt);
   data.rewards.push({
     id: id("rew"),
     userId: receiver.id,
@@ -814,6 +830,7 @@ function renderAdmin() {
   document.querySelector("#metricWithdraws").textContent = money(state.withdraws.filter((item) => item.status === "pending").reduce((sum, item) => sum + item.amount, 0));
   renderAdminPlans();
   renderAdminUsers();
+  renderRepeatCreditLogs();
   renderAdminOrders();
   renderAdminRewards();
   renderAdminWithdraws();
@@ -840,6 +857,30 @@ function renderAdminUsers() {
     const [statusClass, statusLabel] = packageStatus(user);
     return `<tr><td>${user.name}</td><td>${user.account}</td><td>${user.phone || "-"}</td><td>${user.inviteCode}</td><td>${referrer?.name || "无"}</td><td>${points(user.points)}</td><td><span class="tag ${statusClass}">${statusLabel}</span></td><td>${directReferralCount(user.id)} / ${user.slots || 0}</td><td>${points(user.repeatCredits || 0)}</td><td><span class="tag ${user.frozen ? "frozen" : "active"}">${user.frozen ? "已冻结" : "正常"}</span></td><td><button class="link" data-freeze-user="${user.id}">${user.frozen ? "解冻" : "冻结"}</button></td></tr>`;
   }).join("") || `<tr><td colspan="11">没有符合条件的用户</td></tr>`;
+}
+
+function repeatCreditReasonText(reason) {
+  return {
+    earned: "复购获得",
+    used: "资格扣除",
+    admin: "后台调整",
+  }[reason] || reason || "-";
+}
+
+function renderRepeatCreditLogs() {
+  const table = document.querySelector("#repeatCreditLogTable");
+  if (!table) return;
+  const rows = (state.repeatCreditLogs || [])
+    .slice()
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 20)
+    .map((log) => {
+      const user = findUser(log.userId);
+      const change = Number(log.change || 0);
+      const changeText = `${change > 0 ? "+" : ""}${change}`;
+      return `<tr><td>${new Date(log.createdAt).toLocaleString("zh-CN")}</td><td>${user?.name || log.userId || "-"}</td><td>${changeText}</td><td>${points(log.balance || 0)}</td><td>${repeatCreditReasonText(log.reason)}</td><td>${[log.source, log.note].filter(Boolean).join(" / ") || "-"}</td></tr>`;
+    }).join("");
+  table.innerHTML = rows || `<tr><td colspan="6">暂无复购资格流水</td></tr>`;
 }
 
 function renderAdminOrders() {
@@ -924,6 +965,20 @@ function addAdminLog(action, target, detail = "") {
     target,
     detail,
     createdAt: new Date().toISOString(),
+  });
+}
+
+function addRepeatCreditLog(data, userId, change, balance, reason, source = "", note = "", createdAt = new Date().toISOString()) {
+  if (!Array.isArray(data.repeatCreditLogs)) data.repeatCreditLogs = [];
+  data.repeatCreditLogs.push({
+    id: id("rclog"),
+    userId,
+    change,
+    balance,
+    reason,
+    source,
+    note,
+    createdAt,
   });
 }
 
@@ -1367,6 +1422,29 @@ document.querySelector("#pointsForm").addEventListener("submit", async (event) =
   await saveState();
   renderAll();
   toast("积分已调整");
+});
+
+document.querySelector("#repeatCreditsForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!requireAdmin()) return;
+  const form = new FormData(event.currentTarget);
+  const user = findUser(form.get("userId"));
+  const change = Number(form.get("credits"));
+  if (!user || Number.isNaN(change)) return toast("复购资格调整无效");
+  const before = Number(user.repeatCredits || 0);
+  user.repeatCredits = Math.max(before + change, 0);
+  if (user.repeatCredits > 0 && before <= 0) {
+    user.repeatCreditQueueAt = new Date().toISOString();
+  }
+  if (user.repeatCredits <= 0) {
+    user.repeatCreditQueueAt = "";
+  }
+  addAdminLog("调整复购资格", user.name, `变动 ${change}，当前 ${user.repeatCredits}，备注：${form.get("note").trim()}`);
+  addRepeatCreditLog(state, user.id, user.repeatCredits - before, user.repeatCredits, "admin", "admin", form.get("note").trim());
+  event.currentTarget.reset();
+  await saveState();
+  renderAll();
+  toast("复购资格已调整");
 });
 
 document.querySelector("#withdrawForm").addEventListener("submit", async (event) => {
