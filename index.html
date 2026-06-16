@@ -240,6 +240,12 @@
                   <label>备注<input name="note" required /></label>
                   <button class="button primary" type="submit">修改积分</button>
                 </form>
+                <form id="repeatCreditsForm" class="grid-form compact">
+                  <label>用户<select name="userId" required></select></label>
+                  <label>资格调整<input name="credits" type="number" step="1" required /></label>
+                  <label>备注<input name="note" placeholder="例如：旧用户补资格" required /></label>
+                  <button class="button primary" type="submit">修改复购资格</button>
+                </form>
                 <div class="table-wrap">
                   <table>
                     <thead><tr><th>用户</th><th>账号</th><th>手机</th><th>邀请码</th><th>推荐人</th><th>积分</th><th>配套状态</th><th>名额</th><th>复购资格</th><th>状态</th><th>操作</th></tr></thead>

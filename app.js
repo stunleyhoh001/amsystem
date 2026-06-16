@@ -833,6 +833,7 @@ function renderAdminPlans() {
 function renderAdminUsers() {
   const userOptions = state.users.map((user) => `<option value="${user.id}">${user.name}（${user.inviteCode}）</option>`).join("");
   document.querySelector("#pointsForm [name='userId']").innerHTML = userOptions;
+  document.querySelector("#repeatCreditsForm [name='userId']").innerHTML = userOptions;
   const users = filteredUsers();
   document.querySelector("#adminUserTable").innerHTML = users.map((user) => {
     const referrer = findUser(user.referrerId);
