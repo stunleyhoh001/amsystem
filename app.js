@@ -105,6 +105,41 @@ function readableSyncMessage(message) {
   return text;
 }
 
+function localPendingSyncItems(userId = currentUser()?.id) {
+  if (!userId || !state) return [];
+  const pendingOrders = (state.orders || []).filter((order) => order.userId === userId && order.status === "pending").length;
+  const pendingWithdraws = (state.withdraws || []).filter((withdraw) => withdraw.userId === userId && withdraw.status === "pending").length;
+  const failedProofs = (state.orders || []).filter((order) => order.userId === userId && order.proofStatus === "failed").length;
+  const items = [];
+  if (pendingOrders) items.push(`${pendingOrders} 笔充值订单`);
+  if (pendingWithdraws) items.push(`${pendingWithdraws} 笔提现申请`);
+  if (failedProofs) items.push(`${failedProofs} 个付款凭证待补传`);
+  return items;
+}
+
+function ensureLocalSyncHint() {
+  let hint = document.querySelector("#localSyncHint");
+  if (hint) return hint;
+  const syncStatus = document.querySelector("#syncStatus");
+  if (!syncStatus?.parentNode) return null;
+  hint = document.createElement("p");
+  hint.id = "localSyncHint";
+  hint.className = "help-text warning-text";
+  hint.hidden = true;
+  syncStatus.insertAdjacentElement("afterend", hint);
+  return hint;
+}
+
+function renderLocalSyncHint(user = currentUser()) {
+  const hint = ensureLocalSyncHint();
+  if (!hint) return;
+  const items = user && !cloudAvailable ? localPendingSyncItems(user.id) : [];
+  hint.textContent = items.length
+    ? `本地暂存待同步：${items.join("、")}。发布 Rules 后点“测试云端保存”。`
+    : "";
+  hint.hidden = !hint.textContent;
+}
+
 function futureDate(days) {
   const date = new Date();
   date.setDate(date.getDate() + days);
@@ -920,6 +955,7 @@ function renderMember() {
   document.querySelector("#memberPlanStatus").textContent = statusLabel;
   document.querySelector("#memberPlanStatus").className = `tag ${statusClass}`;
   document.querySelector("#inviteLink").textContent = inviteLink;
+  renderLocalSyncHint(user);
   renderMemberProfile(user);
   ensureStorageTestButton();
   renderMemberPlans(user);
