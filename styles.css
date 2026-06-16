@@ -217,19 +217,19 @@ input:focus, select:focus {
   outline: 3px solid rgba(23, 105, 224, 0.13);
 }
 
-.plan-grid, .rule-grid {
+.plan-grid, .rule-grid, .risk-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
 }
-.plan-card, .rule-card {
+.plan-card, .rule-card, .risk-card {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 16px;
   background: #fff;
 }
-.plan-card strong, .rule-card strong { display: block; margin-bottom: 8px; font-size: 18px; }
-.plan-card span, .rule-card span, .list span { display: block; color: var(--muted); line-height: 1.7; }
+.plan-card strong, .rule-card strong, .risk-card strong { display: block; margin-bottom: 8px; font-size: 18px; }
+.plan-card span, .rule-card span, .risk-card span, .list span { display: block; color: var(--muted); line-height: 1.7; }
 .list { display: grid; gap: 10px; margin-top: 16px; }
 .referral-box {
   border: 1px dashed var(--primary);
@@ -299,6 +299,6 @@ th { color: var(--muted); font-size: 13px; }
 @media (max-width: 720px) {
   .app-header, .panel-head { align-items: stretch; flex-direction: column; }
   .header-actions { align-items: stretch; }
-  .plan-grid, .rule-grid, .mini-grid, .metrics, .grid-form, .grid-form.compact, .filter-bar { grid-template-columns: 1fr; }
+  .plan-grid, .rule-grid, .risk-grid, .mini-grid, .metrics, .grid-form, .grid-form.compact, .filter-bar { grid-template-columns: 1fr; }
   .tabs { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; }
 }

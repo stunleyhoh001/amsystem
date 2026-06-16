@@ -963,6 +963,7 @@ function renderAdmin() {
   renderAdminOrders();
   renderAdminRewards();
   renderAdminWithdraws();
+  renderAdminRiskRules();
   renderAdminLogs();
 }
 
@@ -1141,6 +1142,51 @@ function renderAdminWithdraws() {
     return `<tr><td>${item.id}</td><td>${user?.name || "-"}</td><td>${money(item.amount)}</td><td>${item.method}</td><td>${item.account}</td><td><span class="tag ${item.status}">${labelStatus(item.status)}</span></td><td>${new Date(item.createdAt).toLocaleString("zh-CN")}</td><td class="actions">${item.status === "pending" ? `<button class="link" data-approve-withdraw="${item.id}">通过</button><button class="link" data-reject-withdraw="${item.id}">拒绝</button>` : ""}${item.status === "approved" ? `<button class="link" data-pay-withdraw="${item.id}">标记打款</button>` : ""}</td></tr>`;
   }).join("");
   document.querySelector("#adminWithdrawTable").innerHTML = rows || `<tr><td colspan="8">没有符合条件的提现申请</td></tr>`;
+}
+
+function renderAdminRiskRules() {
+  const target = document.querySelector("#riskRuleCards");
+  if (!target) return;
+  const planCooldowns = state.plans.map((plan) => `${plan.name}: ${planRepeatCooldownHours(plan)} 小时`).join(" / ");
+  target.innerHTML = [
+    {
+      title: "复购冷却",
+      rows: [
+        "复购付款确认后，用户进入冷却期。",
+        `当前配套冷却：${planCooldowns || "暂无配套"}`,
+        "冷却期内不能再次提交复购订单；已有待确认复购订单也不能重复提交。",
+      ],
+    },
+    {
+      title: "复购奖励分期",
+      rows: [
+        `复购资格奖励分 ${REPEAT_RELEASE_DAYS.length} 期释放。`,
+        `释放日：第 ${REPEAT_RELEASE_DAYS.join(" / 第 ")} 天。`,
+        "只有已释放金额会计入用户可提现余额。",
+      ],
+    },
+    {
+      title: "提现触发条件",
+      rows: [
+        `最低提现金额：${money(MIN_WITHDRAW_AMOUNT)}。`,
+        "用户必须账户正常，且拥有有效配套。",
+        "申请金额不能超过当前可提现余额。",
+      ],
+    },
+    {
+      title: "后台人工审核",
+      rows: [
+        "充值订单需要后台确认后才发放积分、资格和奖励。",
+        "奖励先进入待确认或分期释放状态，可取消或冻结。",
+        "提现申请需要后台审核，通过后再标记打款。",
+      ],
+    },
+  ].map((card) => `
+    <article class="risk-card">
+      <strong>${card.title}</strong>
+      ${card.rows.map((row) => `<span>${row}</span>`).join("")}
+    </article>
+  `).join("");
 }
 
 function getSelectValue(selector, fallback) {
@@ -1371,6 +1417,9 @@ function renderAdminLocked() {
   document.querySelector("#adminOrderTable").innerHTML = `<tr><td colspan="10">无管理员权限</td></tr>`;
   document.querySelector("#adminRewardTable").innerHTML = `<tr><td colspan="8">无管理员权限</td></tr>`;
   document.querySelector("#adminWithdrawTable").innerHTML = `<tr><td colspan="8">无管理员权限</td></tr>`;
+  if (document.querySelector("#riskRuleCards")) {
+    document.querySelector("#riskRuleCards").innerHTML = `<article class="risk-card"><strong>后台已锁定</strong><span>请使用管理员 Google 邮箱登录后查看风控规则。</span></article>`;
+  }
   if (document.querySelector("#adminLogTable")) {
     document.querySelector("#adminLogTable").innerHTML = `<tr><td colspan="5">无管理员权限</td></tr>`;
   }

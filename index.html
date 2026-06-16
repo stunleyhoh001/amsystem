@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>一分钟联盟营销系统</title>
-    <link rel="stylesheet" href="./styles.css?v=20260616-3" />
+    <link rel="stylesheet" href="./styles.css?v=20260616-4" />
   </head>
   <body>
     <header class="app-header">
@@ -216,6 +216,7 @@
               <button class="tab" data-tab="adminRewards">奖励审核</button>
               <button class="tab" data-tab="adminWithdraws">提现审核</button>
               <button class="tab" data-tab="adminLogs">操作日志</button>
+              <button class="tab" data-tab="adminRisk">风控规则</button>
             </nav>
 
             <section id="adminUsers" class="tab-panel active">
@@ -377,6 +378,15 @@
               </div>
             </section>
 
+            <section id="adminRisk" class="tab-panel">
+              <div class="panel">
+                <div class="panel-head">
+                  <h2>风控规则</h2>
+                </div>
+                <div class="risk-grid" id="riskRuleCards"></div>
+              </div>
+            </section>
+
             <section id="adminLogs" class="tab-panel">
               <div class="panel">
                 <div class="panel-head">
@@ -416,6 +426,6 @@
     </main>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="./app.js?v=20260616-17"></script>
+    <script type="module" src="./app.js?v=20260616-18"></script>
   </body>
 </html>
