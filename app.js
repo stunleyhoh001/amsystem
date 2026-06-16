@@ -182,8 +182,9 @@ function createSeedData() {
 
 async function loadState() {
   const saved = localStorage.getItem(STORAGE_KEY);
+  const localState = saved ? JSON.parse(saved) : null;
   if (!firebaseUser) {
-    return saved ? JSON.parse(saved) : createSeedData();
+    return localState || createSeedData();
   }
   try {
     const snapshot = await getDoc(systemRef);
@@ -201,7 +202,7 @@ async function loadState() {
         adminLogs: snapshotDocs(await getDocs(adminLogsRef)),
       };
       if (snapshot.exists() || !usersSnapshot.empty) {
-        return composeStateFromCloud(snapshot, usersSnapshot, seeded, records);
+        return mergeLocalPendingState(composeStateFromCloud(snapshot, usersSnapshot, seeded, records), localState, firebaseUser.uid);
       }
     }
     if (firebaseUser) {
@@ -214,7 +215,7 @@ async function loadState() {
         repeatCreditLogs: snapshotDocs(await getDocs(query(repeatCreditLogsRef, where("userId", "==", firebaseUser.uid)))),
         referrals: snapshotDocs(await getDocs(query(referralsRef, where("referrerId", "==", firebaseUser.uid)))),
       };
-      return composeStateFromUserDoc(snapshot, userSnapshot, seeded, records);
+      return mergeLocalPendingState(composeStateFromUserDoc(snapshot, userSnapshot, seeded, records), localState, firebaseUser.uid);
     }
     if (snapshot.exists()) {
       return {
@@ -226,7 +227,7 @@ async function loadState() {
     return seeded;
   } catch (error) {
     console.warn("Firestore unavailable, using local fallback.", error);
-    return saved ? JSON.parse(saved) : createSeedData();
+    return localState || createSeedData();
   }
 }
 
@@ -278,10 +279,10 @@ async function saveState() {
       const userExists = (await getDoc(userRef)).exists();
       await Promise.all([
         setDoc(userRef, { ...userSelfProfileForCloud(user, !userExists), updatedAt: serverTimestamp() }, { merge: true }),
-        ...cloudState.orders.filter((order) => order.userId === firebaseUser.uid).map((order) =>
+        ...cloudState.orders.filter((order) => order.userId === firebaseUser.uid && order.status === "pending").map((order) =>
           setDoc(doc(db, ORDER_COLLECTION, order.id), { ...order, updatedAt: serverTimestamp() }, { merge: true })
         ),
-        ...cloudState.withdraws.filter((withdraw) => withdraw.userId === firebaseUser.uid).map((withdraw) =>
+        ...cloudState.withdraws.filter((withdraw) => withdraw.userId === firebaseUser.uid && withdraw.status === "pending").map((withdraw) =>
           setDoc(doc(db, WITHDRAW_COLLECTION, withdraw.id), { ...withdraw, updatedAt: serverTimestamp() }, { merge: true })
         ),
         ...cloudState.invites.filter((invite) => invite.userId === firebaseUser.uid).map((invite) =>
@@ -319,6 +320,31 @@ function firestoreErrorHint(error) {
 
 function snapshotDocs(snapshot) {
   return snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+}
+
+function mergeById(primary = [], fallback = []) {
+  const seen = new Set(primary.map((item) => item.id));
+  return [
+    ...primary,
+    ...fallback.filter((item) => item?.id && !seen.has(item.id)),
+  ];
+}
+
+function mergeLocalPendingState(cloudState, localState, userId) {
+  if (!cloudState || !localState || !userId) return cloudState;
+  const localPendingOrders = (localState.orders || [])
+    .filter((order) => order.userId === userId && order.status === "pending");
+  const localPendingWithdraws = (localState.withdraws || [])
+    .filter((withdraw) => withdraw.userId === userId && withdraw.status === "pending");
+  const localUser = (localState.users || []).find((user) => user.id === userId);
+  const hasUser = (cloudState.users || []).some((user) => user.id === userId);
+  return {
+    ...cloudState,
+    currentUserId: userId,
+    users: hasUser || !localUser ? cloudState.users : [...(cloudState.users || []), localUser],
+    orders: mergeById(cloudState.orders || [], localPendingOrders),
+    withdraws: mergeById(cloudState.withdraws || [], localPendingWithdraws),
+  };
 }
 
 function composeStateFromCloud(systemSnapshot, usersSnapshot, fallback, records = {}) {
