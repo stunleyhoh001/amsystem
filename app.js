@@ -37,6 +37,7 @@ const INVITE_COLLECTION = "amsystemInviteCodes";
 const REFERRAL_COLLECTION = "amsystemReferrals";
 const CONFIRM_DAYS = 7;
 const REPEAT_RELEASE_DAYS = [7, 14, 30];
+const MIN_WITHDRAW_AMOUNT = 50;
 const ADMIN_EMAILS = [
   "stanleyhoh79@gmail.com",
 ];
@@ -534,6 +535,19 @@ function confirmedAvailable(userId) {
   return Math.max(confirmed - requested, 0);
 }
 
+function withdrawEligibility(user) {
+  const available = confirmedAvailable(user.id);
+  const reasons = [];
+  if (user.frozen) reasons.push("账户已冻结");
+  if (!isActivePackage(user)) reasons.push("需要有效配套");
+  if (available < MIN_WITHDRAW_AMOUNT) reasons.push(`可提现余额需满 ${money(MIN_WITHDRAW_AMOUNT)}`);
+  return {
+    available,
+    eligible: reasons.length === 0,
+    reasons,
+  };
+}
+
 function createOrder(data, userId, planId, type, status = "paid", createdAt = new Date().toISOString(), paymentInfo = {}) {
   const user = data.users.find((item) => item.id === userId);
   const plan = data.plans.find((item) => item.id === planId);
@@ -845,6 +859,15 @@ function renderMemberProfile(user) {
   const accountInput = withdrawForm.querySelector("[name='account']");
   if (methodInput && !methodInput.value) methodInput.value = user.withdrawMethod || "";
   if (accountInput && !accountInput.value) accountInput.value = user.withdrawAccount || "";
+  const eligibility = withdrawEligibility(user);
+  const eligibilityText = document.querySelector("#withdrawEligibilityText");
+  if (eligibilityText) {
+    eligibilityText.textContent = eligibility.eligible
+      ? `提现条件已满足：当前可提现 ${money(eligibility.available)}。`
+      : `提现条件未满足：${eligibility.reasons.join("、")}。当前可提现 ${money(eligibility.available)}。`;
+  }
+  const submitButton = withdrawForm.querySelector("button[type='submit']");
+  if (submitButton) submitButton.disabled = !eligibility.eligible;
 }
 
 function renderMemberPlans(user) {
@@ -1702,6 +1725,10 @@ document.querySelector("#withdrawForm").addEventListener("submit", async (event)
   const amount = Number(form.get("amount"));
   const method = form.get("method").trim() || user.withdrawMethod || "";
   const account = form.get("account").trim() || user.withdrawAccount || "";
+  const eligibility = withdrawEligibility(user);
+  if (!eligibility.eligible) return toast(`暂不能提现：${eligibility.reasons.join("、")}`);
+  if (amount < MIN_WITHDRAW_AMOUNT) return toast(`最低提现金额为 ${money(MIN_WITHDRAW_AMOUNT)}`);
+  if (amount > eligibility.available) return toast("可提现奖励不足");
   if (!method || !account) return toast("请先填写收款方式和收款账号");
   if (amount > confirmedAvailable(user.id)) return toast("可提现奖励不足");
   state.withdraws.push({ id: id("wd"), userId: user.id, amount, method, account, status: "pending", createdAt: new Date().toISOString() });
