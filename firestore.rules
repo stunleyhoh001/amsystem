@@ -78,6 +78,31 @@ service cloud.firestore {
         && request.resource.data.amount == resource.data.amount;
     }
 
+    function ownerCanCreateInvite(code) {
+      return signedIn()
+        && request.auth.uid == request.resource.data.userId
+        && request.resource.data.id == code
+        && request.resource.data.code == code;
+    }
+
+    function ownerCanUpdateInvite(code) {
+      return ownerCanCreateInvite(code)
+        && request.auth.uid == resource.data.userId;
+    }
+
+    function ownerCanCreateReferral() {
+      return signedIn()
+        && request.auth.uid == request.resource.data.inviteeId
+        && request.resource.data.referrerId != request.resource.data.inviteeId;
+    }
+
+    function ownerCanUpdateReferral() {
+      return signedIn()
+        && request.auth.uid == resource.data.inviteeId
+        && request.resource.data.referrerId == resource.data.referrerId
+        && request.resource.data.inviteeId == resource.data.inviteeId;
+    }
+
     match /amsystem/{docId} {
       allow read: if signedIn();
       allow write: if isAdmin();
@@ -101,6 +126,22 @@ service cloud.firestore {
       allow read: if isAdmin() || (signedIn() && request.auth.uid == resource.data.userId);
       allow create: if isAdmin() || ownerCanCreateWithdraw();
       allow update: if isAdmin() || ownerCanUpdateWithdraw();
+      allow delete: if isAdmin();
+    }
+
+    match /amsystemInviteCodes/{code} {
+      allow read: if signedIn();
+      allow create: if isAdmin() || ownerCanCreateInvite(code);
+      allow update: if isAdmin() || ownerCanUpdateInvite(code);
+      allow delete: if isAdmin();
+    }
+
+    match /amsystemReferrals/{referralId} {
+      allow read: if isAdmin()
+        || (signedIn() && request.auth.uid == resource.data.referrerId)
+        || (signedIn() && request.auth.uid == resource.data.inviteeId);
+      allow create: if isAdmin() || ownerCanCreateReferral();
+      allow update: if isAdmin() || ownerCanUpdateReferral();
       allow delete: if isAdmin();
     }
 

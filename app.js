@@ -32,6 +32,8 @@ const REWARD_COLLECTION = "amsystemRewards";
 const WITHDRAW_COLLECTION = "amsystemWithdraws";
 const POINT_LOG_COLLECTION = "amsystemPointLogs";
 const ADMIN_LOG_COLLECTION = "amsystemAdminLogs";
+const INVITE_COLLECTION = "amsystemInviteCodes";
+const REFERRAL_COLLECTION = "amsystemReferrals";
 const CONFIRM_DAYS = 7;
 const ADMIN_EMAILS = [
   "stanleyhoh79@gmail.com",
@@ -57,6 +59,8 @@ const rewardsRef = collection(db, REWARD_COLLECTION);
 const withdrawsRef = collection(db, WITHDRAW_COLLECTION);
 const pointLogsRef = collection(db, POINT_LOG_COLLECTION);
 const adminLogsRef = collection(db, ADMIN_LOG_COLLECTION);
+const invitesRef = collection(db, INVITE_COLLECTION);
+const referralsRef = collection(db, REFERRAL_COLLECTION);
 
 let firebaseReady = false;
 let cloudAvailable = false;
@@ -113,10 +117,12 @@ function createSeedData() {
     pointLogs: [],
     rewards: [],
     withdraws: [],
+    referrals: [],
     adminLogs: [],
   };
   createOrder(data, "u_1002", "plan_rm580", "first", "paid", pastDate(8));
   createOrder(data, "u_1003", "plan_rm180", "first", "paid", pastDate(1));
+  data.referrals = data.users.filter((user) => user.referrerId).map((user) => referralDocForUser(user, data));
   return data;
 }
 
@@ -136,6 +142,7 @@ async function loadState() {
         rewards: snapshotDocs(await getDocs(rewardsRef)),
         withdraws: snapshotDocs(await getDocs(withdrawsRef)),
         pointLogs: snapshotDocs(await getDocs(pointLogsRef)),
+        referrals: snapshotDocs(await getDocs(referralsRef)),
         adminLogs: snapshotDocs(await getDocs(adminLogsRef)),
       };
       if (snapshot.exists() || !usersSnapshot.empty) {
@@ -149,6 +156,7 @@ async function loadState() {
         rewards: snapshotDocs(await getDocs(query(rewardsRef, where("userId", "==", firebaseUser.uid)))),
         withdraws: snapshotDocs(await getDocs(query(withdrawsRef, where("userId", "==", firebaseUser.uid)))),
         pointLogs: snapshotDocs(await getDocs(query(pointLogsRef, where("userId", "==", firebaseUser.uid)))),
+        referrals: snapshotDocs(await getDocs(query(referralsRef, where("referrerId", "==", firebaseUser.uid)))),
       };
       return composeStateFromUserDoc(snapshot, userSnapshot, seeded, records);
     }
@@ -193,6 +201,12 @@ async function saveState() {
           ...cloudState.pointLogs.map((log) =>
             setDoc(doc(db, POINT_LOG_COLLECTION, log.id), { ...log, updatedAt: serverTimestamp() }, { merge: true })
           ),
+          ...cloudState.invites.map((invite) =>
+            setDoc(doc(db, INVITE_COLLECTION, invite.id), { ...invite, updatedAt: serverTimestamp() }, { merge: true })
+          ),
+          ...cloudState.referrals.map((referral) =>
+            setDoc(doc(db, REFERRAL_COLLECTION, referral.id), { ...referral, updatedAt: serverTimestamp() }, { merge: true })
+          ),
           ...(cloudState.adminLogs || []).map((log) =>
             setDoc(doc(db, ADMIN_LOG_COLLECTION, log.id), { ...log, updatedAt: serverTimestamp() }, { merge: true })
           ),
@@ -208,6 +222,12 @@ async function saveState() {
         ),
         ...cloudState.withdraws.filter((withdraw) => withdraw.userId === firebaseUser.uid).map((withdraw) =>
           setDoc(doc(db, WITHDRAW_COLLECTION, withdraw.id), { ...withdraw, updatedAt: serverTimestamp() }, { merge: true })
+        ),
+        ...cloudState.invites.filter((invite) => invite.userId === firebaseUser.uid).map((invite) =>
+          setDoc(doc(db, INVITE_COLLECTION, invite.id), { ...invite, updatedAt: serverTimestamp() }, { merge: true })
+        ),
+        ...cloudState.referrals.filter((referral) => referral.inviteeId === firebaseUser.uid).map((referral) =>
+          setDoc(doc(db, REFERRAL_COLLECTION, referral.id), { ...referral, updatedAt: serverTimestamp() }, { merge: true })
         ),
       ]);
     }
@@ -237,6 +257,7 @@ function composeStateFromCloud(systemSnapshot, usersSnapshot, fallback, records 
   const pointLogs = [...(records.pointLogs || [])];
   const rewards = [...(records.rewards || [])];
   const withdraws = [...(records.withdraws || [])];
+  const referrals = [...(records.referrals || [])];
 
   usersSnapshot.forEach((snapshot) => {
     const data = snapshot.data();
@@ -255,6 +276,7 @@ function composeStateFromCloud(systemSnapshot, usersSnapshot, fallback, records 
     pointLogs: pointLogs.length ? pointLogs : fallback.pointLogs,
     rewards: rewards.length ? rewards : fallback.rewards,
     withdraws: withdraws.length ? withdraws : fallback.withdraws,
+    referrals: referrals.length ? referrals : fallback.referrals,
     adminLogs: records.adminLogs || [],
   };
 }
@@ -274,6 +296,7 @@ function composeStateFromUserDoc(systemSnapshot, userSnapshot, fallback, records
       pointLogs: records.pointLogs || [],
       rewards: records.rewards || [],
       withdraws: records.withdraws || [],
+      referrals: records.referrals || [],
     };
   }
 
@@ -287,6 +310,7 @@ function composeStateFromUserDoc(systemSnapshot, userSnapshot, fallback, records
     pointLogs: records.pointLogs?.length ? records.pointLogs : (Array.isArray(data.pointLogs) ? data.pointLogs : []),
     rewards: records.rewards?.length ? records.rewards : (Array.isArray(data.rewards) ? data.rewards : []),
     withdraws: records.withdraws?.length ? records.withdraws : (Array.isArray(data.withdraws) ? data.withdraws : []),
+    referrals: records.referrals?.length ? records.referrals : (Array.isArray(data.referrals) ? data.referrals : []),
     adminLogs: [],
   };
 }
@@ -301,7 +325,7 @@ function normalizeUserDoc(id, data) {
     photoURL: data.photoURL || "",
     withdrawMethod: data.withdrawMethod || "",
     withdrawAccount: data.withdrawAccount || "",
-    inviteCode: data.inviteCode || `${(data.name || "U").slice(0, 1).toUpperCase()}${id.slice(0, 4)}`,
+    inviteCode: normalizeInviteCode(data.inviteCode || `${(data.name || "U").slice(0, 1).toUpperCase()}${id.slice(0, 4)}`),
     referrerId: data.referrerId || "",
     level: data.level || "普通用户",
     points: Number(data.points || 0),
@@ -320,12 +344,53 @@ function splitStateForCloud(data) {
     rewards: data.rewards || [],
     withdraws: data.withdraws || [],
     pointLogs: data.pointLogs || [],
+    invites: data.users.map(inviteDocForUser).filter((invite) => invite.id),
+    referrals: referralDocsForState(data),
   };
 }
 
 function userProfileForCloud(user) {
   const { orders, rewards, withdraws, pointLogs, ...profile } = user;
   return profile;
+}
+
+function normalizeInviteCode(code) {
+  return String(code || "").trim().toUpperCase();
+}
+
+function inviteDocForUser(user) {
+  const code = normalizeInviteCode(user.inviteCode);
+  return {
+    id: code,
+    code,
+    userId: user.id,
+    name: user.name || "",
+    slots: Number(user.slots || 0),
+    packageUntil: user.packageUntil || "",
+    frozen: Boolean(user.frozen),
+  };
+}
+
+function referralDocForUser(user, data = state) {
+  const referrer = data.users.find((item) => item.id === user.referrerId);
+  return {
+    id: `${user.referrerId}_${user.id}`,
+    referrerId: user.referrerId,
+    referrerName: referrer?.name || "",
+    inviteeId: user.id,
+    inviteeName: user.name || "",
+    inviteeAccount: user.account || "",
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function referralDocsForState(data) {
+  const existing = new Map((data.referrals || []).map((item) => [item.id, item]));
+  data.users.filter((user) => user.referrerId).forEach((user) => {
+    const next = referralDocForUser(user, data);
+    existing.set(next.id, { ...next, ...(existing.get(next.id) || {}) });
+  });
+  return [...existing.values()];
 }
 
 function id(prefix) {
@@ -368,7 +433,13 @@ function isAdmin() {
 }
 
 function directReferralCount(userId, data = state) {
-  return data.users.filter((user) => user.referrerId === userId).length;
+  const referralIds = new Set((data.referrals || [])
+    .filter((referral) => referral.referrerId === userId)
+    .map((referral) => referral.inviteeId));
+  data.users
+    .filter((user) => user.referrerId === userId)
+    .forEach((user) => referralIds.add(user.id));
+  return referralIds.size;
 }
 
 function isActivePackage(user) {
@@ -519,7 +590,7 @@ function upsertFirebaseUser(userCredential) {
       photoURL: googleUser.photoURL || "",
       withdrawMethod: "",
       withdrawAccount: "",
-      inviteCode: `${(googleUser.displayName || "G").slice(0, 1).toUpperCase()}${Math.floor(1000 + Math.random() * 9000)}`,
+      inviteCode: normalizeInviteCode(`${(googleUser.displayName || "G").slice(0, 1).toUpperCase()}${Math.floor(1000 + Math.random() * 9000)}`),
       referrerId: "",
       level: "普通用户",
       points: 0,
@@ -536,6 +607,7 @@ function upsertFirebaseUser(userCredential) {
     user.photoURL = googleUser.photoURL || user.photoURL || "";
     user.withdrawMethod = user.withdrawMethod || "";
     user.withdrawAccount = user.withdrawAccount || "";
+    user.inviteCode = normalizeInviteCode(user.inviteCode);
   }
   state.currentUserId = user.id;
 }
@@ -612,10 +684,19 @@ function renderMemberOrders(user) {
 }
 
 function renderMemberReferrals(user) {
-  const rows = state.users.filter((item) => item.referrerId === user.id).map((item) => {
-    const [statusClass, statusLabel] = packageStatus(item);
-    const sales = state.orders.filter((order) => order.userId === item.id && order.status === "paid").reduce((sum, order) => sum + order.amount, 0);
-    return `<tr><td>${item.name}</td><td>${item.account}</td><td><span class="tag ${statusClass}">${statusLabel}</span></td><td>${money(sales)}</td><td>是</td></tr>`;
+  const usersById = new Map(state.users.map((item) => [item.id, item]));
+  const referrals = new Map();
+  state.users.filter((item) => item.referrerId === user.id).forEach((item) => {
+    referrals.set(item.id, referralDocForUser(item));
+  });
+  (state.referrals || []).filter((item) => item.referrerId === user.id).forEach((item) => {
+    referrals.set(item.inviteeId, item);
+  });
+  const rows = [...referrals.values()].map((referral) => {
+    const invitee = usersById.get(referral.inviteeId);
+    const [statusClass, statusLabel] = invitee ? packageStatus(invitee) : ["neutral", "已绑定"];
+    const sales = state.orders.filter((order) => order.userId === referral.inviteeId && order.status === "paid").reduce((sum, order) => sum + order.amount, 0);
+    return `<tr><td>${invitee?.name || referral.inviteeName || "-"}</td><td>${invitee?.account || referral.inviteeAccount || "-"}</td><td><span class="tag ${statusClass}">${statusLabel}</span></td><td>${money(sales)}</td><td>是</td></tr>`;
   }).join("");
   document.querySelector("#memberReferralTable").innerHTML = rows || `<tr><td colspan="5">暂无直接推荐用户</td></tr>`;
 }
@@ -926,15 +1007,18 @@ document.querySelector("#profileForm").addEventListener("submit", async (event) 
 
 document.querySelector("#registerForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!firebaseUser) return toast("请先使用 Google 登录");
   const user = currentUser();
-  const inviteCode = new FormData(event.currentTarget).get("inviteCode").trim();
+  const inviteCode = normalizeInviteCode(new FormData(event.currentTarget).get("inviteCode"));
   if (!inviteCode) return toast("请输入推荐码");
   if (user.referrerId) return toast("你已经绑定推荐人，不能更换");
-  const referrer = state.users.find((item) => item.inviteCode === inviteCode);
-  if (!referrer) return toast("推荐码不存在");
-  if (referrer.id === user.id) return toast("不能绑定自己");
-  if (directReferralCount(referrer.id) >= (referrer.slots || 0)) return toast("推荐人名额已满");
-  user.referrerId = referrer.id;
+  const inviteSnapshot = await getDoc(doc(db, INVITE_COLLECTION, inviteCode));
+  if (!inviteSnapshot.exists()) return toast("推荐码不存在或尚未同步");
+  const invite = inviteSnapshot.data();
+  if (invite.userId === user.id) return toast("不能绑定自己");
+  if (invite.frozen) return toast("推荐人账号暂不可绑定");
+  user.referrerId = invite.userId;
+  state.referrals = referralDocsForState(state);
   event.currentTarget.reset();
   await saveState();
   renderAll();
