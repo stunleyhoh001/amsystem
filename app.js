@@ -235,6 +235,7 @@ async function saveState() {
   if (firebaseUser) {
     normalizePendingOrderIdsForOwner(firebaseUser.uid);
   }
+  normalizeWithdrawSources();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   if (!firebaseUser) {
     syncMessage = "Firestore：未登录，暂存本地";
@@ -609,6 +610,14 @@ function normalizePendingOrderIdsForOwner(userId) {
   });
 }
 
+function normalizeWithdrawSources() {
+  if (!state) return;
+  state.withdraws = (state.withdraws || []).map((withdraw) => ({
+    ...withdraw,
+    source: withdraw.source || "reward",
+  }));
+}
+
 function money(value) {
   return `RM${Number(value || 0).toLocaleString("en-MY", { maximumFractionDigits: 2 })}`;
 }
@@ -704,6 +713,10 @@ function withdrawEligibility(user) {
     eligible: reasons.length === 0,
     reasons,
   };
+}
+
+function withdrawRuleText(available) {
+  return `规则：充值积分不可提现；只有已确认/已释放的推荐奖励可提现。当前可提现奖励 ${money(available)}。`;
 }
 
 function createOrder(data, userId, planId, type, status = "paid", createdAt = new Date().toISOString(), paymentInfo = {}) {
@@ -1102,6 +1115,8 @@ function renderMember() {
   document.querySelector("#memberName").textContent = `${user.name}（${user.inviteCode}）`;
   document.querySelector("#memberPoints").textContent = points(user.points);
   document.querySelector("#memberConfirmed").textContent = money(confirmedAvailable(user.id));
+  document.querySelector("#memberPoints").closest("span").title = "充值积分不可提现";
+  document.querySelector("#memberConfirmed").closest("span").title = "只有推荐奖励可提现";
   document.querySelector("#memberSlots").textContent = `${Math.max((user.slots || 0) - used, 0)} / ${user.slots || 0}`;
   document.querySelector("#memberRepeatCredits").textContent = points(user.repeatCredits || 0);
   document.querySelector("#memberPlanStatus").textContent = statusLabel;
@@ -1138,8 +1153,8 @@ function renderMemberProfile(user) {
   const eligibilityText = document.querySelector("#withdrawEligibilityText");
   if (eligibilityText) {
     eligibilityText.textContent = eligibility.eligible
-      ? `提现条件已满足：当前可提现 ${money(eligibility.available)}。`
-      : `提现条件未满足：${eligibility.reasons.join("、")}。当前可提现 ${money(eligibility.available)}。`;
+      ? `提现条件已满足。${withdrawRuleText(eligibility.available)}`
+      : `提现条件未满足：${eligibility.reasons.join("、")}。${withdrawRuleText(eligibility.available)}`;
   }
   const submitButton = withdrawForm.querySelector("button[type='submit']");
   if (submitButton) submitButton.disabled = !eligibility.eligible;
@@ -2108,7 +2123,7 @@ document.querySelector("#withdrawForm").addEventListener("submit", async (event)
   if (amount > eligibility.available) return toast("可提现奖励不足");
   if (!method || !account) return toast("请先填写收款方式和收款账号");
   if (amount > confirmedAvailable(user.id)) return toast("可提现奖励不足");
-  state.withdraws.push({ id: id("wd"), userId: user.id, amount, method, account, status: "pending", createdAt: new Date().toISOString() });
+  state.withdraws.push({ id: id("wd"), userId: user.id, amount, method, account, source: "reward", status: "pending", createdAt: new Date().toISOString() });
   event.currentTarget.reset();
   await saveState();
   renderAll();

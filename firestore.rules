@@ -76,6 +76,7 @@ service cloud.firestore {
       return signedIn()
         && request.auth.uid == request.resource.data.userId
         && request.resource.data.status == "pending"
+        && request.resource.data.source == "reward"
         && request.resource.data.amount >= 50
         && get(/databases/$(database)/documents/amsystemUsers/$(request.auth.uid)).data.frozen == false;
     }
@@ -85,7 +86,8 @@ service cloud.firestore {
         && request.auth.uid == resource.data.userId
         && request.resource.data.userId == resource.data.userId
         && request.resource.data.status == resource.data.status
-        && request.resource.data.amount == resource.data.amount;
+        && request.resource.data.amount == resource.data.amount
+        && request.resource.data.source == resource.data.source;
     }
 
     function ownerCanCreateInvite(code) {
