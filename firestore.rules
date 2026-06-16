@@ -32,7 +32,6 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasAny([
           "id",
           "firebaseUid",
-          "inviteCode",
           "points",
           "slots",
           "packageUntil",
@@ -40,7 +39,12 @@ service cloud.firestore {
           "frozen"
         ]) == false
         && (
+          request.resource.data.inviteCode == resource.data.inviteCode
+          || !("inviteCode" in resource.data)
+        )
+        && (
           request.resource.data.referrerId == resource.data.referrerId
+          || !("referrerId" in resource.data)
           || resource.data.referrerId == ""
         );
     }
