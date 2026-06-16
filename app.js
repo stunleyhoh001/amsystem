@@ -107,13 +107,13 @@ function createSeedData() {
   const data = {
     currentUserId: "u_1002",
     plans: [
-      { id: "plan_rm180", name: "RM180 启动配套", amount: 180, points: 18000, slots: 10, repeatCredits: 10, validDays: 30, firstRate: 20, repeatRate: 8 },
-      { id: "plan_rm580", name: "RM580 进阶配套", amount: 580, points: 58000, slots: 35, repeatCredits: 10, validDays: 60, firstRate: 25, repeatRate: 10 },
+      { id: "plan_rm180", name: "RM180 启动配套", amount: 180, points: 18000, slots: 10, repeatCredits: 10, repeatCooldownHours: 24, validDays: 30, firstRate: 20, repeatRate: 8 },
+      { id: "plan_rm580", name: "RM580 进阶配套", amount: 580, points: 58000, slots: 35, repeatCredits: 10, repeatCooldownHours: 24, validDays: 60, firstRate: 25, repeatRate: 10 },
     ],
     users: [
-      { id: "u_1001", name: "李明", account: "liming@example.com", phone: "", withdrawMethod: "", withdrawAccount: "", inviteCode: "LM1001", referrerId: "", level: "推广用户", points: 18000, slots: 10, repeatCredits: 5, repeatCreditQueueAt: pastDate(7), packageUntil: futureDate(20), frozen: false },
-      { id: "u_1002", name: "王芳", account: "13800000002", phone: "", withdrawMethod: "", withdrawAccount: "", inviteCode: "WF1002", referrerId: "u_1001", level: "高级推广用户", points: 58000, slots: 35, repeatCredits: 0, repeatCreditQueueAt: "", packageUntil: futureDate(45), frozen: false },
-      { id: "u_1003", name: "陈杰", account: "chenjie@example.com", phone: "", withdrawMethod: "", withdrawAccount: "", inviteCode: "CJ1003", referrerId: "u_1001", level: "普通用户", points: 0, slots: 0, repeatCredits: 0, repeatCreditQueueAt: "", packageUntil: "", frozen: false },
+      { id: "u_1001", name: "李明", account: "liming@example.com", phone: "", withdrawMethod: "", withdrawAccount: "", inviteCode: "LM1001", referrerId: "", level: "推广用户", points: 18000, slots: 10, repeatCredits: 5, repeatCreditQueueAt: pastDate(7), repeatCooldownUntil: "", packageUntil: futureDate(20), frozen: false },
+      { id: "u_1002", name: "王芳", account: "13800000002", phone: "", withdrawMethod: "", withdrawAccount: "", inviteCode: "WF1002", referrerId: "u_1001", level: "高级推广用户", points: 58000, slots: 35, repeatCredits: 0, repeatCreditQueueAt: "", repeatCooldownUntil: "", packageUntil: futureDate(45), frozen: false },
+      { id: "u_1003", name: "陈杰", account: "chenjie@example.com", phone: "", withdrawMethod: "", withdrawAccount: "", inviteCode: "CJ1003", referrerId: "u_1001", level: "普通用户", points: 0, slots: 0, repeatCredits: 0, repeatCreditQueueAt: "", repeatCooldownUntil: "", packageUntil: "", frozen: false },
     ],
     orders: [],
     pointLogs: [],
@@ -347,6 +347,7 @@ function normalizeUserDoc(id, data) {
     slots: Number(data.slots || 0),
     repeatCredits: Number(data.repeatCredits || 0),
     repeatCreditQueueAt: data.repeatCreditQueueAt || "",
+    repeatCooldownUntil: data.repeatCooldownUntil || "",
     packageUntil: data.packageUntil || "",
     frozen: Boolean(data.frozen),
   };
@@ -392,6 +393,7 @@ function userSelfProfileForCloud(user, includeProtectedDefaults = false) {
       slots: Number(user.slots || 0),
       repeatCredits: Number(user.repeatCredits || 0),
       repeatCreditQueueAt: user.repeatCreditQueueAt || "",
+      repeatCooldownUntil: user.repeatCooldownUntil || "",
       packageUntil: user.packageUntil || "",
       frozen: Boolean(user.frozen),
     });
@@ -459,6 +461,30 @@ function addDays(iso, days) {
   const date = new Date(iso);
   date.setDate(date.getDate() + days);
   return date.toISOString();
+}
+
+function addHours(iso, hours) {
+  const date = new Date(iso);
+  date.setHours(date.getHours() + Number(hours || 0));
+  return date.toISOString();
+}
+
+function planRepeatCooldownHours(plan) {
+  return Number(plan.repeatCooldownHours ?? 24);
+}
+
+function repeatCooldownRemaining(user) {
+  if (!user.repeatCooldownUntil) return 0;
+  return Math.max(new Date(user.repeatCooldownUntil).getTime() - Date.now(), 0);
+}
+
+function repeatCooldownText(user) {
+  const remaining = repeatCooldownRemaining(user);
+  if (!remaining) return "";
+  const minutes = Math.ceil(remaining / 60000);
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  return hours ? `${hours}小时${restMinutes}分钟` : `${restMinutes}分钟`;
 }
 
 function findUser(userId) {
@@ -547,6 +573,7 @@ function applyPaidOrder(data, order, paidAt = new Date().toISOString()) {
   user.level = plan.amount >= 580 ? "高级推广用户" : "推广用户";
   data.pointLogs.push({ id: id("log"), userId: user.id, change: plan.points, balance: user.points, source: order.id, note: `${plan.name} 积分发放`, createdAt: paidAt });
   if (order.type === "repeat") {
+    user.repeatCooldownUntil = addHours(paidAt, planRepeatCooldownHours(plan));
     grantRepeatCredits(data, user, plan, paidAt);
     createRepeatPoolReward(data, order, user, plan, paidAt);
   } else {
@@ -766,7 +793,7 @@ function renderMemberPlans(user) {
       <strong>${plan.name} · ${money(plan.amount)}</strong>
       <span>发放积分：${points(plan.points)}</span>
       <span>推荐权限：${plan.slots} 人 / 有效期：${plan.validDays} 天</span>
-      <span>复购后获得资格：${planRepeatCredits(plan)} 个 / 资格复购奖励：${plan.repeatRate}%</span>
+      <span>复购后获得资格：${planRepeatCredits(plan)} 个 / 冷却：${planRepeatCooldownHours(plan)} 小时 / 资格复购奖励：${plan.repeatRate}%</span>
       <span>首充推荐奖励：${plan.firstRate}%</span>
       <button class="button primary" data-buy-plan="${plan.id}" data-buy-type="${user.packageUntil ? "repeat" : "first"}">申请充值配套</button>
     </article>
@@ -845,6 +872,7 @@ function renderAdmin() {
   document.querySelector("#metricSales").textContent = money(state.orders.filter((order) => order.status === "paid").reduce((sum, order) => sum + order.amount, 0));
   document.querySelector("#metricPendingRewards").textContent = money(state.rewards.filter((reward) => reward.status === "pending").reduce((sum, reward) => sum + reward.amount, 0));
   document.querySelector("#metricWithdraws").textContent = money(state.withdraws.filter((item) => item.status === "pending").reduce((sum, item) => sum + item.amount, 0));
+  ensurePlanCooldownField();
   renderAdminPlans();
   renderAdminUsers();
   renderRepeatCreditLogs();
@@ -854,12 +882,22 @@ function renderAdmin() {
   renderAdminLogs();
 }
 
+function ensurePlanCooldownField() {
+  const form = document.querySelector("#planForm");
+  if (!form || form.querySelector("[name='repeatCooldownHours']")) return;
+  const repeatField = form.querySelector("[name='repeatCredits']")?.closest("label");
+  if (!repeatField) return;
+  const field = document.createElement("label");
+  field.innerHTML = `复购冷却小时<input name="repeatCooldownHours" type="number" min="0" step="1" value="24" required />`;
+  repeatField.insertAdjacentElement("afterend", field);
+}
+
 function renderAdminPlans() {
   document.querySelector("#adminPlanList").innerHTML = state.plans.map((plan) => `
     <article class="plan-card">
       <strong>${plan.name} · ${money(plan.amount)}</strong>
       <span>积分 ${points(plan.points)} / 推荐名额 ${plan.slots} / 复购资格 ${planRepeatCredits(plan)} 个</span>
-      <span>有效期 ${plan.validDays} 天 / 首充 ${plan.firstRate}% / 资格复购 ${plan.repeatRate}%</span>
+      <span>冷却 ${planRepeatCooldownHours(plan)} 小时 / 有效期 ${plan.validDays} 天 / 首充 ${plan.firstRate}% / 资格复购 ${plan.repeatRate}%</span>
     </article>
   `).join("");
 }
@@ -1532,6 +1570,7 @@ document.querySelector("#planForm").addEventListener("submit", async (event) => 
     points: Number(form.get("points")),
     slots: Number(form.get("slots")),
     repeatCredits: Number(form.get("repeatCredits")),
+    repeatCooldownHours: Number(form.get("repeatCooldownHours") || 24),
     validDays: Number(form.get("validDays")),
     firstRate: Number(form.get("firstRate")),
     repeatRate: Number(form.get("repeatRate")),
@@ -1623,7 +1662,14 @@ document.body.addEventListener("click", async (event) => {
       note: paymentForm.get("paymentNote").trim(),
     };
     if (!paymentInfo.ref) return toast("请先填写付款参考号");
-    const order = createOrder(state, currentUser().id, buyPlan.dataset.buyPlan, buyPlan.dataset.buyType, "pending", new Date().toISOString(), paymentInfo);
+    const user = currentUser();
+    if (buyPlan.dataset.buyType === "repeat" && repeatCooldownRemaining(user) > 0) {
+      return toast(`复购冷却中，请 ${repeatCooldownText(user)} 后再申请`);
+    }
+    if (buyPlan.dataset.buyType === "repeat" && state.orders.some((order) => order.userId === user.id && order.type === "repeat" && order.status === "pending")) {
+      return toast("你已有待确认的复购订单，请先等待后台处理");
+    }
+    const order = createOrder(state, user.id, buyPlan.dataset.buyPlan, buyPlan.dataset.buyType, "pending", new Date().toISOString(), paymentInfo);
     const proofFile = document.querySelector("#paymentInfoForm [name='paymentProof']").files[0];
     if (proofFile) {
       try {

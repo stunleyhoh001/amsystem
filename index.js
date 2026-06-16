@@ -25,6 +25,16 @@ function addDays(date, days) {
   return next.toISOString();
 }
 
+function addHours(date, hours) {
+  const next = new Date(date);
+  next.setHours(next.getHours() + Number(hours || 0));
+  return next.toISOString();
+}
+
+function planRepeatCooldownHours(plan) {
+  return Number(plan.repeatCooldownHours ?? 24);
+}
+
 function money(value) {
   return `RM${Number(value || 0).toFixed(2)}`;
 }
@@ -151,6 +161,7 @@ exports.confirmOrder = onCall(async (request) => {
       slots: Math.max(Number(buyer.slots || 0), Number(plan.slots || 0)),
       repeatCredits: nextRepeatCredits,
       repeatCreditQueueAt: buyerQueueAt,
+      repeatCooldownUntil: order.type === "repeat" ? addHours(paidAt, planRepeatCooldownHours(plan)) : (buyer.repeatCooldownUntil || ""),
       packageUntil: addDays(paidAt, Number(plan.validDays || 0)),
       level: Number(plan.amount || 0) >= 580 ? "高级推广用户" : "推广用户",
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
