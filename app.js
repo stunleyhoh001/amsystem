@@ -38,6 +38,7 @@ const REFERRAL_COLLECTION = "amsystemReferrals";
 const CONFIRM_DAYS = 7;
 const REPEAT_RELEASE_DAYS = [7, 14, 30];
 const MIN_WITHDRAW_AMOUNT = 50;
+const PROOF_UPLOAD_TIMEOUT_MS = 60000;
 const ADMIN_EMAILS = [
   "stanleyhoh79@gmail.com",
 ];
@@ -836,6 +837,14 @@ function withTimeout(promise, ms, message) {
       setTimeout(() => reject(new Error(message)), ms);
     }),
   ]);
+}
+
+function uploadErrorMessage(error) {
+  const code = error?.code || "";
+  const message = error?.message || "upload failed";
+  if (code === "storage/unauthorized") return "付款证明上传权限不足，请发布 storage.rules";
+  if (message.includes("超时")) return message;
+  return message;
 }
 
 function toast(message) {
@@ -1920,17 +1929,17 @@ document.body.addEventListener("click", async (event) => {
     if (!proofFile) return toast("请先在付款资料选择付款证明文件");
     try {
       toast("正在补传付款证明...");
-      Object.assign(order, await withTimeout(uploadPaymentProof(proofFile, order.id), 15000, "付款证明上传超时"));
+      Object.assign(order, await withTimeout(uploadPaymentProof(proofFile, order.id), PROOF_UPLOAD_TIMEOUT_MS, "付款证明上传超时，请检查 Firebase Storage 是否已启用"));
       await saveState();
       renderAll();
       toast("付款证明已补传");
     } catch (error) {
       order.proofName = proofFile.name;
       order.proofStatus = "failed";
-      order.proofError = error.message || "upload failed";
+      order.proofError = uploadErrorMessage(error);
       await saveState();
       renderAll();
-      toast(error.message || "付款证明补传失败");
+      toast(uploadErrorMessage(error));
     }
     return;
   }
@@ -1958,14 +1967,14 @@ document.body.addEventListener("click", async (event) => {
     if (proofFile) {
       try {
         toast("正在上传付款证明...");
-        Object.assign(order, await withTimeout(uploadPaymentProof(proofFile, order.id), 15000, "付款证明上传超时"));
+        Object.assign(order, await withTimeout(uploadPaymentProof(proofFile, order.id), PROOF_UPLOAD_TIMEOUT_MS, "付款证明上传超时，请检查 Firebase Storage 是否已启用"));
       } catch (error) {
         console.warn("Payment proof upload skipped.", error);
         order.proofName = proofFile.name;
         order.proofStatus = "failed";
-        order.proofError = error.message || "upload failed";
-        order.paymentNote = `${order.paymentNote || ""} / 付款证明暂未上传：${error.message || "upload failed"}`.trim();
-        toast(error.message || "付款证明上传失败");
+        order.proofError = uploadErrorMessage(error);
+        order.paymentNote = `${order.paymentNote || ""} / 付款证明暂未上传：${uploadErrorMessage(error)}`.trim();
+        toast(uploadErrorMessage(error));
       }
     }
     await saveState();
