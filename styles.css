@@ -147,6 +147,13 @@ main { padding: 0 clamp(18px, 4vw, 48px) 40px; }
 .tabs { margin-bottom: 12px; }
 
 .stack, .grid-form { display: grid; gap: 12px; }
+.filter-bar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.6fr) minmax(160px, 1fr) minmax(160px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 16px;
+}
 .grid-form {
   grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
   align-items: end;
@@ -242,11 +249,11 @@ th { color: var(--muted); font-size: 13px; }
 @media (max-width: 1180px) {
   .member-hero, .layout { grid-template-columns: 1fr; }
   .sidebar { position: static; }
-  .mini-grid, .metrics, .grid-form, .grid-form.compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mini-grid, .metrics, .grid-form, .grid-form.compact, .filter-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 720px) {
   .app-header, .panel-head { align-items: stretch; flex-direction: column; }
   .header-actions { align-items: stretch; }
-  .plan-grid, .rule-grid, .mini-grid, .metrics, .grid-form, .grid-form.compact { grid-template-columns: 1fr; }
+  .plan-grid, .rule-grid, .mini-grid, .metrics, .grid-form, .grid-form.compact, .filter-bar { grid-template-columns: 1fr; }
   .tabs { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; }
 }

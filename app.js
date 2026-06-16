@@ -751,11 +751,12 @@ function renderAdminPlans() {
 function renderAdminUsers() {
   const userOptions = state.users.map((user) => `<option value="${user.id}">${user.name}（${user.inviteCode}）</option>`).join("");
   document.querySelector("#pointsForm [name='userId']").innerHTML = userOptions;
-  document.querySelector("#adminUserTable").innerHTML = state.users.map((user) => {
+  const users = filteredUsers();
+  document.querySelector("#adminUserTable").innerHTML = users.map((user) => {
     const referrer = findUser(user.referrerId);
     const [statusClass, statusLabel] = packageStatus(user);
     return `<tr><td>${user.name}</td><td>${user.account}</td><td>${user.phone || "-"}</td><td>${user.inviteCode}</td><td>${referrer?.name || "无"}</td><td>${points(user.points)}</td><td><span class="tag ${statusClass}">${statusLabel}</span></td><td>${directReferralCount(user.id)} / ${user.slots || 0}</td><td><span class="tag ${user.frozen ? "frozen" : "active"}">${user.frozen ? "已冻结" : "正常"}</span></td><td><button class="link" data-freeze-user="${user.id}">${user.frozen ? "解冻" : "冻结"}</button></td></tr>`;
-  }).join("");
+  }).join("") || `<tr><td colspan="10">没有符合条件的用户</td></tr>`;
 }
 
 function renderAdminOrders() {
@@ -794,6 +795,10 @@ function renderAdminWithdraws() {
 
 function getSelectValue(selector, fallback) {
   return document.querySelector(selector)?.value || fallback;
+}
+
+function getInputValue(selector) {
+  return document.querySelector(selector)?.value.trim() || "";
 }
 
 function renderAdminLogs() {
@@ -845,6 +850,32 @@ function downloadCsv(filename, headers, rows) {
 function filteredOrders() {
   const statusFilter = getSelectValue("#orderStatusFilter", "all");
   return state.orders.filter((order) => statusFilter === "all" || order.status === statusFilter);
+}
+
+function filteredUsers() {
+  const keyword = getInputValue("#userSearchInput").toLowerCase();
+  const packageFilter = getSelectValue("#userPackageFilter", "all");
+  const accountFilter = getSelectValue("#userAccountFilter", "all");
+
+  return state.users.filter((user) => {
+    const referrer = findUser(user.referrerId);
+    const searchable = [
+      user.name,
+      user.account,
+      user.phone,
+      user.inviteCode,
+      referrer?.name,
+      referrer?.account,
+    ].join(" ").toLowerCase();
+    const matchesKeyword = !keyword || searchable.includes(keyword);
+    const matchesPackage = packageFilter === "all"
+      || (packageFilter === "active" && isActivePackage(user))
+      || (packageFilter === "expired" && !isActivePackage(user));
+    const matchesAccount = accountFilter === "all"
+      || (accountFilter === "normal" && !user.frozen)
+      || (accountFilter === "frozen" && user.frozen);
+    return matchesKeyword && matchesPackage && matchesAccount;
+  });
 }
 
 function filteredRewards() {
@@ -926,8 +957,20 @@ document.querySelectorAll(".tabs").forEach((tabs) => {
   });
 });
 
-["#orderStatusFilter", "#rewardStatusFilter", "#withdrawStatusFilter"].forEach((selector) => {
+["#orderStatusFilter", "#rewardStatusFilter", "#withdrawStatusFilter", "#userPackageFilter", "#userAccountFilter"].forEach((selector) => {
   document.querySelector(selector)?.addEventListener("change", renderAll);
+});
+
+document.querySelector("#userSearchInput")?.addEventListener("input", renderAll);
+
+document.querySelector("#clearUserFiltersBtn")?.addEventListener("click", () => {
+  const searchInput = document.querySelector("#userSearchInput");
+  const packageFilter = document.querySelector("#userPackageFilter");
+  const accountFilter = document.querySelector("#userAccountFilter");
+  if (searchInput) searchInput.value = "";
+  if (packageFilter) packageFilter.value = "all";
+  if (accountFilter) accountFilter.value = "all";
+  renderAll();
 });
 
 document.querySelector("#firebaseLoginBtn").addEventListener("click", async () => {
@@ -950,6 +993,31 @@ document.querySelector("#testFirestoreBtn").addEventListener("click", async () =
   state.lastSyncTestAt = new Date().toISOString();
   await saveState();
   renderAll();
+});
+
+document.querySelector("#exportUsersBtn")?.addEventListener("click", () => {
+  if (!requireAdmin()) return;
+  downloadCsv(
+    `amsystem-users-${new Date().toISOString().slice(0, 10)}.csv`,
+    ["用户ID", "姓名", "账号", "手机", "邀请码", "推荐人", "积分", "推荐名额", "已用名额", "配套状态", "账号状态"],
+    filteredUsers().map((user) => {
+      const referrer = findUser(user.referrerId);
+      const [, statusLabel] = packageStatus(user);
+      return [
+        user.id,
+        user.name,
+        user.account,
+        user.phone || "",
+        user.inviteCode,
+        referrer?.name || "",
+        user.points,
+        user.slots || 0,
+        directReferralCount(user.id),
+        statusLabel,
+        user.frozen ? "已冻结" : "正常",
+      ];
+    })
+  );
 });
 
 document.querySelector("#exportOrdersBtn")?.addEventListener("click", () => {

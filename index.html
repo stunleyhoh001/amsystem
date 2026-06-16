@@ -208,7 +208,30 @@
 
             <section id="adminUsers" class="tab-panel active">
               <div class="panel">
-                <div class="panel-head"><h2>用户管理</h2></div>
+                <div class="panel-head">
+                  <h2>用户管理</h2>
+                  <div class="actions">
+                    <button id="exportUsersBtn" class="button ghost" type="button">导出用户</button>
+                  </div>
+                </div>
+                <div class="filter-bar">
+                  <label>搜索用户<input id="userSearchInput" placeholder="姓名 / 账号 / 手机 / 邀请码 / 推荐人" /></label>
+                  <label>配套状态
+                    <select id="userPackageFilter">
+                      <option value="all">全部配套</option>
+                      <option value="active">有效配套</option>
+                      <option value="expired">未开通/已过期</option>
+                    </select>
+                  </label>
+                  <label>账号状态
+                    <select id="userAccountFilter">
+                      <option value="all">全部账号</option>
+                      <option value="normal">正常</option>
+                      <option value="frozen">已冻结</option>
+                    </select>
+                  </label>
+                  <button id="clearUserFiltersBtn" class="button ghost" type="button">清除筛选</button>
+                </div>
                 <form id="pointsForm" class="grid-form compact">
                   <label>用户<select name="userId" required></select></label>
                   <label>积分调整<input name="points" type="number" step="1" required /></label>
@@ -313,6 +336,6 @@
     </main>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="./app.js?v=20260616-2"></script>
+    <script type="module" src="./app.js?v=20260616-3"></script>
   </body>
 </html>
