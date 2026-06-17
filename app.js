@@ -739,7 +739,7 @@ function withdrawEligibility(user) {
 }
 
 function withdrawRuleText(available) {
-  return `规则：充值积分不可提现；只有已确认/已释放的推荐奖励可提现。当前可提现奖励 ${money(available)}。`;
+  return `规则：充值积分不可提现；只有已确认/已释放的首充推荐奖励和复购奖励可提现。当前可提现奖励 ${money(available)}。`;
 }
 
 function createOrder(data, userId, planId, type, status = "paid", createdAt = new Date().toISOString(), paymentInfo = {}) {
@@ -915,7 +915,9 @@ function orderConfirmPreview(order) {
     const reward = +(order.amount * (Number(plan.repeatRate || 0) / 100)).toFixed(2);
     lines.push(`复购资格：买家 +${planRepeatCredits(plan)} 个`);
     lines.push(`复购冷却：${planRepeatCooldownHours(plan)} 小时`);
-    lines.push(receiver ? `资格池奖励：${receiver.name} 将扣 1 个资格，奖励 ${money(reward)} 分 ${REPEAT_RELEASE_DAYS.length} 期释放` : "资格池奖励：目前没有可接收资格池奖励的用户");
+    lines.push(receiver
+      ? `资格池接收人：${receiver.name} / 当前资格 ${receiver.repeatCredits} 个，将扣 1 个，奖励 ${money(reward)} 分 ${REPEAT_RELEASE_DAYS.length} 期释放`
+      : "资格池接收人：暂无，当前复购只给买家增加资格，不产生资格池奖励");
   } else {
     const referrer = findUser(user.referrerId);
     const reward = +(order.amount * (Number(plan.firstRate || 0) / 100)).toFixed(2);
@@ -1139,7 +1141,7 @@ function renderMember() {
   document.querySelector("#memberPoints").textContent = points(user.points);
   document.querySelector("#memberConfirmed").textContent = money(confirmedAvailable(user.id));
   document.querySelector("#memberPoints").closest("span").title = "充值积分不可提现";
-  document.querySelector("#memberConfirmed").closest("span").title = "只有推荐奖励可提现";
+  document.querySelector("#memberConfirmed").closest("span").title = "首充推荐奖励和复购奖励可提现";
   document.querySelector("#memberSlots").textContent = `${Math.max((user.slots || 0) - used, 0)} / ${user.slots || 0}`;
   document.querySelector("#memberRepeatCredits").textContent = points(user.repeatCredits || 0);
   document.querySelector("#memberPlanStatus").textContent = statusLabel;
@@ -1539,6 +1541,14 @@ function renderAdminRiskRules() {
         `复购资格奖励分 ${REPEAT_RELEASE_DAYS.length} 期释放。`,
         `释放日：第 ${REPEAT_RELEASE_DAYS.join(" / 第 ")} 天。`,
         "只有已释放金额会计入用户可提现余额。",
+      ],
+    },
+    {
+      title: "资格池派发规则",
+      rows: [
+        "用户复购后获得资格，但不会接收自己这笔复购的资格池奖励。",
+        "系统优先派发给资格池中排队最早且未冻结的用户。",
+        "派发成功后接收人扣 1 个复购资格。",
       ],
     },
     {
