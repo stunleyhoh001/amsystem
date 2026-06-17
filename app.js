@@ -25,7 +25,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260617-41";
+const APP_VERSION = "20260617-42";
 const SYSTEM_DOC_PATH = ["amsystem", "main"];
 const USER_COLLECTION = "amsystemUsers";
 const ORDER_COLLECTION = "amsystemOrders";
@@ -1680,7 +1680,7 @@ function adminTodoItems() {
       detail: dueRewards.length ? `${dueRewards.length} 笔奖励已到期可确认/释放。` : pendingRewards.length ? `${pendingRewards.length} 笔奖励仍在等待或分期中。` : "没有待处理奖励。",
       action: "到奖励审核处理",
       tab: "adminRewards",
-      focus: "pendingRewards",
+      focus: dueRewards.length ? "dueRewards" : "pendingRewards",
     },
     {
       title: "提现待审核",
@@ -1754,7 +1754,14 @@ function renderAdminTabBadges() {
 
 function ensureRewardStatusOptions() {
   const select = document.querySelector("#rewardStatusFilter");
-  if (!select || select.querySelector("option[value='releasing']")) return;
+  if (!select) return;
+  if (!select.querySelector("option[value='due']")) {
+    const dueOption = document.createElement("option");
+    dueOption.value = "due";
+    dueOption.textContent = "到期可处理";
+    select.querySelector("option[value='pending']")?.insertAdjacentElement("beforebegin", dueOption);
+  }
+  if (select.querySelector("option[value='releasing']")) return;
   const option = document.createElement("option");
   option.value = "releasing";
   option.textContent = "分期释放中";
@@ -2352,7 +2359,10 @@ function filteredRewards() {
       sourceUser?.phone,
     ].join(" ").toLowerCase();
     const matchesKeyword = !keyword || searchable.includes(keyword);
-    const matchesStatus = statusFilter === "all" || reward.status === statusFilter;
+    const isDue = ["pending", "releasing"].includes(reward.status) && new Date(reward.confirmAfter) <= new Date();
+    const matchesStatus = statusFilter === "all"
+      || reward.status === statusFilter
+      || (statusFilter === "due" && isDue);
     const matchesType = typeFilter === "all" || reward.type === typeFilter;
     return matchesKeyword && matchesStatus && matchesType;
   });
@@ -2506,6 +2516,11 @@ function applyTodoFocus(focus) {
   }
   if (focus === "pendingRewards") {
     setValue("#rewardStatusFilter", "pending");
+    setValue("#rewardTypeFilter", "all");
+    setValue("#rewardSearchInput", "");
+  }
+  if (focus === "dueRewards") {
+    setValue("#rewardStatusFilter", "due");
     setValue("#rewardTypeFilter", "all");
     setValue("#rewardSearchInput", "");
   }
