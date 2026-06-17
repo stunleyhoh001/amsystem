@@ -25,7 +25,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260617-44";
+const APP_VERSION = "20260617-45";
 const WITHDRAW_COOLDOWN_HOURS = 24;
 const SYSTEM_DOC_PATH = ["amsystem", "main"];
 const USER_COLLECTION = "amsystemUsers";
@@ -839,6 +839,30 @@ function duplicateProofName(fileName, userId = "") {
   );
 }
 
+function duplicateOrderRisks(data = state) {
+  const risks = [];
+  const seenRefs = new Map();
+  const seenProofs = new Map();
+  (data.orders || [])
+    .filter((order) => order.status !== "cancelled")
+    .forEach((order) => {
+      const refKey = `${order.userId}:${String(order.paymentRef || "").trim().toLowerCase()}`;
+      if (order.paymentRef && seenRefs.has(refKey)) {
+        risks.push(`重复付款参考号：${order.paymentRef}（${seenRefs.get(refKey)} / ${order.id}）`);
+      } else if (order.paymentRef) {
+        seenRefs.set(refKey, order.id);
+      }
+
+      const proofKey = `${order.userId}:${String(order.proofName || "").trim().toLowerCase()}`;
+      if (order.proofName && seenProofs.has(proofKey)) {
+        risks.push(`重复付款凭证文件名：${order.proofName}（${seenProofs.get(proofKey)} / ${order.id}）`);
+      } else if (order.proofName) {
+        seenProofs.set(proofKey, order.id);
+      }
+    });
+  return risks;
+}
+
 function dataIntegrityIssues(data = state) {
   const issues = [];
   const users = data.users || [];
@@ -848,6 +872,7 @@ function dataIntegrityIssues(data = state) {
   const usersById = new Map(users.map((user) => [user.id, user]));
   const ordersById = new Map(orders.map((order) => [order.id, order]));
   const inviteCodes = new Map();
+  issues.push(...duplicateOrderRisks(data));
 
   users.forEach((user) => {
     const code = normalizeInviteCode(user.inviteCode);
@@ -1690,6 +1715,7 @@ function adminTodoItems() {
   );
   const pendingRewards = (state.rewards || []).filter((reward) => ["pending", "releasing"].includes(reward.status));
   const pendingWithdraws = (state.withdraws || []).filter((withdraw) => withdraw.status === "pending");
+  const duplicateRisks = duplicateOrderRisks(state);
   const integrityIssues = dataIntegrityIssues(state);
   const checks = readinessChecks();
   const failedChecks = checks.filter((check) => !check.ok);
@@ -1712,6 +1738,15 @@ function adminTodoItems() {
       action: "到订单管理查看",
       tab: "adminOrders",
       focus: "failedProofs",
+    },
+    {
+      title: "重复提交风险",
+      count: duplicateRisks.length,
+      level: duplicateRisks.length ? "danger" : "ok",
+      detail: duplicateRisks.length ? duplicateRisks.slice(0, 2).join("；") : "没有发现重复付款参考号或重复凭证名。",
+      action: "到风控规则查看",
+      tab: "adminRisk",
+      focus: "duplicateOrders",
     },
     {
       title: "奖励待处理",
@@ -2148,6 +2183,14 @@ function renderAdminRiskRules() {
         "用户复购后获得资格，但不会接收自己这笔复购的资格池奖励。",
         "系统优先派发给资格池中排队最早且未冻结的用户。",
         "派发成功后接收人扣 1 个复购资格。",
+      ],
+    },
+    {
+      title: "防重复提交",
+      rows: [
+        "用户重复使用同一付款参考号时会收到确认提醒。",
+        "用户重复上传同名付款凭证时会收到确认提醒。",
+        "后台自检会标记重复付款参考号和重复凭证文件名。",
       ],
     },
     {
