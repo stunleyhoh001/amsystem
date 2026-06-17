@@ -25,7 +25,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260617-28";
+const APP_VERSION = "20260617-29";
 const SYSTEM_DOC_PATH = ["amsystem", "main"];
 const USER_COLLECTION = "amsystemUsers";
 const ORDER_COLLECTION = "amsystemOrders";
@@ -1084,7 +1084,10 @@ function withdrawDetailText(withdraw) {
     `状态：${labelStatus(withdraw.status)}`,
     `收款方式：${withdraw.method || "-"}`,
     `收款账号：${withdraw.account || "-"}`,
+    `审核备注：${withdraw.reviewNote || "-"}`,
     `提交时间：${new Date(withdraw.createdAt).toLocaleString("zh-CN")}`,
+    `审核时间：${withdraw.reviewedAt ? new Date(withdraw.reviewedAt).toLocaleString("zh-CN") : "-"}`,
+    `打款时间：${withdraw.paidAt ? new Date(withdraw.paidAt).toLocaleString("zh-CN") : "-"}`,
     "",
     "当前奖励提现组成：",
     `首充奖励可提现：${money(breakdown.first)}`,
@@ -2372,10 +2375,10 @@ document.querySelector("#exportWithdrawsBtn")?.addEventListener("click", () => {
   if (!requireAdmin()) return;
   downloadCsv(
     `amsystem-withdraws-${new Date().toISOString().slice(0, 10)}.csv`,
-    ["提现ID", "用户", "金额", "来源", "方式", "账号", "状态", "时间"],
+    ["提现ID", "用户", "金额", "来源", "方式", "账号", "状态", "审核备注", "申请时间", "审核时间", "打款时间"],
     filteredWithdraws().map((item) => {
       const user = findUser(item.userId);
-      return [item.id, user?.name || "", item.amount, item.source === "reward" ? "奖励提现" : item.source || "", item.method, item.account, labelStatus(item.status), item.createdAt];
+      return [item.id, user?.name || "", item.amount, item.source === "reward" ? "奖励提现" : item.source || "", item.method, item.account, labelStatus(item.status), item.reviewNote || "", item.createdAt, item.reviewedAt || "", item.paidAt || ""];
     })
   );
 });
@@ -2759,10 +2762,23 @@ document.body.addEventListener("click", async (event) => {
     if (!requireAdmin()) return;
     const withdrawId = withdrawAction.dataset.approveWithdraw || withdrawAction.dataset.rejectWithdraw || withdrawAction.dataset.payWithdraw;
     const withdraw = state.withdraws.find((item) => item.id === withdrawId);
-    if (withdrawAction.dataset.approveWithdraw) withdraw.status = "approved";
-    if (withdrawAction.dataset.rejectWithdraw) withdraw.status = "rejected";
-    if (withdrawAction.dataset.payWithdraw) withdraw.status = "paidout";
-    addAdminLog("更新提现状态", withdraw.id, `${withdraw.status} / ${money(withdraw.amount)}`);
+    const actionLabel = withdrawAction.dataset.approveWithdraw ? "通过" : withdrawAction.dataset.rejectWithdraw ? "拒绝" : "标记打款";
+    const note = window.prompt(`请输入提现${actionLabel}备注（可留空）`, withdraw.reviewNote || "");
+    if (note === null) return;
+    if (withdrawAction.dataset.approveWithdraw) {
+      withdraw.status = "approved";
+      withdraw.reviewedAt = new Date().toISOString();
+    }
+    if (withdrawAction.dataset.rejectWithdraw) {
+      withdraw.status = "rejected";
+      withdraw.reviewedAt = new Date().toISOString();
+    }
+    if (withdrawAction.dataset.payWithdraw) {
+      withdraw.status = "paidout";
+      withdraw.paidAt = new Date().toISOString();
+    }
+    withdraw.reviewNote = note.trim();
+    addAdminLog("更新提现状态", withdraw.id, `${actionLabel} / ${money(withdraw.amount)} / ${withdraw.reviewNote || "无备注"}`);
     await saveState();
     renderAll();
     toast("提现状态已更新");
