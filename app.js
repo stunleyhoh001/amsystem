@@ -25,7 +25,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260617-22";
+const APP_VERSION = "20260617-23";
 const SYSTEM_DOC_PATH = ["amsystem", "main"];
 const USER_COLLECTION = "amsystemUsers";
 const ORDER_COLLECTION = "amsystemOrders";
@@ -979,6 +979,7 @@ function orderConfirmPreview(order) {
     `确认订单：${order.id}`,
     `用户：${user.name} / ${user.account}`,
     `配套：${plan.name}，金额 ${money(order.amount)}`,
+    `处理类型：${previewType === "first" ? "首充" : "复购"}`,
     `积分：+${points(plan.points)}`,
   ];
   if (previewType === "repeat") {
@@ -1594,6 +1595,10 @@ function renderAdminOrders() {
   const rows = orders.slice().reverse().map((order) => {
     const user = findUser(order.userId);
     const plan = findPlan(order.planId);
+    const resolvedType = order.status === "pending" ? actualOrderType(state, order.userId, order.id) : order.type;
+    const typeWarning = order.status === "pending" && order.type !== resolvedType
+      ? ` <span class="tag warning">将按${resolvedType === "first" ? "首充" : "复购"}确认</span>`
+      : "";
     const actions = order.status === "pending"
       ? `<button class="link" data-confirm-order="${order.id}">确认付款</button><button class="link" data-cancel-order="${order.id}">取消订单</button>`
       : "";
@@ -1601,7 +1606,7 @@ function renderAdminOrders() {
     const proofLink = proofHref ? ` / <a class="link" href="${proofHref}" target="_blank" rel="noopener">查看凭证</a>` : "";
     const proofText = ` / ${proofStatusText(order)}`;
     const paymentText = `${paymentMethodText(order.paymentMethod)} ${order.paymentRef || ""}${order.paymentNote ? ` / ${order.paymentNote}` : ""}${proofText}${proofLink}`.trim() || "-";
-    return `<tr><td>${order.id}</td><td>${user?.name || "-"}</td><td>${plan?.name || "-"}</td><td>${order.type === "first" ? "首充" : "复购"}</td><td>${money(order.amount)}</td><td>${paymentText}</td><td>${points(order.points)}</td><td><span class="tag ${order.status}">${labelStatus(order.status)}</span></td><td>${new Date(order.createdAt).toLocaleString("zh-CN")}</td><td class="actions">${actions}</td></tr>`;
+    return `<tr><td>${order.id}</td><td>${user?.name || "-"}</td><td>${plan?.name || "-"}</td><td>${resolvedType === "first" ? "首充" : "复购"}${typeWarning}</td><td>${money(order.amount)}</td><td>${paymentText}</td><td>${points(order.points)}</td><td><span class="tag ${order.status}">${labelStatus(order.status)}</span></td><td>${new Date(order.createdAt).toLocaleString("zh-CN")}</td><td class="actions">${actions}</td></tr>`;
   }).join("");
   document.querySelector("#adminOrderTable").innerHTML = rows || `<tr><td colspan="10">没有符合条件的订单</td></tr>`;
 }
