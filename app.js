@@ -529,6 +529,25 @@ function normalizeInviteCode(code) {
   return String(code || "").trim().toUpperCase();
 }
 
+function inviteCodeFromInput(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw, location.origin);
+    const ref = parsed.searchParams.get("ref");
+    if (ref) return normalizeInviteCode(ref);
+  } catch (error) {
+    // Plain invite codes are handled below.
+  }
+  const refMatch = raw.match(/[?&]ref=([^&#]+)/i);
+  if (refMatch) return normalizeInviteCode(decodeURIComponent(refMatch[1]));
+  return normalizeInviteCode(raw);
+}
+
+function currentUrlInviteCode() {
+  return inviteCodeFromInput(new URLSearchParams(location.search).get("ref"));
+}
+
 function inviteDocForUser(user) {
   const code = normalizeInviteCode(user.inviteCode);
   return {
@@ -1147,6 +1166,10 @@ function renderMember() {
   document.querySelector("#memberPlanStatus").textContent = statusLabel;
   document.querySelector("#memberPlanStatus").className = `tag ${statusClass}`;
   document.querySelector("#inviteLink").textContent = inviteLink;
+  renderInviteCodeBox(user);
+  const refInput = document.querySelector("#registerForm [name='inviteCode']");
+  const urlRef = currentUrlInviteCode();
+  if (refInput && urlRef && !refInput.value && urlRef !== user.inviteCode) refInput.value = urlRef;
   renderLocalSyncHint(user);
   renderMemberProfile(user);
   ensureStorageTestButton();
@@ -1184,6 +1207,19 @@ function renderMemberProfile(user) {
   const submitButton = withdrawForm.querySelector("button[type='submit']");
   if (submitButton) submitButton.disabled = !eligibility.eligible;
   renderWithdrawBreakdown(user);
+}
+
+function renderInviteCodeBox(user) {
+  const inviteLinkBox = document.querySelector("#inviteLink");
+  if (!inviteLinkBox?.parentNode) return;
+  let codeBox = document.querySelector("#inviteCodeBox");
+  if (!codeBox) {
+    codeBox = document.createElement("div");
+    codeBox.id = "inviteCodeBox";
+    codeBox.className = "referral-code-box";
+    inviteLinkBox.insertAdjacentElement("beforebegin", codeBox);
+  }
+  codeBox.innerHTML = `<span>我的推荐码</span><strong>${user.inviteCode}</strong><small>朋友也可以直接输入这个推荐码绑定。</small>`;
 }
 
 function ensureWithdrawBreakdownBox() {
@@ -1933,6 +1969,7 @@ document.querySelector("#clearLogFiltersBtn")?.addEventListener("click", () => {
 document.querySelector("#firebaseLoginBtn").addEventListener("click", async () => {
   try {
     const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: "select_account" });
     await signInWithPopup(auth, provider);
   } catch (error) {
     console.error(error);
@@ -2091,7 +2128,7 @@ document.querySelector("#registerForm").addEventListener("submit", async (event)
   event.preventDefault();
   if (!firebaseUser) return toast("请先使用 Google 登录");
   const user = currentUser();
-  const inviteCode = normalizeInviteCode(new FormData(event.currentTarget).get("inviteCode"));
+  const inviteCode = inviteCodeFromInput(new FormData(event.currentTarget).get("inviteCode"));
   if (!inviteCode) return toast("请输入推荐码");
   if (user.referrerId) return toast("你已经绑定推荐人，不能更换");
   const inviteSnapshot = await getDoc(doc(db, INVITE_COLLECTION, inviteCode));
