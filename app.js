@@ -25,7 +25,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260617-31";
+const APP_VERSION = "20260617-33";
 const SYSTEM_DOC_PATH = ["amsystem", "main"];
 const USER_COLLECTION = "amsystemUsers";
 const ORDER_COLLECTION = "amsystemOrders";
@@ -1842,11 +1842,72 @@ function renderAdminWithdraws() {
   document.querySelector("#adminWithdrawTable").innerHTML = rows || `<tr><td colspan="9">没有符合条件的提现申请</td></tr>`;
 }
 
+function readinessChecks() {
+  const activePlans = (state.plans || []).filter((plan) => plan.active);
+  const users = state.users || [];
+  const paidOrders = (state.orders || []).filter((order) => order.status === "paid");
+  const adminUsers = users.filter((user) => ADMIN_EMAILS.includes(user.email));
+  const missingPaymentUsers = users.filter((user) => !user.payoutMethod || !user.payoutAccount);
+  const pendingOrders = (state.orders || []).filter((order) => order.status === "pending");
+  const pendingWithdraws = (state.withdraws || []).filter((withdraw) => withdraw.status === "pending");
+  const pendingRewards = (state.rewards || []).filter((reward) => reward.status === "pending" || reward.status === "releasing");
+
+  return [
+    {
+      ok: activePlans.length > 0,
+      label: "至少 1 个启用配套",
+      detail: activePlans.length ? `当前启用 ${activePlans.length} 个配套` : "请先在左侧新增或启用配套",
+    },
+    {
+      ok: adminUsers.length > 0 || isAdmin(),
+      label: "管理员账号可识别",
+      detail: adminUsers.length ? `已识别 ${adminUsers.length} 个管理员用户` : `当前管理员邮箱：${ADMIN_EMAILS.join(" / ")}`,
+    },
+    {
+      ok: users.length === 0 || missingPaymentUsers.length === 0,
+      label: "用户收款资料",
+      detail: missingPaymentUsers.length ? `${missingPaymentUsers.length} 个用户还未填写完整收款资料` : "用户收款资料没有明显缺口",
+    },
+    {
+      ok: pendingOrders.length === 0,
+      label: "待处理充值订单",
+      detail: pendingOrders.length ? `${pendingOrders.length} 笔订单等待审核` : "没有待处理充值订单",
+    },
+    {
+      ok: pendingRewards.length === 0,
+      label: "待确认/释放奖励",
+      detail: pendingRewards.length ? `${pendingRewards.length} 笔奖励需要后续处理` : "没有待处理奖励",
+    },
+    {
+      ok: pendingWithdraws.length === 0,
+      label: "待审核提现",
+      detail: pendingWithdraws.length ? `${pendingWithdraws.length} 笔提现等待审核` : "没有待审核提现",
+    },
+    {
+      ok: paidOrders.every((order) => Number(order.points || 0) > 0),
+      label: "已付款订单积分",
+      detail: paidOrders.some((order) => Number(order.points || 0) <= 0)
+        ? "存在已付款但积分为 0 的订单，请查看订单详情"
+        : "已付款订单积分正常",
+    },
+  ];
+}
+
 function renderAdminRiskRules() {
   const target = document.querySelector("#riskRuleCards");
   if (!target) return;
   const planCooldowns = state.plans.map((plan) => `${plan.name}: ${planRepeatCooldownHours(plan)} 小时`).join(" / ");
+  const checks = readinessChecks();
+  const failedChecks = checks.filter((check) => !check.ok).length;
   target.innerHTML = [
+    {
+      title: "上线前自检",
+      rows: [
+        failedChecks ? `还有 ${failedChecks} 项需要处理。` : "全部检查通过，可以进入小范围测试。",
+        `页面前端版本：${APP_VERSION}。`,
+        ...checks.map((check) => `<b class="${check.ok ? "check-ok" : "check-warn"}">${check.ok ? "通过" : "待处理"}</b> ${check.label}：${check.detail}`),
+      ],
+    },
     {
       title: "复购冷却",
       rows: [
@@ -1965,6 +2026,33 @@ function addRepeatCreditLog(data, userId, change, balance, reason, source = "", 
     note,
     createdAt,
   });
+}
+
+function exportBundle() {
+  const paidOrders = (state.orders || []).filter((order) => order.status === "paid");
+  const bundle = {
+    exportedAt: new Date().toISOString(),
+    appVersion: APP_VERSION,
+    projectId: firebaseConfig.projectId,
+    exportedBy: firebaseUser?.email || "",
+    summary: {
+      users: state.users.length,
+      orders: state.orders.length,
+      paidSales: paidOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0),
+      rewards: state.rewards.length,
+      withdraws: state.withdraws.length,
+      repeatCreditLogs: (state.repeatCreditLogs || []).length,
+      adminLogs: (state.adminLogs || []).length,
+    },
+    data: state,
+  };
+  const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `amsystem-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function csvEscape(value) {
@@ -2808,13 +2896,9 @@ document.body.addEventListener("click", async (event) => {
 });
 
 document.querySelector("#exportBtn").addEventListener("click", () => {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `amsystem-${new Date().toISOString().slice(0, 10)}.json`;
-  link.click();
-  URL.revokeObjectURL(url);
+  if (!requireAdmin()) return;
+  exportBundle();
+  toast("完整备份包已导出");
 });
 
 document.querySelector("#resetBtn").addEventListener("click", async () => {
