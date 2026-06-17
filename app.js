@@ -25,7 +25,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260617-27";
+const APP_VERSION = "20260617-28";
 const SYSTEM_DOC_PATH = ["amsystem", "main"];
 const USER_COLLECTION = "amsystemUsers";
 const ORDER_COLLECTION = "amsystemOrders";
@@ -1095,6 +1095,44 @@ function withdrawDetailText(withdraw) {
   ].join("\n");
 }
 
+function userDetailText(user) {
+  if (!user) return "找不到用户";
+  const referrer = findUser(user.referrerId);
+  const [statusClass, statusLabel] = packageStatus(user);
+  const orders = state.orders.filter((order) => order.userId === user.id);
+  const paidOrders = orders.filter((order) => order.status === "paid");
+  const rewards = state.rewards.filter((reward) => reward.userId === user.id);
+  const withdraws = state.withdraws.filter((withdraw) => withdraw.userId === user.id);
+  const referrals = directReferralCount(user.id);
+  const breakdown = withdrawBreakdown(user.id);
+  return [
+    `用户：${user.name}`,
+    `账号：${user.account}`,
+    `手机：${user.phone || "-"}`,
+    `邀请码：${user.inviteCode}`,
+    `推荐人：${referrer ? `${referrer.name} / ${referrer.inviteCode}` : "无"}`,
+    `配套状态：${statusLabel}`,
+    `账号状态：${user.frozen ? "已冻结" : "正常"}`,
+    "",
+    "余额与资格：",
+    `充值积分：${points(user.points)}`,
+    `可提现奖励：${money(breakdown.available)}`,
+    `复购资格：${points(user.repeatCredits || 0)}`,
+    `推荐名额：${referrals} / ${user.slots || 0}`,
+    "",
+    "业务统计：",
+    `订单：${orders.length} 笔，其中已支付 ${paidOrders.length} 笔，累计 ${money(paidOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0))}`,
+    `奖励：${rewards.length} 笔`,
+    `提现：${withdraws.length} 笔`,
+    "",
+    "提现组成：",
+    `首充奖励可提现：${money(breakdown.first)}`,
+    `复购奖励已释放：${money(breakdown.repeatReleased)}`,
+    `复购奖励待释放：${money(breakdown.pendingRelease)}`,
+    `已申请/处理中：${money(breakdown.requested)}`,
+  ].join("\n");
+}
+
 function labelStatus(status) {
   if (status === "releasing") return "分期释放中";
   return {
@@ -1653,7 +1691,7 @@ function renderAdminUsers() {
   document.querySelector("#adminUserTable").innerHTML = users.map((user) => {
     const referrer = findUser(user.referrerId);
     const [statusClass, statusLabel] = packageStatus(user);
-    return `<tr><td>${user.name}</td><td>${user.account}</td><td>${user.phone || "-"}</td><td>${user.inviteCode}</td><td>${referrer?.name || "无"}</td><td>${points(user.points)}</td><td><span class="tag ${statusClass}">${statusLabel}</span></td><td>${directReferralCount(user.id)} / ${user.slots || 0}</td><td>${points(user.repeatCredits || 0)}</td><td><span class="tag ${user.frozen ? "frozen" : "active"}">${user.frozen ? "已冻结" : "正常"}</span></td><td><button class="link" data-freeze-user="${user.id}">${user.frozen ? "解冻" : "冻结"}</button></td></tr>`;
+    return `<tr><td>${user.name}</td><td>${user.account}</td><td>${user.phone || "-"}</td><td>${user.inviteCode}</td><td>${referrer?.name || "无"}</td><td>${points(user.points)}</td><td><span class="tag ${statusClass}">${statusLabel}</span></td><td>${directReferralCount(user.id)} / ${user.slots || 0}</td><td>${points(user.repeatCredits || 0)}</td><td><span class="tag ${user.frozen ? "frozen" : "active"}">${user.frozen ? "已冻结" : "正常"}</span></td><td><button class="link" data-user-detail="${user.id}">详情</button><button class="link" data-freeze-user="${user.id}">${user.frozen ? "解冻" : "冻结"}</button></td></tr>`;
   }).join("") || `<tr><td colspan="11">没有符合条件的用户</td></tr>`;
 }
 
@@ -2517,6 +2555,15 @@ document.body.addEventListener("click", async (event) => {
     const withdraw = state.withdraws.find((item) => item.id === withdrawDetail.dataset.withdrawDetail);
     if (!withdraw) return toast("找不到提现申请");
     window.alert(withdrawDetailText(withdraw));
+    return;
+  }
+
+  const userDetail = event.target.closest("[data-user-detail]");
+  if (userDetail) {
+    if (!requireAdmin()) return;
+    const user = findUser(userDetail.dataset.userDetail);
+    if (!user) return toast("找不到用户");
+    window.alert(userDetailText(user));
     return;
   }
 
