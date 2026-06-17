@@ -25,7 +25,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260617-38";
+const APP_VERSION = "20260617-39";
 const SYSTEM_DOC_PATH = ["amsystem", "main"];
 const USER_COLLECTION = "amsystemUsers";
 const ORDER_COLLECTION = "amsystemOrders";
@@ -1629,6 +1629,7 @@ function renderAdmin() {
   ensurePlanCooldownField();
   ensurePlanCancelButton();
   ensureRewardStatusOptions();
+  renderAdminTodos();
   renderAdminPlans();
   renderAdminUsers();
   renderRepeatCreditLogs();
@@ -1637,6 +1638,84 @@ function renderAdmin() {
   renderAdminWithdraws();
   renderAdminRiskRules();
   renderAdminLogs();
+}
+
+function adminTodoItems() {
+  const now = new Date();
+  const pendingOrders = (state.orders || []).filter((order) => order.status === "pending");
+  const failedProofOrders = (state.orders || []).filter((order) => order.status === "pending" && order.proofStatus === "failed");
+  const dueRewards = (state.rewards || []).filter((reward) =>
+    ["pending", "releasing"].includes(reward.status) && new Date(reward.confirmAfter) <= now
+  );
+  const pendingRewards = (state.rewards || []).filter((reward) => ["pending", "releasing"].includes(reward.status));
+  const pendingWithdraws = (state.withdraws || []).filter((withdraw) => withdraw.status === "pending");
+  const integrityIssues = dataIntegrityIssues(state);
+  const checks = readinessChecks();
+  const failedChecks = checks.filter((check) => !check.ok);
+
+  return [
+    {
+      title: "充值订单待审核",
+      count: pendingOrders.length,
+      level: pendingOrders.length ? "warn" : "ok",
+      detail: pendingOrders.length ? `有 ${pendingOrders.length} 笔订单等待确认付款。` : "没有待审核充值订单。",
+      action: "到订单管理处理",
+      tab: "adminOrders",
+    },
+    {
+      title: "付款凭证异常",
+      count: failedProofOrders.length,
+      level: failedProofOrders.length ? "danger" : "ok",
+      detail: failedProofOrders.length ? `${failedProofOrders.length} 笔订单凭证上传失败，需要用户补传或后台核对。` : "没有上传失败的付款凭证。",
+      action: "到订单管理查看",
+      tab: "adminOrders",
+    },
+    {
+      title: "奖励待处理",
+      count: pendingRewards.length,
+      level: dueRewards.length ? "warn" : pendingRewards.length ? "neutral" : "ok",
+      detail: dueRewards.length ? `${dueRewards.length} 笔奖励已到期可确认/释放。` : pendingRewards.length ? `${pendingRewards.length} 笔奖励仍在等待或分期中。` : "没有待处理奖励。",
+      action: "到奖励审核处理",
+      tab: "adminRewards",
+    },
+    {
+      title: "提现待审核",
+      count: pendingWithdraws.length,
+      level: pendingWithdraws.length ? "warn" : "ok",
+      detail: pendingWithdraws.length ? `${pendingWithdraws.length} 笔提现申请等待审核。` : "没有待审核提现。",
+      action: "到提现审核处理",
+      tab: "adminWithdraws",
+    },
+    {
+      title: "数据异常",
+      count: integrityIssues.length,
+      level: integrityIssues.length ? "danger" : "ok",
+      detail: integrityIssues.length ? integrityIssues.slice(0, 2).join("；") : "数据一致性正常。",
+      action: "到风控规则查看",
+      tab: "adminRisk",
+    },
+    {
+      title: "上线自检",
+      count: failedChecks.length,
+      level: failedChecks.length ? "warn" : "ok",
+      detail: failedChecks.length ? `${failedChecks.length} 项自检待处理：${failedChecks.slice(0, 2).map((check) => check.label).join("、")}` : "上线自检全部通过。",
+      action: "到风控规则查看",
+      tab: "adminRisk",
+    },
+  ];
+}
+
+function renderAdminTodos() {
+  const target = document.querySelector("#adminTodoList");
+  if (!target) return;
+  target.innerHTML = adminTodoItems().map((item) => `
+    <article class="todo-card ${item.level}">
+      <span>${item.title}</span>
+      <strong>${item.count}</strong>
+      <p>${item.detail}</p>
+      <button class="link" type="button" data-open-admin-tab="${item.tab}">${item.action}</button>
+    </article>
+  `).join("");
 }
 
 function ensureRewardStatusOptions() {
@@ -2363,16 +2442,29 @@ document.querySelectorAll("[data-view]").forEach((button) => {
   });
 });
 
+function openTab(tabId) {
+  const panel = document.querySelector(`#${tabId}`);
+  const button = document.querySelector(`.tab[data-tab="${tabId}"]`);
+  if (!panel || !button) return;
+  const view = panel.closest(".view");
+  view.querySelectorAll(".tab").forEach((item) => item.classList.remove("active"));
+  view.querySelectorAll(".tab-panel").forEach((item) => item.classList.remove("active"));
+  button.classList.add("active");
+  panel.classList.add("active");
+}
+
 document.querySelectorAll(".tabs").forEach((tabs) => {
   tabs.addEventListener("click", (event) => {
     const button = event.target.closest(".tab");
     if (!button) return;
-    const view = button.closest(".view");
-    view.querySelectorAll(".tab").forEach((item) => item.classList.remove("active"));
-    view.querySelectorAll(".tab-panel").forEach((item) => item.classList.remove("active"));
-    button.classList.add("active");
-    view.querySelector(`#${button.dataset.tab}`).classList.add("active");
+    openTab(button.dataset.tab);
   });
+});
+
+document.addEventListener("click", (event) => {
+  const openAdminTab = event.target.closest("[data-open-admin-tab]");
+  if (!openAdminTab) return;
+  openTab(openAdminTab.dataset.openAdminTab);
 });
 
 ["#orderStatusFilter", "#orderTypeFilter", "#rewardStatusFilter", "#rewardTypeFilter", "#withdrawStatusFilter", "#userPackageFilter", "#userAccountFilter", "#logActionFilter", "#logLimitFilter"].forEach((selector) => {

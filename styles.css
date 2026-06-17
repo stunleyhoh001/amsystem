@@ -282,12 +282,12 @@ input:focus, select:focus {
   outline: 3px solid rgba(23, 105, 224, 0.13);
 }
 
-.plan-grid, .rule-grid, .risk-grid {
+.plan-grid, .rule-grid, .risk-grid, .todo-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
 }
-.plan-card, .rule-card, .risk-card {
+.plan-card, .rule-card, .risk-card, .todo-card {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 16px;
@@ -295,6 +295,28 @@ input:focus, select:focus {
 }
 .plan-card strong, .rule-card strong, .risk-card strong { display: block; margin-bottom: 8px; font-size: 18px; }
 .plan-card span, .rule-card span, .risk-card span, .list span { display: block; color: var(--muted); line-height: 1.7; }
+.todo-card {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+.todo-card span {
+  color: var(--muted);
+  font-weight: 700;
+}
+.todo-card strong {
+  font-size: 34px;
+  line-height: 1;
+}
+.todo-card p {
+  min-height: 46px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.todo-card.ok strong { color: #047857; }
+.todo-card.warn strong, .todo-card.neutral strong { color: #a16207; }
+.todo-card.danger strong { color: #b91c1c; }
 .risk-card b {
   display: inline-block;
   min-width: 48px;
@@ -369,7 +391,7 @@ th { color: var(--muted); font-size: 13px; }
 @media (max-width: 1180px) {
   .member-hero, .layout { grid-template-columns: 1fr; }
   .sidebar { position: static; }
-  .mini-grid, .metrics, .grid-form, .grid-form.compact, .filter-bar, .breakdown-box { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mini-grid, .metrics, .todo-grid, .grid-form, .grid-form.compact, .filter-bar, .breakdown-box { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (min-width: 1181px) and (max-width: 1500px) {
   .member-hero {
@@ -382,6 +404,6 @@ th { color: var(--muted); font-size: 13px; }
 @media (max-width: 720px) {
   .app-header, .panel-head { align-items: stretch; flex-direction: column; }
   .header-actions { align-items: stretch; }
-  .plan-grid, .rule-grid, .risk-grid, .mini-grid, .metrics, .grid-form, .grid-form.compact, .filter-bar, .breakdown-box { grid-template-columns: 1fr; }
+  .plan-grid, .rule-grid, .risk-grid, .todo-grid, .mini-grid, .metrics, .grid-form, .grid-form.compact, .filter-bar, .breakdown-box { grid-template-columns: 1fr; }
   .tabs { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; }
 }

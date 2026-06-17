@@ -211,7 +211,8 @@
 
           <section class="content">
             <nav class="tabs" aria-label="后台模块">
-              <button class="tab active" data-tab="adminUsers">用户管理</button>
+              <button class="tab active" data-tab="adminTodos">待办中心</button>
+              <button class="tab" data-tab="adminUsers">用户管理</button>
               <button class="tab" data-tab="adminOrders">订单管理</button>
               <button class="tab" data-tab="adminRewards">奖励审核</button>
               <button class="tab" data-tab="adminWithdraws">提现审核</button>
@@ -219,7 +220,16 @@
               <button class="tab" data-tab="adminRisk">风控规则</button>
             </nav>
 
-            <section id="adminUsers" class="tab-panel active">
+            <section id="adminTodos" class="tab-panel active">
+              <div class="panel">
+                <div class="panel-head">
+                  <h2>待办中心</h2>
+                </div>
+                <div id="adminTodoList" class="todo-grid"></div>
+              </div>
+            </section>
+
+            <section id="adminUsers" class="tab-panel">
               <div class="panel">
                 <div class="panel-head">
                   <h2>用户管理</h2>
@@ -427,7 +437,7 @@
     </main>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="./app.js?v=20260617-38"></script>
+    <script type="module" src="./app.js?v=20260617-39"></script>
   </body>
 </html>
 
