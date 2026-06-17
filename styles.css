@@ -387,6 +387,17 @@ th { color: var(--muted); font-size: 13px; }
 .tag.pending { background: #fff6df; color: var(--warning); }
 .tag.cancelled, .tag.rejected, .tag.refunded { background: #fff0f0; color: var(--danger); }
 .tag.frozen, .tag.expired, .tag.paidout { background: #eef0f4; color: var(--neutral); }
+.risk-line {
+  display: block;
+  width: fit-content;
+  margin-top: 6px;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #fff0f0;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 700;
+}
 .link {
   color: var(--primary);
   border: 0;
