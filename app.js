@@ -25,7 +25,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260617-48";
+const APP_VERSION = "20260617-55";
 const WITHDRAW_COOLDOWN_HOURS = 24;
 const SYSTEM_DOC_PATH = ["amsystem", "main"];
 const USER_COLLECTION = "amsystemUsers";
@@ -888,6 +888,39 @@ function orderRiskLabels(order, data = state) {
   return labels;
 }
 
+function withdrawRiskLabels(withdraw, data = state) {
+  const labels = [];
+  const account = String(withdraw.account || "").trim().toLowerCase();
+  if (!account) return labels;
+  const otherUsers = new Set((data.withdraws || [])
+    .filter((item) =>
+      item.id !== withdraw.id
+      && item.userId !== withdraw.userId
+      && item.status !== "rejected"
+      && String(item.account || "").trim().toLowerCase() === account
+    )
+    .map((item) => item.userId));
+  if (otherUsers.size) labels.push(`收款账号被 ${otherUsers.size} 个其他用户使用`);
+  return labels;
+}
+
+function sharedWithdrawAccountUsers(account, currentUserId = "", data = state) {
+  const normalized = String(account || "").trim().toLowerCase();
+  if (!normalized) return [];
+  const userIds = new Set();
+  (data.withdraws || []).forEach((withdraw) => {
+    if (withdraw.status === "rejected") return;
+    if (String(withdraw.account || "").trim().toLowerCase() === normalized) userIds.add(withdraw.userId);
+  });
+  (data.users || []).forEach((user) => {
+    if (String(user.withdrawAccount || "").trim().toLowerCase() === normalized) userIds.add(user.id);
+  });
+  return [...userIds]
+    .filter((userId) => userId && userId !== currentUserId)
+    .map((userId) => data.users.find((user) => user.id === userId))
+    .filter(Boolean);
+}
+
 function dataIntegrityIssues(data = state) {
   const issues = [];
   const users = data.users || [];
@@ -928,6 +961,7 @@ function dataIntegrityIssues(data = state) {
   withdraws.forEach((withdraw) => {
     if (!usersById.has(withdraw.userId)) issues.push(`提现 ${withdraw.id} 的用户不存在`);
     if (withdraw.source !== "reward") issues.push(`提现 ${withdraw.id} 不是奖励提现来源`);
+    withdrawRiskLabels(withdraw, data).forEach((risk) => issues.push(`提现 ${withdraw.id}：${risk}`));
   });
 
   users.forEach((user) => {
@@ -1229,6 +1263,8 @@ function withdrawDetailText(withdraw) {
   const user = findUser(withdraw.userId);
   if (!withdraw || !user) return "提现资料不完整";
   const breakdown = withdrawBreakdown(user.id);
+  const risks = withdrawRiskLabels(withdraw);
+  const sharedUsers = sharedWithdrawAccountUsers(withdraw.account, withdraw.userId);
   return [
     `提现申请：${withdraw.id}`,
     `用户：${user.name} / ${user.account}`,
@@ -1237,6 +1273,8 @@ function withdrawDetailText(withdraw) {
     `状态：${labelStatus(withdraw.status)}`,
     `收款方式：${withdraw.method || "-"}`,
     `收款账号：${withdraw.account || "-"}`,
+    `风控风险：${risks.length ? risks.join("；") : "无"}`,
+    `共享账号用户：${sharedUsers.length ? sharedUsers.map((item) => `${item.name} / ${item.account}`).join("；") : "无"}`,
     `审核备注：${withdraw.reviewNote || "-"}`,
     `提交时间：${new Date(withdraw.createdAt).toLocaleString("zh-CN")}`,
     `审核时间：${withdraw.reviewedAt ? new Date(withdraw.reviewedAt).toLocaleString("zh-CN") : "-"}`,
@@ -1261,6 +1299,7 @@ function userDetailText(user) {
   const withdraws = state.withdraws.filter((withdraw) => withdraw.userId === user.id);
   const referrals = directReferralCount(user.id);
   const breakdown = withdrawBreakdown(user.id);
+  const sharedAccountUsers = sharedWithdrawAccountUsers(user.withdrawAccount, user.id);
   return [
     `用户：${user.name}`,
     `账号：${user.account}`,
@@ -1269,6 +1308,8 @@ function userDetailText(user) {
     `推荐人：${referrer ? `${referrer.name} / ${referrer.inviteCode}` : "无"}`,
     `配套状态：${statusLabel}`,
     `账号状态：${user.frozen ? "已冻结" : "正常"}`,
+    `默认收款：${[user.withdrawMethod, user.withdrawAccount].filter(Boolean).join(" / ") || "-"}`,
+    `共享收款账号：${sharedAccountUsers.length ? sharedAccountUsers.map((item) => `${item.name} / ${item.account}`).join("；") : "无"}`,
     "",
     "余额与资格：",
     `充值积分：${points(user.points)}`,
@@ -1977,8 +2018,10 @@ function renderAdminUsers() {
   document.querySelector("#adminUserTable").innerHTML = users.map((user) => {
     const referrer = findUser(user.referrerId);
     const [statusClass, statusLabel] = packageStatus(user);
-    return `<tr><td>${user.name}</td><td>${user.account}</td><td>${user.phone || "-"}</td><td>${user.inviteCode}</td><td>${referrer?.name || "无"}</td><td>${points(user.points)}</td><td><span class="tag ${statusClass}">${statusLabel}</span></td><td>${directReferralCount(user.id)} / ${user.slots || 0}</td><td>${points(user.repeatCredits || 0)}</td><td><span class="tag ${user.frozen ? "frozen" : "active"}">${user.frozen ? "已冻结" : "正常"}</span></td><td><button class="link" data-user-detail="${user.id}">详情</button><button class="link" data-freeze-user="${user.id}">${user.frozen ? "解冻" : "冻结"}</button></td></tr>`;
-  }).join("") || `<tr><td colspan="11">没有符合条件的用户</td></tr>`;
+    const sharedUsers = sharedWithdrawAccountUsers(user.withdrawAccount, user.id);
+    const payoutRisk = sharedUsers.length ? `<span class="risk-line">共享账号 ${sharedUsers.length}</span>` : "-";
+    return `<tr><td>${user.name}</td><td>${user.account}</td><td>${user.phone || "-"}</td><td>${user.inviteCode}</td><td>${referrer?.name || "无"}</td><td>${points(user.points)}</td><td><span class="tag ${statusClass}">${statusLabel}</span></td><td>${directReferralCount(user.id)} / ${user.slots || 0}</td><td>${points(user.repeatCredits || 0)}</td><td>${payoutRisk}</td><td><span class="tag ${user.frozen ? "frozen" : "active"}">${user.frozen ? "已冻结" : "正常"}</span></td><td><button class="link" data-user-detail="${user.id}">详情</button><button class="link" data-freeze-user="${user.id}">${user.frozen ? "解冻" : "冻结"}</button></td></tr>`;
+  }).join("") || `<tr><td colspan="12">没有符合条件的用户</td></tr>`;
 }
 
 function repeatCreditReasonText(reason) {
@@ -2118,7 +2161,8 @@ function renderAdminWithdraws() {
   const rows = withdraws.slice().reverse().map((item) => {
     const user = findUser(item.userId);
     const detailAction = `<button class="link" data-withdraw-detail="${item.id}">详情</button>`;
-    return `<tr><td>${item.id}</td><td>${user?.name || "-"}</td><td>${money(item.amount)}</td><td>${item.source === "reward" ? "奖励提现" : item.source || "-"}</td><td>${item.method}</td><td>${item.account}</td><td><span class="tag ${item.status}">${labelStatus(item.status)}</span></td><td>${new Date(item.createdAt).toLocaleString("zh-CN")}</td><td class="actions">${detailAction}${item.status === "pending" ? `<button class="link" data-approve-withdraw="${item.id}">通过</button><button class="link" data-reject-withdraw="${item.id}">拒绝</button>` : ""}${item.status === "approved" ? `<button class="link" data-pay-withdraw="${item.id}">标记打款</button>` : ""}</td></tr>`;
+    const riskText = withdrawRiskLabels(item).map((label) => `<span class="risk-line">${label}</span>`).join("");
+    return `<tr><td>${item.id}</td><td>${user?.name || "-"}</td><td>${money(item.amount)}</td><td>${item.source === "reward" ? "奖励提现" : item.source || "-"}</td><td>${item.method}</td><td>${item.account}${riskText}</td><td><span class="tag ${item.status}">${labelStatus(item.status)}</span></td><td>${new Date(item.createdAt).toLocaleString("zh-CN")}</td><td class="actions">${detailAction}${item.status === "pending" ? `<button class="link" data-approve-withdraw="${item.id}">通过</button><button class="link" data-reject-withdraw="${item.id}">拒绝</button>` : ""}${item.status === "approved" ? `<button class="link" data-pay-withdraw="${item.id}">标记打款</button>` : ""}</td></tr>`;
   }).join("");
   document.querySelector("#adminWithdrawTable").innerHTML = rows || `<tr><td colspan="9">没有符合条件的提现申请</td></tr>`;
 }
@@ -2444,9 +2488,11 @@ function filteredUsers() {
   const keyword = getInputValue("#userSearchInput").toLowerCase();
   const packageFilter = getSelectValue("#userPackageFilter", "all");
   const accountFilter = getSelectValue("#userAccountFilter", "all");
+  const payoutRiskFilter = getSelectValue("#userPayoutRiskFilter", "all");
 
   return state.users.filter((user) => {
     const referrer = findUser(user.referrerId);
+    const hasPayoutRisk = sharedWithdrawAccountUsers(user.withdrawAccount, user.id).length > 0;
     const searchable = [
       user.name,
       user.account,
@@ -2462,7 +2508,10 @@ function filteredUsers() {
     const matchesAccount = accountFilter === "all"
       || (accountFilter === "normal" && !user.frozen)
       || (accountFilter === "frozen" && user.frozen);
-    return matchesKeyword && matchesPackage && matchesAccount;
+    const matchesPayoutRisk = payoutRiskFilter === "all"
+      || (payoutRiskFilter === "shared" && hasPayoutRisk)
+      || (payoutRiskFilter === "clean" && !hasPayoutRisk);
+    return matchesKeyword && matchesPackage && matchesAccount && matchesPayoutRisk;
   });
 }
 
@@ -2557,7 +2606,7 @@ function renderAdminLocked() {
   document.querySelector("#metricPendingRewards").textContent = "-";
   document.querySelector("#metricWithdraws").textContent = "-";
   document.querySelector("#adminPlanList").innerHTML = `<article class="plan-card"><strong>后台已锁定</strong><span>请使用管理员 Google 邮箱登录。</span></article>`;
-  document.querySelector("#adminUserTable").innerHTML = `<tr><td colspan="11">无管理员权限</td></tr>`;
+  document.querySelector("#adminUserTable").innerHTML = `<tr><td colspan="12">无管理员权限</td></tr>`;
   document.querySelector("#repeatCreditLogTable").innerHTML = `<tr><td colspan="6">无管理员权限</td></tr>`;
   document.querySelector("#adminOrderTable").innerHTML = `<tr><td colspan="10">无管理员权限</td></tr>`;
   document.querySelector("#adminRewardTable").innerHTML = `<tr><td colspan="8">无管理员权限</td></tr>`;
@@ -2675,7 +2724,7 @@ document.addEventListener("click", (event) => {
   renderAll();
 });
 
-["#orderStatusFilter", "#orderTypeFilter", "#orderProofFilter", "#rewardStatusFilter", "#rewardTypeFilter", "#withdrawStatusFilter", "#userPackageFilter", "#userAccountFilter", "#logActionFilter", "#logLimitFilter"].forEach((selector) => {
+["#orderStatusFilter", "#orderTypeFilter", "#orderProofFilter", "#rewardStatusFilter", "#rewardTypeFilter", "#withdrawStatusFilter", "#userPackageFilter", "#userAccountFilter", "#userPayoutRiskFilter", "#logActionFilter", "#logLimitFilter"].forEach((selector) => {
   document.querySelector(selector)?.addEventListener("change", renderAll);
 });
 
@@ -2709,9 +2758,11 @@ document.querySelector("#clearUserFiltersBtn")?.addEventListener("click", () => 
   const searchInput = document.querySelector("#userSearchInput");
   const packageFilter = document.querySelector("#userPackageFilter");
   const accountFilter = document.querySelector("#userAccountFilter");
+  const payoutRiskFilter = document.querySelector("#userPayoutRiskFilter");
   if (searchInput) searchInput.value = "";
   if (packageFilter) packageFilter.value = "all";
   if (accountFilter) accountFilter.value = "all";
+  if (payoutRiskFilter) payoutRiskFilter.value = "all";
   renderAll();
 });
 
@@ -2799,10 +2850,11 @@ document.querySelector("#exportUsersBtn")?.addEventListener("click", () => {
   if (!requireAdmin()) return;
   downloadCsv(
     `amsystem-users-${exportStamp()}.csv`,
-    ["用户ID", "姓名", "账号", "手机", "邀请码", "推荐人", "积分", "推荐名额", "已用名额", "复购资格", "配套状态", "账号状态"],
+    ["用户ID", "姓名", "账号", "手机", "邀请码", "推荐人", "积分", "推荐名额", "已用名额", "复购资格", "默认收款方式", "默认收款账号", "共享账号数量", "共享账号用户", "配套状态", "账号状态"],
     filteredUsers().map((user) => {
       const referrer = findUser(user.referrerId);
       const [, statusLabel] = packageStatus(user);
+      const sharedUsers = sharedWithdrawAccountUsers(user.withdrawAccount, user.id);
       return [
         user.id,
         user.name,
@@ -2814,6 +2866,10 @@ document.querySelector("#exportUsersBtn")?.addEventListener("click", () => {
         user.slots || 0,
         directReferralCount(user.id),
         user.repeatCredits || 0,
+        user.withdrawMethod || "",
+        user.withdrawAccount || "",
+        sharedUsers.length,
+        sharedUsers.map((item) => `${item.name} / ${item.account}`).join("；"),
         statusLabel,
         user.frozen ? "已冻结" : "正常",
       ];
@@ -2891,10 +2947,10 @@ document.querySelector("#exportWithdrawsBtn")?.addEventListener("click", () => {
   if (!requireAdmin()) return;
   downloadCsv(
     `amsystem-withdraws-${exportStamp()}.csv`,
-    ["提现ID", "用户", "金额", "来源", "方式", "账号", "状态", "审核备注", "申请时间", "审核时间", "打款时间"],
+    ["提现ID", "用户", "金额", "来源", "方式", "账号", "风险提示", "状态", "审核备注", "申请时间", "审核时间", "打款时间"],
     filteredWithdraws().map((item) => {
       const user = findUser(item.userId);
-      return [item.id, user?.name || "", item.amount, item.source === "reward" ? "奖励提现" : item.source || "", item.method, item.account, labelStatus(item.status), item.reviewNote || "", item.createdAt, item.reviewedAt || "", item.paidAt || ""];
+      return [item.id, user?.name || "", item.amount, item.source === "reward" ? "奖励提现" : item.source || "", item.method, item.account, withdrawRiskLabels(item).join("；"), labelStatus(item.status), item.reviewNote || "", item.createdAt, item.reviewedAt || "", item.paidAt || ""];
     })
   );
 });
@@ -3206,9 +3262,11 @@ document.body.addEventListener("click", async (event) => {
     const order = state.orders.find((item) => item.id === confirmOrder.dataset.confirmOrder);
     if (!order || order.status !== "pending") return toast("订单状态不可确认");
     if (!window.confirm(orderConfirmPreview(order))) return;
-    const riskNote = orderRiskLabels(order).length ? "已核对风控风险：" : "";
+    const risks = orderRiskLabels(order);
+    const riskNote = risks.length ? "已核对风控风险：" : "";
     const note = window.prompt("请输入确认付款备注（可留空）", order.reviewNote || riskNote);
     if (note === null) return;
+    if (risks.length && note.trim().length <= riskNote.length) return toast("有风控风险的订单必须填写审核备注");
     order.reviewNote = note.trim();
     order.reviewedAt = new Date().toISOString();
     try {
@@ -3309,8 +3367,11 @@ document.body.addEventListener("click", async (event) => {
     const withdrawId = withdrawAction.dataset.approveWithdraw || withdrawAction.dataset.rejectWithdraw || withdrawAction.dataset.payWithdraw;
     const withdraw = state.withdraws.find((item) => item.id === withdrawId);
     const actionLabel = withdrawAction.dataset.approveWithdraw ? "通过" : withdrawAction.dataset.rejectWithdraw ? "拒绝" : "标记打款";
-    const note = window.prompt(`请输入提现${actionLabel}备注（可留空）`, withdraw.reviewNote || "");
+    const risks = withdrawRiskLabels(withdraw);
+    const riskNote = risks.length && !withdrawAction.dataset.rejectWithdraw ? "已核对提现风控风险：" : "";
+    const note = window.prompt(`请输入提现${actionLabel}备注（可留空）`, withdraw.reviewNote || riskNote);
     if (note === null) return;
+    if (risks.length && !withdrawAction.dataset.rejectWithdraw && note.trim().length <= riskNote.length) return toast("有风控风险的提现必须填写审核备注");
     if (withdrawAction.dataset.approveWithdraw) {
       withdraw.status = "approved";
       withdraw.reviewedAt = new Date().toISOString();
