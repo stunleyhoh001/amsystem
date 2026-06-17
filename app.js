@@ -25,7 +25,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260617-34";
+const APP_VERSION = "20260617-35";
 const SYSTEM_DOC_PATH = ["amsystem", "main"];
 const USER_COLLECTION = "amsystemUsers";
 const ORDER_COLLECTION = "amsystemOrders";
@@ -797,6 +797,56 @@ function withdrawEligibility(user) {
 
 function withdrawRuleText(available) {
   return `规则：充值积分不可提现；只有已确认/已释放的首充推荐奖励和复购奖励可提现。当前可提现奖励 ${money(available)}。`;
+}
+
+function dataIntegrityIssues(data = state) {
+  const issues = [];
+  const users = data.users || [];
+  const orders = data.orders || [];
+  const rewards = data.rewards || [];
+  const withdraws = data.withdraws || [];
+  const usersById = new Map(users.map((user) => [user.id, user]));
+  const ordersById = new Map(orders.map((order) => [order.id, order]));
+  const inviteCodes = new Map();
+
+  users.forEach((user) => {
+    const code = normalizeInviteCode(user.inviteCode);
+    if (!code) issues.push(`用户 ${user.name || user.id} 缺少推荐码`);
+    if (code && inviteCodes.has(code)) issues.push(`推荐码重复：${code}`);
+    if (code) inviteCodes.set(code, user.id);
+    if (user.referrerId) {
+      if (user.referrerId === user.id) issues.push(`用户 ${user.name || user.id} 绑定了自己为推荐人`);
+      if (!usersById.has(user.referrerId)) issues.push(`用户 ${user.name || user.id} 的推荐人不存在`);
+    }
+  });
+
+  orders.forEach((order) => {
+    if (!usersById.has(order.userId)) issues.push(`订单 ${order.id} 的用户不存在`);
+    if (!(data.plans || []).some((plan) => plan.id === order.planId) && order.status !== "cancelled") issues.push(`订单 ${order.id} 的配套不存在或已删除`);
+    if (order.status === "paid" && Number(order.points || 0) <= 0) issues.push(`已付款订单 ${order.id} 积分为 0`);
+  });
+
+  rewards.forEach((reward) => {
+    if (!usersById.has(reward.userId)) issues.push(`奖励 ${reward.id || reward.orderId} 的收款用户不存在`);
+    if (!ordersById.has(reward.orderId)) issues.push(`奖励 ${reward.id || reward.orderId} 对应订单不存在`);
+    if (reward.type === "repeat" && Array.isArray(reward.releasePlan)) {
+      const released = reward.releasePlan.reduce((sum, part) => sum + (part.released ? Number(part.amount || 0) : 0), 0);
+      if (Number(reward.releasedAmount || 0) !== released) issues.push(`复购奖励 ${reward.id || reward.orderId} 已释放金额与分期不一致`);
+    }
+  });
+
+  withdraws.forEach((withdraw) => {
+    if (!usersById.has(withdraw.userId)) issues.push(`提现 ${withdraw.id} 的用户不存在`);
+    if (withdraw.source !== "reward") issues.push(`提现 ${withdraw.id} 不是奖励提现来源`);
+  });
+
+  users.forEach((user) => {
+    const breakdown = withdrawBreakdown(user.id);
+    const earned = Number(breakdown.first || 0) + Number(breakdown.repeatReleased || 0);
+    if (breakdown.requested > earned) issues.push(`用户 ${user.name || user.id} 提现金额超过已释放奖励`);
+  });
+
+  return issues;
 }
 
 function hasPaidOrder(data, userId, excludeOrderId = "") {
@@ -1851,6 +1901,7 @@ function readinessChecks() {
   const pendingOrders = (state.orders || []).filter((order) => order.status === "pending");
   const pendingWithdraws = (state.withdraws || []).filter((withdraw) => withdraw.status === "pending");
   const pendingRewards = (state.rewards || []).filter((reward) => reward.status === "pending" || reward.status === "releasing");
+  const integrityIssues = dataIntegrityIssues(state);
 
   return [
     {
@@ -1889,6 +1940,13 @@ function readinessChecks() {
       detail: paidOrders.some((order) => Number(order.points || 0) <= 0)
         ? "存在已付款但积分为 0 的订单，请查看订单详情"
         : "已付款订单积分正常",
+    },
+    {
+      ok: integrityIssues.length === 0,
+      label: "数据一致性",
+      detail: integrityIssues.length
+        ? `${integrityIssues.length} 项异常：${integrityIssues.slice(0, 3).join("；")}${integrityIssues.length > 3 ? "；..." : ""}`
+        : "推荐、订单、奖励、提现关系正常",
     },
   ];
 }
