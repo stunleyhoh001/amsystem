@@ -25,7 +25,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260617-23";
+const APP_VERSION = "20260617-24";
 const SYSTEM_DOC_PATH = ["amsystem", "main"];
 const USER_COLLECTION = "amsystemUsers";
 const ORDER_COLLECTION = "amsystemOrders";
@@ -75,6 +75,7 @@ let cloudAvailable = false;
 let firebaseUser = null;
 let state = null;
 let syncMessage = "Firestore：等待检测";
+let editingPlanId = "";
 
 function isIgnorableSdkError(message) {
   return String(message || "").includes("INTERNAL ASSERTION FAILED: Pending promise was never set");
@@ -1437,6 +1438,7 @@ function renderAdmin() {
   document.querySelector("#metricPendingRewards").textContent = money(state.rewards.filter((reward) => ["pending", "releasing"].includes(reward.status)).reduce((sum, reward) => sum + (Number(reward.amount || 0) - Number(reward.releasedAmount || 0)), 0));
   document.querySelector("#metricWithdraws").textContent = money(state.withdraws.filter((item) => item.status === "pending").reduce((sum, item) => sum + item.amount, 0));
   ensurePlanCooldownField();
+  ensurePlanCancelButton();
   ensureRewardStatusOptions();
   renderAdminPlans();
   renderAdminUsers();
@@ -1472,12 +1474,78 @@ function ensurePlanCooldownField() {
   repeatField.insertAdjacentElement("afterend", field);
 }
 
+function ensurePlanCancelButton() {
+  const form = document.querySelector("#planForm");
+  if (!form || form.querySelector("#cancelPlanEditBtn")) return;
+  const submitButton = form.querySelector("button[type='submit']");
+  if (!submitButton) return;
+  const button = document.createElement("button");
+  button.id = "cancelPlanEditBtn";
+  button.className = "button ghost";
+  button.type = "button";
+  button.textContent = "取消编辑";
+  button.hidden = true;
+  submitButton.insertAdjacentElement("afterend", button);
+}
+
+function planUsed(planId) {
+  return (state.orders || []).some((order) => order.planId === planId);
+}
+
+function planFromForm(form) {
+  return {
+    name: form.get("name").trim(),
+    amount: Number(form.get("amount")),
+    points: Number(form.get("points")),
+    slots: Number(form.get("slots")),
+    repeatCredits: Number(form.get("repeatCredits")),
+    repeatCooldownHours: Number(form.get("repeatCooldownHours") || 24),
+    validDays: Number(form.get("validDays")),
+    firstRate: Number(form.get("firstRate")),
+    repeatRate: Number(form.get("repeatRate")),
+  };
+}
+
+function fillPlanForm(plan) {
+  const form = document.querySelector("#planForm");
+  if (!form || !plan) return;
+  ensurePlanCooldownField();
+  form.querySelector("[name='name']").value = plan.name || "";
+  form.querySelector("[name='amount']").value = plan.amount || "";
+  form.querySelector("[name='points']").value = plan.points || "";
+  form.querySelector("[name='slots']").value = plan.slots || "";
+  form.querySelector("[name='repeatCredits']").value = planRepeatCredits(plan);
+  form.querySelector("[name='repeatCooldownHours']").value = planRepeatCooldownHours(plan);
+  form.querySelector("[name='validDays']").value = plan.validDays || "";
+  form.querySelector("[name='firstRate']").value = plan.firstRate || 0;
+  form.querySelector("[name='repeatRate']").value = plan.repeatRate || 0;
+  const button = form.querySelector("button[type='submit']");
+  if (button) button.textContent = "保存配套";
+  const cancelButton = form.querySelector("#cancelPlanEditBtn");
+  if (cancelButton) cancelButton.hidden = false;
+}
+
+function resetPlanForm() {
+  const form = document.querySelector("#planForm");
+  if (!form) return;
+  form.reset();
+  editingPlanId = "";
+  const button = form.querySelector("button[type='submit']");
+  if (button) button.textContent = "新增配套";
+  const cancelButton = form.querySelector("#cancelPlanEditBtn");
+  if (cancelButton) cancelButton.hidden = true;
+}
+
 function renderAdminPlans() {
   document.querySelector("#adminPlanList").innerHTML = state.plans.map((plan) => `
     <article class="plan-card">
       <strong>${plan.name} · ${money(plan.amount)}</strong>
       <span>积分 ${points(plan.points)} / 推荐名额 ${plan.slots} / 复购资格 ${planRepeatCredits(plan)} 个</span>
       <span>冷却 ${planRepeatCooldownHours(plan)} 小时 / 有效期 ${plan.validDays} 天 / 首充 ${plan.firstRate}% / 资格复购 ${plan.repeatRate}%</span>
+      <div class="actions">
+        <button class="link" type="button" data-edit-plan="${plan.id}">编辑</button>
+        ${planUsed(plan.id) ? `<span class="muted-line">已有订单，不能删除</span>` : `<button class="link danger-link" type="button" data-delete-plan="${plan.id}">删除</button>`}
+      </div>
     </article>
   `).join("");
 }
@@ -2231,23 +2299,28 @@ document.querySelector("#planForm").addEventListener("submit", async (event) => 
   event.preventDefault();
   if (!requireAdmin()) return;
   const form = new FormData(event.currentTarget);
-  state.plans.push({
-    id: id("plan"),
-    name: form.get("name").trim(),
-    amount: Number(form.get("amount")),
-    points: Number(form.get("points")),
-    slots: Number(form.get("slots")),
-    repeatCredits: Number(form.get("repeatCredits")),
-    repeatCooldownHours: Number(form.get("repeatCooldownHours") || 24),
-    validDays: Number(form.get("validDays")),
-    firstRate: Number(form.get("firstRate")),
-    repeatRate: Number(form.get("repeatRate")),
-  });
-  addAdminLog("新增配套", form.get("name").trim(), `金额 ${form.get("amount")} / 积分 ${form.get("points")}`);
-  event.currentTarget.reset();
+  const data = planFromForm(form);
+  if (!data.name || data.amount <= 0 || data.validDays <= 0) return toast("请填写完整配套资料");
+  const wasEditing = Boolean(editingPlanId);
+  if (editingPlanId) {
+    const plan = findPlan(editingPlanId);
+    if (!plan) return toast("找不到要编辑的配套");
+    Object.assign(plan, data);
+    addAdminLog("编辑配套", plan.name, `金额 ${plan.amount} / 积分 ${plan.points}`);
+  } else {
+    state.plans.push({ id: id("plan"), ...data });
+    addAdminLog("新增配套", data.name, `金额 ${data.amount} / 积分 ${data.points}`);
+  }
+  resetPlanForm();
   await saveState();
   renderAll();
-  toast("配套规则已新增");
+  toast(wasEditing ? "配套规则已保存" : "配套规则已新增");
+});
+
+document.addEventListener("click", (event) => {
+  if (event.target?.id !== "cancelPlanEditBtn") return;
+  resetPlanForm();
+  toast("已取消编辑");
 });
 
 document.querySelector("#pointsForm").addEventListener("submit", async (event) => {
@@ -2330,6 +2403,33 @@ document.querySelector("#confirmDueBtn").addEventListener("click", async () => {
 });
 
 document.body.addEventListener("click", async (event) => {
+  const editPlan = event.target.closest("[data-edit-plan]");
+  if (editPlan) {
+    if (!requireAdmin()) return;
+    const plan = findPlan(editPlan.dataset.editPlan);
+    if (!plan) return toast("找不到配套");
+    editingPlanId = plan.id;
+    fillPlanForm(plan);
+    toast("正在编辑配套");
+    return;
+  }
+
+  const deletePlan = event.target.closest("[data-delete-plan]");
+  if (deletePlan) {
+    if (!requireAdmin()) return;
+    const plan = findPlan(deletePlan.dataset.deletePlan);
+    if (!plan) return toast("找不到配套");
+    if (planUsed(plan.id)) return toast("已有订单使用这个配套，不能删除");
+    if (!window.confirm(`确定删除配套：${plan.name}？`)) return;
+    state.plans = state.plans.filter((item) => item.id !== plan.id);
+    if (editingPlanId === plan.id) resetPlanForm();
+    addAdminLog("删除配套", plan.name, `金额 ${plan.amount}`);
+    await saveState();
+    renderAll();
+    toast("配套已删除");
+    return;
+  }
+
   const copyInviteCode = event.target.closest("[data-copy-invite-code]");
   if (copyInviteCode) {
     await navigator.clipboard.writeText(copyInviteCode.dataset.copyInviteCode);
