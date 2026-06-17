@@ -25,7 +25,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260617-33";
+const APP_VERSION = "20260617-34";
 const SYSTEM_DOC_PATH = ["amsystem", "main"];
 const USER_COLLECTION = "amsystemUsers";
 const ORDER_COLLECTION = "amsystemOrders";
@@ -2233,10 +2233,25 @@ function requireAdmin() {
   return false;
 }
 
+function renderAdminActionButtons() {
+  const canAdmin = isAdmin();
+  const exportBtn = document.querySelector("#exportBtn");
+  const resetBtn = document.querySelector("#resetBtn");
+  if (exportBtn) {
+    exportBtn.disabled = !canAdmin;
+    exportBtn.title = canAdmin ? "导出完整 JSON 备份包" : "请使用管理员账号登录";
+  }
+  if (resetBtn) {
+    resetBtn.disabled = !canAdmin;
+    resetBtn.title = canAdmin ? "危险操作：会重置演示数据" : "请使用管理员账号登录";
+  }
+}
+
 function renderAll() {
   if (!state) return;
   updateAuthStatusClean();
   renderAppVersion();
+  renderAdminActionButtons();
   renderMember();
   if (isAdmin()) {
     renderAdmin();
@@ -2902,10 +2917,18 @@ document.querySelector("#exportBtn").addEventListener("click", () => {
 });
 
 document.querySelector("#resetBtn").addEventListener("click", async () => {
+  if (!requireAdmin()) return;
+  const answer = window.prompt("危险操作：这会重置演示数据。系统会先导出备份包。\n\n如果确定继续，请输入 RESET");
+  if (answer !== "RESET") {
+    toast("已取消重置");
+    return;
+  }
+  exportBundle();
   state = createSeedData();
+  addAdminLog("重置演示数据", "系统", "已重置为种子数据；重置前已触发备份包下载");
   await saveState();
   renderAll();
-  toast("演示数据已重置");
+  toast("演示数据已重置，重置前备份包已下载");
 });
 
 onAuthStateChanged(auth, async (user) => {
