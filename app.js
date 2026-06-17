@@ -25,7 +25,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260617-24";
+const APP_VERSION = "20260617-25";
 const SYSTEM_DOC_PATH = ["amsystem", "main"];
 const USER_COLLECTION = "amsystemUsers";
 const ORDER_COLLECTION = "amsystemOrders";
@@ -971,6 +971,47 @@ function nextRepeatReceiver(data, buyerId) {
     .sort((a, b) => new Date(a.repeatCreditQueueAt || "9999-12-31") - new Date(b.repeatCreditQueueAt || "9999-12-31"))[0];
 }
 
+function canRecalculateOrderRewards(order) {
+  const rewards = (state.rewards || []).filter((reward) => reward.orderId === order.id);
+  return rewards.every((reward) => reward.status === "pending");
+}
+
+function reverseRepeatCreditLogsForOrder(data, orderId) {
+  const logs = (data.repeatCreditLogs || []).filter((log) => log.source === orderId);
+  logs.forEach((log) => {
+    const user = data.users.find((item) => item.id === log.userId);
+    if (!user) return;
+    user.repeatCredits = Math.max(Number(user.repeatCredits || 0) - Number(log.change || 0), 0);
+    if (user.repeatCredits <= 0) user.repeatCreditQueueAt = "";
+  });
+  data.repeatCreditLogs = (data.repeatCreditLogs || []).filter((log) => log.source !== orderId);
+  return logs.length;
+}
+
+function recalculateOrderRewards(data, order) {
+  if (!order || order.status !== "paid") return { ok: false, message: "只有已支付订单可以重算奖励" };
+  if (!canRecalculateOrderRewards(order)) return { ok: false, message: "已有非待确认奖励，不能自动重算" };
+  const buyer = data.users.find((item) => item.id === order.userId);
+  const plan = data.plans.find((item) => item.id === order.planId);
+  if (!buyer || !plan) return { ok: false, message: "订单用户或配套不存在" };
+
+  const removedRewards = (data.rewards || []).filter((reward) => reward.orderId === order.id).length;
+  data.rewards = (data.rewards || []).filter((reward) => reward.orderId !== order.id);
+  const reversedLogs = reverseRepeatCreditLogsForOrder(data, order.id);
+  order.type = actualOrderType(data, order.userId, order.id);
+  const paidAt = order.paidAt || order.createdAt || new Date().toISOString();
+  if (order.type === "repeat") {
+    grantRepeatCredits(data, buyer, plan, paidAt);
+    createRepeatPoolReward(data, order, buyer, plan, paidAt);
+  } else {
+    createFirstReward(data, order, buyer, plan, paidAt);
+  }
+  return {
+    ok: true,
+    message: `已重算为${order.type === "first" ? "首充" : "复购"}，移除 ${removedRewards} 笔旧奖励、${reversedLogs} 条复购资格流水`,
+  };
+}
+
 function orderConfirmPreview(order) {
   const user = findUser(order.userId);
   const plan = findPlan(order.planId);
@@ -1669,7 +1710,9 @@ function renderAdminOrders() {
       : "";
     const actions = order.status === "pending"
       ? `<button class="link" data-confirm-order="${order.id}">确认付款</button><button class="link" data-cancel-order="${order.id}">取消订单</button>`
-      : "";
+      : order.status === "paid"
+        ? `<button class="link" data-recalc-order="${order.id}">重算奖励</button>`
+        : "";
     const proofHref = order.proofUrl || order.proofInlineData || "";
     const proofLink = proofHref ? ` / <a class="link" href="${proofHref}" target="_blank" rel="noopener">查看凭证</a>` : "";
     const proofText = ` / ${proofStatusText(order)}`;
@@ -2539,6 +2582,21 @@ document.body.addEventListener("click", async (event) => {
     await saveState();
     renderAll();
     toast("订单已取消");
+    return;
+  }
+
+  const recalcOrder = event.target.closest("[data-recalc-order]");
+  if (recalcOrder) {
+    if (!requireAdmin()) return;
+    const order = state.orders.find((item) => item.id === recalcOrder.dataset.recalcOrder);
+    if (!order) return toast("找不到订单");
+    if (!window.confirm(`确定重算订单奖励：${order.id}？\n只会处理待确认奖励，已确认/已释放奖励不会自动改动。`)) return;
+    const result = recalculateOrderRewards(state, order);
+    if (!result.ok) return toast(result.message);
+    addAdminLog("重算订单奖励", order.id, result.message);
+    await saveState();
+    renderAll();
+    toast(result.message);
     return;
   }
 
