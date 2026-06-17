@@ -25,7 +25,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260617-39";
+const APP_VERSION = "20260617-40";
 const SYSTEM_DOC_PATH = ["amsystem", "main"];
 const USER_COLLECTION = "amsystemUsers";
 const ORDER_COLLECTION = "amsystemOrders";
@@ -1630,6 +1630,7 @@ function renderAdmin() {
   ensurePlanCancelButton();
   ensureRewardStatusOptions();
   renderAdminTodos();
+  renderAdminTabBadges();
   renderAdminPlans();
   renderAdminUsers();
   renderRepeatCreditLogs();
@@ -1716,6 +1717,33 @@ function renderAdminTodos() {
       <button class="link" type="button" data-open-admin-tab="${item.tab}">${item.action}</button>
     </article>
   `).join("");
+}
+
+function setTabBadge(tabId, count, tone = "warn") {
+  const button = document.querySelector(`.tab[data-tab="${tabId}"]`);
+  if (!button) return;
+  button.querySelector(".tab-badge")?.remove();
+  if (!count) return;
+  const badge = document.createElement("span");
+  badge.className = `tab-badge ${tone}`;
+  badge.textContent = count > 99 ? "99+" : String(count);
+  button.appendChild(badge);
+}
+
+function renderAdminTabBadges() {
+  const items = adminTodoItems();
+  const byTab = items.reduce((map, item) => {
+    map[item.tab] = (map[item.tab] || 0) + Number(item.count || 0);
+    return map;
+  }, {});
+  const total = items.reduce((sum, item) => sum + Number(item.count || 0), 0);
+  setTabBadge("adminTodos", total, "warn");
+  setTabBadge("adminOrders", byTab.adminOrders || 0, byTab.adminOrders ? "danger" : "warn");
+  setTabBadge("adminRewards", byTab.adminRewards || 0, "warn");
+  setTabBadge("adminWithdraws", byTab.adminWithdraws || 0, "warn");
+  setTabBadge("adminRisk", byTab.adminRisk || 0, byTab.adminRisk ? "danger" : "warn");
+  setTabBadge("adminUsers", 0);
+  setTabBadge("adminLogs", 0);
 }
 
 function ensureRewardStatusOptions() {

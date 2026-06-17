@@ -81,6 +81,28 @@ main { padding: 0 clamp(18px, 4vw, 48px) 40px; }
 .primary:hover { background: var(--primary-dark); }
 .ghost { background: #eef4ff; color: var(--primary); }
 .danger { background: #fff0f0; color: var(--danger); }
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.tab-badge {
+  min-width: 22px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #fff7dd;
+  color: var(--warning);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.tab-badge.danger {
+  background: #fff0f0;
+  color: var(--danger);
+}
+.tab.active .tab-badge {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
 .tag.warning {
   background: #fff7dd;
   color: var(--warning);
