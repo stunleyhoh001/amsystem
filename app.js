@@ -25,6 +25,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
+const APP_VERSION = "20260617-22";
 const SYSTEM_DOC_PATH = ["amsystem", "main"];
 const USER_COLLECTION = "amsystemUsers";
 const ORDER_COLLECTION = "amsystemOrders";
@@ -106,6 +107,18 @@ function setAuthStatusText(message) {
 function setSyncStatusText(message) {
   const syncStatus = document.querySelector("#syncStatus");
   if (syncStatus) syncStatus.textContent = readableSyncMessage(message);
+}
+
+function renderAppVersion() {
+  let target = document.querySelector("#appVersionText");
+  const syncStatus = document.querySelector("#syncStatus");
+  if (!target && syncStatus?.parentNode) {
+    target = document.createElement("p");
+    target.id = "appVersionText";
+    target.className = "help-text muted-line";
+    syncStatus.insertAdjacentElement("afterend", target);
+  }
+  if (target) target.textContent = `当前前端版本：${APP_VERSION}`;
 }
 
 function readableSyncMessage(message) {
@@ -248,6 +261,7 @@ async function saveState() {
     normalizePendingOrderIdsForOwner(firebaseUser.uid);
   }
   normalizeWithdrawSources();
+  normalizePendingOrderTypes();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   if (!firebaseUser) {
     syncMessage = "Firestore：未登录，暂存本地";
@@ -649,6 +663,17 @@ function normalizeWithdrawSources() {
   }));
 }
 
+function normalizePendingOrderTypes() {
+  if (!state) return;
+  state.orders = (state.orders || []).map((order) => {
+    if (order.status !== "pending") return order;
+    return {
+      ...order,
+      type: actualOrderType(state, order.userId, order.id),
+    };
+  });
+}
+
 function money(value) {
   return `RM${Number(value || 0).toLocaleString("en-MY", { maximumFractionDigits: 2 })}`;
 }
@@ -773,15 +798,28 @@ function withdrawRuleText(available) {
   return `规则：充值积分不可提现；只有已确认/已释放的首充推荐奖励和复购奖励可提现。当前可提现奖励 ${money(available)}。`;
 }
 
+function hasPaidOrder(data, userId, excludeOrderId = "") {
+  return (data.orders || []).some((order) =>
+    order.userId === userId
+    && order.status === "paid"
+    && order.id !== excludeOrderId
+  );
+}
+
+function actualOrderType(data, userId, excludeOrderId = "") {
+  return hasPaidOrder(data, userId, excludeOrderId) ? "repeat" : "first";
+}
+
 function createOrder(data, userId, planId, type, status = "paid", createdAt = new Date().toISOString(), paymentInfo = {}) {
   const user = data.users.find((item) => item.id === userId);
   const plan = data.plans.find((item) => item.id === planId);
   if (!user || !plan) return null;
+  const orderType = type || actualOrderType(data, userId);
   const order = {
     id: orderNo(data, userId),
     userId,
     planId,
-    type,
+    type: orderType,
     status,
     amount: plan.amount,
     points: 0,
@@ -808,6 +846,7 @@ function applyPaidOrder(data, order, paidAt = new Date().toISOString()) {
   const user = data.users.find((item) => item.id === order.userId);
   const plan = data.plans.find((item) => item.id === order.planId);
   if (!user || !plan || order.points > 0) return;
+  order.type = actualOrderType(data, order.userId, order.id);
   order.status = "paid";
   order.points = plan.points;
   order.paidAt = paidAt;
@@ -935,13 +974,14 @@ function orderConfirmPreview(order) {
   const user = findUser(order.userId);
   const plan = findPlan(order.planId);
   if (!user || !plan) return "订单资料不完整，仍要继续确认吗？";
+  const previewType = actualOrderType(state, order.userId, order.id);
   const lines = [
     `确认订单：${order.id}`,
     `用户：${user.name} / ${user.account}`,
     `配套：${plan.name}，金额 ${money(order.amount)}`,
     `积分：+${points(plan.points)}`,
   ];
-  if (order.type === "repeat") {
+  if (previewType === "repeat") {
     const receiver = nextRepeatReceiver(state, user.id);
     const reward = +(order.amount * (Number(plan.repeatRate || 0) / 100)).toFixed(2);
     lines.push(`复购资格：买家 +${planRepeatCredits(plan)} 个`);
@@ -1287,6 +1327,7 @@ function ensureStorageTestButton() {
 }
 
 function renderMemberPlans(user) {
+  const nextType = actualOrderType(state, user.id);
   document.querySelector("#memberPlanCards").innerHTML = state.plans.map((plan) => `
     <article class="plan-card">
       <strong>${plan.name} · ${money(plan.amount)}</strong>
@@ -1294,7 +1335,7 @@ function renderMemberPlans(user) {
       <span>推荐权限：${plan.slots} 人 / 有效期：${plan.validDays} 天</span>
       <span>复购后获得资格：${planRepeatCredits(plan)} 个 / 冷却：${planRepeatCooldownHours(plan)} 小时 / 资格复购奖励：${plan.repeatRate}%</span>
       <span>首充推荐奖励：${plan.firstRate}%</span>
-      <button class="button primary" data-buy-plan="${plan.id}" data-buy-type="${user.packageUntil ? "repeat" : "first"}">申请充值配套</button>
+      <button class="button primary" data-buy-plan="${plan.id}" data-buy-type="${nextType}">申请充值配套</button>
     </article>
   `).join("");
 }
@@ -1630,6 +1671,14 @@ function renderAdminRiskRules() {
         "提现申请需要后台审核，通过后再标记打款。",
       ],
     },
+    {
+      title: "部署前自检",
+      rows: [
+        `页面前端版本应显示：${APP_VERSION}。`,
+        "如果出现 permission-denied，先发布最新 firestore.rules。",
+        "如果凭证上传异常，先发布 storage.rules；MVP 会把小图暂存订单内。",
+      ],
+    },
   ].map((card) => `
     <article class="risk-card">
       <strong>${card.title}</strong>
@@ -1883,6 +1932,7 @@ function requireAdmin() {
 function renderAll() {
   if (!state) return;
   updateAuthStatusClean();
+  renderAppVersion();
   renderMember();
   if (isAdmin()) {
     renderAdmin();
@@ -2317,14 +2367,15 @@ document.body.addEventListener("click", async (event) => {
     };
     if (!paymentInfo.ref) return toast("请先填写付款参考号");
     const user = currentUser();
-    if (buyPlan.dataset.buyType === "repeat" && repeatCooldownRemaining(user) > 0) {
+    const orderType = actualOrderType(state, user.id);
+    if (orderType === "repeat" && repeatCooldownRemaining(user) > 0) {
       return toast(`复购冷却中，请 ${repeatCooldownText(user)} 后再申请`);
     }
-    if (buyPlan.dataset.buyType === "repeat" && state.orders.some((order) => order.userId === user.id && order.type === "repeat" && order.status === "pending")) {
+    if (orderType === "repeat" && state.orders.some((order) => order.userId === user.id && order.type === "repeat" && order.status === "pending")) {
       return toast("你已有待确认的复购订单，请先等待后台处理");
     }
     toast("正在提交配套申请...");
-    const order = createOrder(state, user.id, buyPlan.dataset.buyPlan, buyPlan.dataset.buyType, "pending", new Date().toISOString(), paymentInfo);
+    const order = createOrder(state, user.id, buyPlan.dataset.buyPlan, orderType, "pending", new Date().toISOString(), paymentInfo);
     const proofFile = document.querySelector("#paymentInfoForm [name='paymentProof']").files[0];
     if (proofFile) {
       try {

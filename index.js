@@ -135,10 +135,16 @@ exports.confirmOrder = onCall(async (request) => {
     }
 
     const buyer = userSnap.data();
+    const paidOrdersSnap = await tx.get(
+      db.collection("amsystemOrders")
+        .where("userId", "==", order.userId)
+        .where("status", "==", "paid")
+    );
+    const actualType = paidOrdersSnap.empty ? "first" : "repeat";
     const paidAt = new Date().toISOString();
     const pointChange = Number(plan.points || 0);
     const newBalance = Number(buyer.points || 0) + pointChange;
-    const earnedRepeatCredits = order.type === "repeat" ? planRepeatCredits(plan) : 0;
+    const earnedRepeatCredits = actualType === "repeat" ? planRepeatCredits(plan) : 0;
     const currentRepeatCredits = Number(buyer.repeatCredits || 0);
     const nextRepeatCredits = currentRepeatCredits + earnedRepeatCredits;
     const buyerQueueAt = earnedRepeatCredits > 0 && (!buyer.repeatCreditQueueAt || currentRepeatCredits <= 0)
@@ -146,12 +152,12 @@ exports.confirmOrder = onCall(async (request) => {
       : (buyer.repeatCreditQueueAt || "");
 
     let referrerSnap = null;
-    if (order.type === "first" && buyer.referrerId) {
+    if (actualType === "first" && buyer.referrerId) {
       referrerSnap = await tx.get(db.collection("amsystemUsers").doc(buyer.referrerId));
     }
 
     let repeatReceiver = null;
-    if (order.type === "repeat") {
+    if (actualType === "repeat") {
       const eligibleSnap = await tx.get(
         db.collection("amsystemUsers").where("repeatCredits", ">", 0)
       );
@@ -170,6 +176,7 @@ exports.confirmOrder = onCall(async (request) => {
 
     tx.update(orderRef, {
       status: "paid",
+      type: actualType,
       points: pointChange,
       paidAt,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -180,7 +187,7 @@ exports.confirmOrder = onCall(async (request) => {
       slots: Math.max(Number(buyer.slots || 0), Number(plan.slots || 0)),
       repeatCredits: nextRepeatCredits,
       repeatCreditQueueAt: buyerQueueAt,
-      repeatCooldownUntil: order.type === "repeat" ? addHours(paidAt, planRepeatCooldownHours(plan)) : (buyer.repeatCooldownUntil || ""),
+      repeatCooldownUntil: actualType === "repeat" ? addHours(paidAt, planRepeatCooldownHours(plan)) : (buyer.repeatCooldownUntil || ""),
       packageUntil: addDays(paidAt, Number(plan.validDays || 0)),
       level: Number(plan.amount || 0) >= 580 ? "高级推广用户" : "推广用户",
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -210,7 +217,7 @@ exports.confirmOrder = onCall(async (request) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    if (order.type === "first" && referrerSnap && referrerSnap.exists) {
+    if (actualType === "first" && referrerSnap && referrerSnap.exists) {
       const referrer = referrerSnap.data();
       const rate = Number(plan.firstRate || 0);
       if (!referrer.frozen && rate > 0) {
@@ -226,7 +233,7 @@ exports.confirmOrder = onCall(async (request) => {
       }
     }
 
-    if (order.type === "repeat" && repeatReceiver) {
+    if (actualType === "repeat" && repeatReceiver) {
       const rate = Number(plan.repeatRate || 0);
       if (rate > 0) {
         const receiverCredits = Math.max(Number(repeatReceiver.repeatCredits || 0) - 1, 0);
