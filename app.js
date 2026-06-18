@@ -25,8 +25,9 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260618-36";
+const APP_VERSION = "20260619-19";
 const TEST_CHECKLIST_KEY = "amsystemTestChecklist";
+const DEPLOY_CHECKLIST_KEY = "amsystemDeployChecklist";
 const WITHDRAW_COOLDOWN_HOURS = 24;
 const SYSTEM_DOC_PATH = ["amsystem", "main"];
 const USER_COLLECTION = "amsystemUsers";
@@ -56,6 +57,16 @@ const TEST_CHECKLIST = [
   "准备一个有复购资格的用户，确认资格池奖励会派发给排队最早且不是买家的人。",
   "到期后测试奖励确认或分期释放，确认只有已释放奖励进入可提现余额。",
   "用户申请提现，后台通过并标记打款，导出订单/奖励/提现/异常报告核对金额。",
+];
+const DEPLOY_CHECKLIST = [
+  "GitHub Pages 或 Firebase Hosting 已发布最新 index.html / app.js / styles.css。",
+  "Firebase Authentication 已加入当前访问域名为授权域名。",
+  "Firebase Console 已发布最新 firestore.rules。",
+  "Firebase Console 已发布最新 storage.rules。",
+  "使用普通用户账号测试 Google 登录成功。",
+  "普通用户可提交充值订单并保存到 Firestore。",
+  "普通用户可上传或暂存付款凭证。",
+  "手机浏览器打开页面，用户界面和后台界面排版正常。",
 ];
 
 const firebaseConfig = {
@@ -193,9 +204,8 @@ function saveTestChecklistState(items) {
   localStorage.setItem(TEST_CHECKLIST_KEY, JSON.stringify(items || {}));
 }
 
-function testChecklistReport() {
-  const checked = testChecklistState();
-  const items = TEST_CHECKLIST.map((text, index) => {
+function checklistReport(items, checked) {
+  const reportItems = items.map((text, index) => {
     const value = checked[String(index)];
     const done = typeof value === "object" ? Boolean(value.done) : Boolean(value);
     return {
@@ -206,16 +216,43 @@ function testChecklistReport() {
     };
   });
   return {
-    total: items.length,
-    done: items.filter((item) => item.done).length,
-    items,
+    total: reportItems.length,
+    done: reportItems.filter((item) => item.done).length,
+    lastCompletedAt: reportItems
+      .filter((item) => item.completedAt)
+      .map((item) => item.completedAt)
+      .sort()
+      .at(-1) || "",
+    items: reportItems,
   };
+}
+
+function testChecklistReport() {
+  return checklistReport(TEST_CHECKLIST, testChecklistState());
+}
+
+function deployChecklistState() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(DEPLOY_CHECKLIST_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveDeployChecklistState(items) {
+  localStorage.setItem(DEPLOY_CHECKLIST_KEY, JSON.stringify(items || {}));
+}
+
+function deployChecklistReport() {
+  return checklistReport(DEPLOY_CHECKLIST, deployChecklistState());
 }
 
 function renderTestChecklistRows() {
   const report = testChecklistReport();
+  const complete = report.done === report.total;
   return [
-    `<span class="test-progress">完成 ${report.done} / ${report.total}</span>`,
+    `<span class="test-progress ${complete ? "complete" : "pending"}">${complete ? "实机测试已完成" : `完成 ${report.done} / ${report.total}`}${report.lastCompletedAt ? ` · 最后完成：${new Date(report.lastCompletedAt).toLocaleString("zh-CN")}` : ""}</span>`,
     ...report.items.map((item, index) => `
       <label class="test-check">
         <input type="checkbox" data-test-check="${index}" ${item.done ? "checked" : ""} />
@@ -223,6 +260,21 @@ function renderTestChecklistRows() {
       </label>
     `),
     `<span class="test-actions"><button class="link" type="button" id="exportTestChecklistBtn">导出测试清单</button><button class="link" type="button" id="resetTestChecklistBtn">重置测试清单</button></span>`,
+  ];
+}
+
+function renderDeployChecklistRows() {
+  const report = deployChecklistReport();
+  const complete = report.done === report.total;
+  return [
+    `<span class="test-progress ${complete ? "complete" : "pending"}">${complete ? "部署检查已完成" : `完成 ${report.done} / ${report.total}`}${report.lastCompletedAt ? ` · 最后完成：${new Date(report.lastCompletedAt).toLocaleString("zh-CN")}` : ""}</span>`,
+    ...report.items.map((item, index) => `
+      <label class="test-check">
+        <input type="checkbox" data-deploy-check="${index}" ${item.done ? "checked" : ""} />
+        <span>${item.index}. ${item.text}${item.completedAt ? `<small>完成时间：${new Date(item.completedAt).toLocaleString("zh-CN")}</small>` : ""}</span>
+      </label>
+    `),
+    `<span class="test-actions"><button class="link" type="button" id="exportDeployChecklistBtn">导出部署清单</button><button class="link" type="button" id="resetDeployChecklistBtn">重置部署清单</button></span>`,
   ];
 }
 
@@ -322,6 +374,7 @@ async function saveState() {
   }
   normalizeWithdrawSources();
   normalizePendingOrderTypes();
+  backfillOrderConfirmSummaries(state);
   const backfilledSnapshots = backfillOrderPlanSnapshots(state);
   if (backfilledSnapshots && isAdmin()) {
     addAdminLog("补齐订单快照", "系统", `自动补齐 ${backfilledSnapshots} 笔旧订单的配套快照`);
@@ -738,6 +791,51 @@ function normalizePendingOrderTypes() {
   });
 }
 
+function orderConfirmSummaryFromRecords(data, order) {
+  const buyer = (data.users || []).find((item) => item.id === order.userId);
+  const plan = orderPlan(order, data);
+  if (!buyer || !plan || order.status !== "paid") return "";
+  const rewards = (data.rewards || []).filter((reward) => reward.orderId === order.id);
+  const repeatEarned = (data.repeatCreditLogs || [])
+    .filter((log) => log.userId === buyer.id && (log.reason === "earned" || Number(log.change || 0) > 0))
+    .filter((log) => !log.source || log.source === order.id || new Date(log.createdAt || 0).getTime() === new Date(order.paidAt || order.createdAt || 0).getTime())
+    .reduce((sum, log) => sum + Math.max(Number(log.change || 0), 0), 0);
+  const summary = [
+    `判定：${order.type === "repeat" ? "复购" : "首充"}`,
+    `买家积分 +${points(order.points || plan.points)}`,
+  ];
+  if (buyer.packageUntil) summary.push(`配套有效至 ${new Date(buyer.packageUntil).toLocaleDateString("zh-CN")}`);
+  if (order.type === "repeat") {
+    const repeatReward = rewards.find((reward) => reward.type === "repeat");
+    const receiver = repeatReward ? (data.users || []).find((user) => user.id === repeatReward.userId) : null;
+    summary.push(`买家复购资格 +${repeatEarned || 0}，当前 ${buyer.repeatCredits || 0}`);
+    if (buyer.repeatCooldownUntil) summary.push(`复购冷却至 ${new Date(buyer.repeatCooldownUntil).toLocaleString("zh-CN")}`);
+    summary.push(repeatReward
+      ? `资格池奖励：${receiver?.name || repeatReward.userId} 获得 ${money(repeatReward.amount)}，扣 1 个资格`
+      : "资格池奖励：未找到现有奖励记录");
+  } else {
+    const firstReward = rewards.find((reward) => reward.type === "first");
+    const receiver = firstReward ? (data.users || []).find((user) => user.id === firstReward.userId) : null;
+    summary.push(firstReward
+      ? `首充奖励：${receiver?.name || firstReward.userId} 获得 ${money(firstReward.amount)}`
+      : "首充奖励：未找到现有奖励记录");
+  }
+  return summary.join(" / ");
+}
+
+function backfillOrderConfirmSummaries(data = state) {
+  if (!data) return 0;
+  let count = 0;
+  (data.orders || []).forEach((order) => {
+    if (order.status !== "paid" || order.confirmSummary) return;
+    const summary = orderConfirmSummaryFromRecords(data, order);
+    if (!summary) return;
+    order.confirmSummary = summary;
+    count += 1;
+  });
+  return count;
+}
+
 function money(value) {
   return `RM${Number(value || 0).toLocaleString("en-MY", { maximumFractionDigits: 2 })}`;
 }
@@ -1062,8 +1160,50 @@ function incompleteProfileUsers(data = state) {
   return (data.users || []).filter((user) => !profileComplete(user));
 }
 
+function rewardIntegrityIssues(data = state) {
+  return (data.rewards || []).flatMap((reward) => rewardRiskLabels(reward, data));
+}
+
+function rewardRiskLabels(reward, data = state) {
+  const issues = [];
+  const users = data.users || [];
+  const orders = data.orders || [];
+  const usersById = new Map(users.map((user) => [user.id, user]));
+  const ordersById = new Map(orders.map((order) => [order.id, order]));
+  const label = reward.id || reward.orderId;
+  const order = ordersById.get(reward.orderId);
+  if (!usersById.has(reward.userId)) issues.push(`奖励 ${label} 的收款用户不存在`);
+  if (!order) {
+    issues.push(`奖励 ${label} 对应订单不存在`);
+    return issues;
+  }
+  const buyer = usersById.get(order.userId);
+  const expectedAmount = Number((Number(order.amount || 0) * (Number(reward.rate || 0) / 100)).toFixed(2));
+  if (Math.abs(Number(reward.amount || 0) - expectedAmount) > 0.01) {
+    issues.push(`奖励 ${label} 金额异常：记录 ${money(reward.amount)}，应为 ${money(expectedAmount)}`);
+  }
+  if (reward.type === "first") {
+    if (order.type !== "first") issues.push(`首充奖励 ${label} 对应订单不是首充`);
+    if (buyer?.referrerId && reward.userId !== buyer.referrerId) issues.push(`首充奖励 ${label} 没有发给订单买家的推荐人`);
+    if (!buyer?.referrerId) issues.push(`首充奖励 ${label} 对应买家没有推荐人`);
+  }
+  if (reward.type === "repeat") {
+    if (order.type !== "repeat") issues.push(`复购奖励 ${label} 对应订单不是复购`);
+    if (reward.userId === order.userId) issues.push(`复购奖励 ${label} 发给了买家本人`);
+    if (reward.rewardMode !== "pool") issues.push(`复购奖励 ${label} 缺少资格池标记`);
+    if (Array.isArray(reward.releasePlan)) {
+      const released = reward.releasePlan.reduce((sum, part) => sum + (part.released ? Number(part.amount || 0) : 0), 0);
+      const planned = reward.releasePlan.reduce((sum, part) => sum + Number(part.amount || 0), 0);
+      if (Math.abs(planned - Number(reward.amount || 0)) > 0.01) issues.push(`复购奖励 ${label} 分期总额与奖励金额不一致`);
+      if (Number(reward.releasedAmount || 0) !== released) issues.push(`复购奖励 ${label} 已释放金额与分期不一致`);
+    }
+  }
+  return issues;
+}
+
 function dataIntegrityIssues(data = state, options = {}) {
   const includeProfileIssues = options.includeProfileIssues !== false;
+  const includeRewardIssues = options.includeRewardIssues !== false;
   const issues = [];
   const users = data.users || [];
   const orders = data.orders || [];
@@ -1094,14 +1234,7 @@ function dataIntegrityIssues(data = state, options = {}) {
     });
   });
 
-  rewards.forEach((reward) => {
-    if (!usersById.has(reward.userId)) issues.push(`奖励 ${reward.id || reward.orderId} 的收款用户不存在`);
-    if (!ordersById.has(reward.orderId)) issues.push(`奖励 ${reward.id || reward.orderId} 对应订单不存在`);
-    if (reward.type === "repeat" && Array.isArray(reward.releasePlan)) {
-      const released = reward.releasePlan.reduce((sum, part) => sum + (part.released ? Number(part.amount || 0) : 0), 0);
-      if (Number(reward.releasedAmount || 0) !== released) issues.push(`复购奖励 ${reward.id || reward.orderId} 已释放金额与分期不一致`);
-    }
-  });
+  if (includeRewardIssues) issues.push(...rewardIntegrityIssues(data));
 
   withdraws.forEach((withdraw) => {
     if (!usersById.has(withdraw.userId)) issues.push(`提现 ${withdraw.id} 的用户不存在`);
@@ -1169,6 +1302,7 @@ function applyPaidOrder(data, order, paidAt = new Date().toISOString()) {
   const user = data.users.find((item) => item.id === order.userId);
   const plan = orderPlan(order, data);
   if (!user || !plan || order.points > 0) return;
+  const summary = [];
   order.type = actualOrderType(data, order.userId, order.id);
   order.status = "paid";
   order.points = plan.points;
@@ -1178,13 +1312,25 @@ function applyPaidOrder(data, order, paidAt = new Date().toISOString()) {
   user.packageUntil = addDays(paidAt, plan.validDays);
   user.level = plan.amount >= 580 ? "高级推广用户" : "推广用户";
   data.pointLogs.push({ id: id("log"), userId: user.id, change: plan.points, balance: user.points, source: order.id, note: `${plan.name} 积分发放`, createdAt: paidAt });
+  summary.push(`判定：${order.type === "first" ? "首充" : "复购"}`);
+  summary.push(`买家积分 +${points(plan.points)}`);
+  summary.push(`配套有效至 ${new Date(user.packageUntil).toLocaleDateString("zh-CN")}`);
   if (order.type === "repeat") {
     user.repeatCooldownUntil = addHours(paidAt, planRepeatCooldownHours(plan));
-    grantRepeatCredits(data, user, plan, paidAt);
-    createRepeatPoolReward(data, order, user, plan, paidAt);
+    const earnedCredits = grantRepeatCredits(data, user, plan, paidAt);
+    const repeatReward = createRepeatPoolReward(data, order, user, plan, paidAt);
+    summary.push(`买家复购资格 +${earnedCredits}，当前 ${user.repeatCredits}`);
+    summary.push(`复购冷却至 ${new Date(user.repeatCooldownUntil).toLocaleString("zh-CN")}`);
+    summary.push(repeatReward
+      ? `资格池奖励：${repeatReward.receiverName} 获得 ${money(repeatReward.amount)}，扣 1 个资格`
+      : "资格池奖励：暂无接收人或比例为 0，未生成奖励");
   } else {
-    createFirstReward(data, order, user, plan, paidAt);
+    const firstReward = createFirstReward(data, order, user, plan, paidAt);
+    summary.push(firstReward
+      ? `首充奖励：${firstReward.receiverName} 获得 ${money(firstReward.amount)}`
+      : "首充奖励：无推荐人、推荐人冻结、名额不足或比例为 0，未生成奖励");
   }
+  order.confirmSummary = summary.join(" / ");
 }
 
 function planRepeatCredits(plan) {
@@ -1233,44 +1379,49 @@ function releaseDueRewardParts(reward, now = new Date()) {
 
 function grantRepeatCredits(data, user, plan, paidAt) {
   const credits = planRepeatCredits(plan);
-  if (credits <= 0) return;
+  if (credits <= 0) return 0;
   const currentCredits = Number(user.repeatCredits || 0);
   user.repeatCredits = currentCredits + credits;
   if (!user.repeatCreditQueueAt || currentCredits <= 0) {
     user.repeatCreditQueueAt = paidAt;
   }
   addRepeatCreditLog(data, user.id, credits, user.repeatCredits, "earned", "", `${plan.name} repeat purchase`, paidAt);
+  return credits;
 }
 
 function createFirstReward(data, order, buyer, plan, paidAt = order.createdAt) {
-  if (!buyer.referrerId) return;
+  if (!buyer.referrerId) return null;
   const referrer = data.users.find((item) => item.id === buyer.referrerId);
-  if (!referrer || referrer.frozen) return;
-  if (directReferralCount(referrer.id, data) > (referrer.slots || 0)) return;
+  if (!referrer || referrer.frozen) return null;
+  if (directReferralCount(referrer.id, data) > (referrer.slots || 0)) return null;
   const rate = Number(plan.firstRate || 0);
-  if (rate <= 0) return;
-  data.rewards.push({
+  if (rate <= 0) return null;
+  const amount = +(order.amount * (rate / 100)).toFixed(2);
+  const reward = {
     id: id("rew"),
     userId: referrer.id,
     sourceUserId: buyer.id,
     orderId: order.id,
     type: "first",
     rate,
-    amount: +(order.amount * (rate / 100)).toFixed(2),
+    amount,
     status: "pending",
     confirmAfter: addDays(paidAt, CONFIRM_DAYS),
     createdAt: paidAt,
-  });
+  };
+  data.rewards.push(reward);
+  return { reward, receiverName: referrer.name || referrer.account || referrer.id, amount };
 }
 
 function createRepeatPoolReward(data, order, buyer, plan, paidAt = order.createdAt) {
   const receiver = nextRepeatReceiver(data, buyer.id);
   const rate = Number(plan.repeatRate || 0);
-  if (!receiver || rate <= 0) return;
+  if (!receiver || rate <= 0) return null;
   receiver.repeatCredits = Math.max(Number(receiver.repeatCredits || 0) - 1, 0);
   if (receiver.repeatCredits <= 0) receiver.repeatCreditQueueAt = "";
   addRepeatCreditLog(data, receiver.id, -1, receiver.repeatCredits, "used", order.id, `Repeat pool reward from ${buyer.name || buyer.account}`, paidAt);
-  data.rewards.push({
+  const amount = +(order.amount * (rate / 100)).toFixed(2);
+  const reward = {
     id: id("rew"),
     userId: receiver.id,
     sourceUserId: buyer.id,
@@ -1278,13 +1429,15 @@ function createRepeatPoolReward(data, order, buyer, plan, paidAt = order.created
     type: "repeat",
     rewardMode: "pool",
     rate,
-    amount: +(order.amount * (rate / 100)).toFixed(2),
+    amount,
     status: "pending",
     releasedAmount: 0,
-    releasePlan: createReleasePlan(+(order.amount * (rate / 100)).toFixed(2), paidAt),
+    releasePlan: createReleasePlan(amount, paidAt),
     confirmAfter: addDays(paidAt, CONFIRM_DAYS),
     createdAt: paidAt,
-  });
+  };
+  data.rewards.push(reward);
+  return { reward, receiverName: receiver.name || receiver.account || receiver.id, amount };
 }
 
 function nextRepeatReceiver(data, buyerId) {
@@ -1398,6 +1551,7 @@ function orderDetailText(order) {
     `凭证：${proofStatusText(order)}`,
     `风控风险：${risks.length ? risks.join("；") : "无"}`,
     `处理备注：${order.reviewNote || "-"}`,
+    `处理结果：${order.confirmSummary || "-"}`,
     `积分：${points(order.points || 0)} / 确认后应发 ${points(plan.points)}`,
     `确认时间：${order.reviewedAt ? new Date(order.reviewedAt).toLocaleString("zh-CN") : "-"}`,
     `取消时间：${order.cancelledAt ? new Date(order.cancelledAt).toLocaleString("zh-CN") : "-"}`,
@@ -1414,6 +1568,7 @@ function rewardDetailText(reward) {
   const sourceUser = findUser(reward.sourceUserId);
   const order = (state.orders || []).find((item) => item.id === reward.orderId);
   const plan = order ? orderPlan(order) : null;
+  const risks = rewardRiskLabels(reward);
   const expectedAmount = order ? +(Number(order.amount || 0) * (Number(reward.rate || 0) / 100)).toFixed(2) : 0;
   const amountGap = order ? Number((Number(reward.amount || 0) - expectedAmount).toFixed(2)) : 0;
   return [
@@ -1429,6 +1584,7 @@ function rewardDetailText(reward) {
     `按订单金额应得：${order ? money(expectedAmount) : "-"}`,
     `计算差额：${order ? money(amountGap) : "-"}`,
     `状态：${labelStatus(reward.status)}`,
+    `风控风险：${risks.length ? risks.join("；") : "无"}`,
     `可处理日：${rewardNextDateText(reward)}`,
     `审核备注：${reward.reviewNote || "-"}`,
     `创建时间：${reward.createdAt ? new Date(reward.createdAt).toLocaleString("zh-CN") : "-"}`,
@@ -1950,7 +2106,8 @@ function renderMemberOrders(user) {
   const rows = state.orders.filter((order) => order.userId === user.id).slice().reverse().map((order) => {
     const plan = orderPlan(order);
     const noteText = order.reviewNote ? `<span class="muted-line">处理备注：${order.reviewNote}</span>` : "";
-    return `<tr><td>${order.id}</td><td>${plan?.name || "-"}</td><td>${order.type === "first" ? "首充" : "复购"}</td><td>${money(order.amount)}</td><td>${points(order.points)}</td><td><span class="tag ${order.status}">${labelStatus(order.status)}</span>${noteText}</td><td>${new Date(order.createdAt).toLocaleString("zh-CN")}</td></tr>`;
+    const summaryText = order.confirmSummary ? `<span class="muted-line">处理结果：${order.confirmSummary}</span>` : "";
+    return `<tr><td>${order.id}</td><td>${plan?.name || "-"}</td><td>${order.type === "first" ? "首充" : "复购"}</td><td>${money(order.amount)}</td><td>${points(order.points)}</td><td><span class="tag ${order.status}">${labelStatus(order.status)}</span>${noteText}${summaryText}</td><td>${new Date(order.createdAt).toLocaleString("zh-CN")}</td></tr>`;
   }).join("");
   document.querySelector("#memberOrderTable").innerHTML = rows || `<tr><td colspan="7">暂无订单</td></tr>`;
 }
@@ -2048,6 +2205,10 @@ function renderAdmin() {
   document.querySelector("#metricPendingOrders").textContent = state.orders.filter((order) => order.status === "pending").length;
   document.querySelector("#metricPendingRewards").textContent = money(state.rewards.filter((reward) => ["pending", "releasing"].includes(reward.status)).reduce((sum, reward) => sum + (Number(reward.amount || 0) - Number(reward.releasedAmount || 0)), 0));
   document.querySelector("#metricWithdraws").textContent = money(state.withdraws.filter((item) => item.status === "pending").reduce((sum, item) => sum + item.amount, 0));
+  const summary = readinessSummary();
+  const readinessMetric = document.querySelector("#metricReadiness");
+  readinessMetric.textContent = summary.label;
+  readinessMetric.className = summary.status === "ready" ? "metric-ok" : "metric-warn";
   ensurePlanCooldownField();
   ensurePlanCancelButton();
   ensureRewardStatusOptions();
@@ -2075,7 +2236,8 @@ function adminTodoItems() {
   const duplicateRisks = duplicateOrderRisks(state);
   const payoutRisks = payoutRiskUsers(state);
   const incompleteProfiles = incompleteProfileUsers(state);
-  const integrityIssues = dataIntegrityIssues(state, { includeProfileIssues: false });
+  const rewardIssues = rewardIntegrityIssues(state);
+  const integrityIssues = dataIntegrityIssues(state, { includeProfileIssues: false, includeRewardIssues: false });
   const checks = readinessChecks();
   const failedChecks = checks.filter((check) => !check.ok);
 
@@ -2115,6 +2277,15 @@ function adminTodoItems() {
       action: "到奖励审核处理",
       tab: "adminRewards",
       focus: dueRewards.length ? "dueRewards" : "pendingRewards",
+    },
+    {
+      title: "奖励发放异常",
+      count: rewardIssues.length,
+      level: rewardIssues.length ? "danger" : "ok",
+      detail: rewardIssues.length ? rewardIssues.slice(0, 2).join("；") : "奖励发放规则正常。",
+      action: "到风控规则查看",
+      tab: "adminRisk",
+      focus: "rewardIssues",
     },
     {
       title: "提现待审核",
@@ -2442,7 +2613,8 @@ function renderAdminOrders() {
     const proofLink = proofHref ? ` / <a class="link" href="${proofHref}" target="_blank" rel="noopener">查看凭证</a>` : "";
     const proofText = ` / ${proofStatusText(order)}`;
     const riskText = orderRiskLabels(order).map((label) => `<span class="risk-line">${label}</span>`).join("");
-    const paymentText = `${paymentMethodText(order.paymentMethod)} ${order.paymentRef || ""}${order.paymentNote ? ` / ${order.paymentNote}` : ""}${proofText}${proofLink}${riskText}`.trim() || "-";
+    const summaryText = order.confirmSummary ? `<span class="muted-line">处理结果：${order.confirmSummary}</span>` : "";
+    const paymentText = `${paymentMethodText(order.paymentMethod)} ${order.paymentRef || ""}${order.paymentNote ? ` / ${order.paymentNote}` : ""}${proofText}${proofLink}${riskText}${summaryText}`.trim() || "-";
     return `<tr><td>${order.id}</td><td>${user?.name || "-"}</td><td>${plan?.name || "-"}</td><td>${resolvedType === "first" ? "首充" : "复购"}${typeWarning}</td><td>${money(order.amount)}</td><td>${paymentText}</td><td>${points(order.points)}</td><td><span class="tag ${order.status}">${labelStatus(order.status)}</span></td><td>${new Date(order.createdAt).toLocaleString("zh-CN")}</td><td class="actions">${detailAction}${actions}</td></tr>`;
   }).join("");
   document.querySelector("#adminOrderTable").innerHTML = rows || `<tr><td colspan="10">没有符合条件的订单</td></tr>`;
@@ -2455,7 +2627,8 @@ function renderAdminRewards() {
     const sourceUser = findUser(reward.sourceUserId);
     const canConfirm = ["pending", "releasing"].includes(reward.status) && new Date(reward.confirmAfter) <= new Date();
     const detailAction = `<button class="link" data-reward-detail="${reward.id}">详情</button>`;
-    return `<tr><td>${user?.name || "-"}</td><td>${sourceUser?.name || "-"}</td><td>${reward.orderId}</td><td>${reward.type === "first" ? "首充" : "复购"}</td><td>${rewardAmountText(reward)}${reward.reviewNote ? `<span class="muted-line">备注：${reward.reviewNote}</span>` : ""}</td><td><span class="tag ${reward.status}">${labelStatus(reward.status)}</span></td><td>${rewardNextDateText(reward)}</td><td class="actions">${detailAction}${canConfirm ? `<button class="link" data-confirm-reward="${reward.id}">确认</button>` : ""}${["pending", "releasing"].includes(reward.status) ? `<button class="link" data-cancel-reward="${reward.id}">取消</button><button class="link" data-freeze-reward="${reward.id}">冻结</button>` : ""}</td></tr>`;
+    const riskText = rewardRiskLabels(reward).map((label) => `<span class="risk-line">${label}</span>`).join("");
+    return `<tr><td>${user?.name || "-"}</td><td>${sourceUser?.name || "-"}</td><td>${reward.orderId}</td><td>${reward.type === "first" ? "首充" : "复购"}</td><td>${rewardAmountText(reward)}${reward.reviewNote ? `<span class="muted-line">备注：${reward.reviewNote}</span>` : ""}${riskText}</td><td><span class="tag ${reward.status}">${labelStatus(reward.status)}</span></td><td>${rewardNextDateText(reward)}</td><td class="actions">${detailAction}${canConfirm ? `<button class="link" data-confirm-reward="${reward.id}">确认</button>` : ""}${["pending", "releasing"].includes(reward.status) ? `<button class="link" data-cancel-reward="${reward.id}">取消</button><button class="link" data-freeze-reward="${reward.id}">冻结</button>` : ""}</td></tr>`;
   }).join("");
   document.querySelector("#adminRewardTable").innerHTML = rows || `<tr><td colspan="8">没有符合条件的奖励</td></tr>`;
 }
@@ -2486,7 +2659,8 @@ function readinessChecks() {
   const pendingOrders = (state.orders || []).filter((order) => order.status === "pending");
   const pendingWithdraws = (state.withdraws || []).filter((withdraw) => withdraw.status === "pending");
   const pendingRewards = (state.rewards || []).filter((reward) => reward.status === "pending" || reward.status === "releasing");
-  const integrityIssues = dataIntegrityIssues(state, { includeProfileIssues: false });
+  const rewardIssues = rewardIntegrityIssues(state);
+  const integrityIssues = dataIntegrityIssues(state, { includeProfileIssues: false, includeRewardIssues: false });
   const testChecklist = testChecklistReport();
 
   return [
@@ -2528,6 +2702,20 @@ function readinessChecks() {
         : "已付款订单积分正常",
     },
     {
+      ok: paidOrders.every((order) => order.confirmSummary),
+      label: "订单处理结果摘要",
+      detail: paidOrders.some((order) => !order.confirmSummary)
+        ? "存在已付款订单缺少处理结果摘要，请保存一次数据或查看订单详情"
+        : "已付款订单处理结果可追踪",
+    },
+    {
+      ok: rewardIssues.length === 0,
+      label: "奖励发放规则",
+      detail: rewardIssues.length
+        ? `${rewardIssues.length} 项奖励异常：${rewardIssues.slice(0, 2).join("；")}${rewardIssues.length > 2 ? "；..." : ""}`
+        : "首充奖励、复购资格池奖励、金额和分期释放正常",
+    },
+    {
       ok: integrityIssues.length === 0,
       label: "数据一致性",
       detail: integrityIssues.length
@@ -2544,17 +2732,91 @@ function readinessChecks() {
   ];
 }
 
+function readinessSummary() {
+  const checks = readinessChecks();
+  const failedChecks = checks.filter((check) => !check.ok);
+  const testCheck = checks.find((check) => check.label === "实机测试清单");
+  const deployChecklist = deployChecklistReport();
+  const pendingDeployCount = deployChecklist.total - deployChecklist.done;
+  const nonTestFailures = failedChecks.filter((check) => check.label !== "实机测试清单");
+  if (nonTestFailures.length) {
+    return {
+      status: "blocked",
+      label: `待处理 ${failedChecks.length}`,
+      detail: `${nonTestFailures.length} 项基础自检未通过`,
+      failedChecks,
+    };
+  }
+  if (testCheck && !testCheck.ok) {
+    return {
+      status: "testing",
+      label: "待测试",
+      detail: testCheck.detail,
+      failedChecks,
+    };
+  }
+  if (pendingDeployCount > 0) {
+    return {
+      status: "deploying",
+      label: "待部署检查",
+      detail: `还有 ${pendingDeployCount} 项部署检查未完成`,
+      failedChecks,
+    };
+  }
+  return {
+    status: "ready",
+    label: "可准备上线",
+    detail: "基础自检、实机测试和部署检查已完成",
+    failedChecks,
+  };
+}
+
+function cloudFunctionStatusReport() {
+  return {
+    status: "deferred",
+    label: "后置阶段",
+    requiredForMvp: false,
+    callable: "confirmOrder",
+    detail: "Cloud Functions 代码已准备，但当前仍允许管理员前端确认作为 MVP 回退；正式扩大使用前建议启用服务端确认。",
+  };
+}
+
+function rulesStatusReport() {
+  return {
+    status: "manual-check",
+    label: "需手动确认",
+    firestoreRules: "firestore.rules",
+    storageRules: "storage.rules",
+    detail: "上线前请在 Firebase Console 发布最新 firestore.rules 与 storage.rules，然后用普通用户账号提交订单、上传凭证、申请提现做实测。",
+  };
+}
+
+function deploymentStatusReport() {
+  return {
+    status: "manual-check",
+    label: "需手动确认",
+    projectId: firebaseConfig.projectId,
+    authDomain: firebaseConfig.authDomain,
+    hostingPublic: ".",
+    detail: "部署到 GitHub Pages 或 Firebase Hosting 前，请确认 Firebase Authentication 已授权当前域名，并确认 app.js 版本参数已更新。",
+  };
+}
+
 function renderAdminRiskRules() {
   const target = document.querySelector("#adminRiskList");
   if (!target) return;
   const planCooldowns = state.plans.map((plan) => `${plan.name}: ${planRepeatCooldownHours(plan)} 小时`).join(" / ");
+  const rewardIssues = rewardIntegrityIssues(state);
   const checks = readinessChecks();
-  const failedChecks = checks.filter((check) => !check.ok).length;
+  const summary = readinessSummary();
+  const cloudFunctions = cloudFunctionStatusReport();
+  const rulesStatus = rulesStatusReport();
+  const deploymentStatus = deploymentStatusReport();
   target.innerHTML = [
     {
       title: "上线前自检",
       rows: [
-        failedChecks ? `还有 ${failedChecks} 项需要处理。` : "全部检查通过，可以进入小范围测试。",
+        summary.status === "ready" ? "基础自检、实机测试和部署检查已完成，可准备上线。" : `${summary.label}：${summary.detail}`,
         `页面前端版本：${APP_VERSION}。`,
         ...checks.map((check) => `<b class="${check.ok ? "check-ok" : "check-warn"}">${check.ok ? "通过" : "待处理"}</b> ${check.label}：${check.detail}`),
       ],
@@ -2582,6 +2844,19 @@ function renderAdminRiskRules() {
         "系统优先派发给资格池中排队最早且未冻结的用户。",
         "派发成功后接收人扣 1 个复购资格。",
       ],
+    },
+    {
+      title: "奖励发放自检",
+      rows: rewardIssues.length
+        ? [
+          `<b class="check-warn">发现 ${rewardIssues.length} 项奖励异常</b>`,
+          ...rewardIssues.slice(0, 6),
+          rewardIssues.length > 6 ? `还有 ${rewardIssues.length - 6} 项，请导出异常报告查看。` : "",
+        ].filter(Boolean)
+        : [
+          `<b class="check-ok">奖励发放规则正常</b>`,
+          "首充奖励、复购资格池奖励、金额和分期释放未发现异常。",
+        ],
     },
     {
       title: "防重复提交",
@@ -2614,6 +2889,33 @@ function renderAdminRiskRules() {
         `页面前端版本应显示：${APP_VERSION}。`,
         "如果出现 permission-denied，先发布最新 firestore.rules。",
         "如果凭证上传异常，先发布 storage.rules；MVP 会把小图暂存订单内。",
+      ],
+    },
+    {
+      title: "Rules 发布状态",
+      rows: [
+        `Firestore：${rulesStatus.firestoreRules}。`,
+        `Storage：${rulesStatus.storageRules}。`,
+        rulesStatus.detail,
+      ],
+    },
+    {
+      title: "部署环境状态",
+      className: "wide-card",
+      rows: [
+        `Firebase 项目：${deploymentStatus.projectId}。`,
+        `Auth 域名：${deploymentStatus.authDomain}。`,
+        `Hosting public：${deploymentStatus.hostingPublic}。`,
+        deploymentStatus.detail,
+        ...renderDeployChecklistRows(),
+      ],
+    },
+    {
+      title: "Cloud Functions 状态",
+      rows: [
+        `当前状态：${cloudFunctions.label}。`,
+        `调用函数：${cloudFunctions.callable}。`,
+        cloudFunctions.detail,
       ],
     },
     {
@@ -2709,8 +3011,14 @@ function exportStamp(date = new Date()) {
 function exportBundle() {
   const paidOrders = (state.orders || []).filter((order) => order.status === "paid");
   const readiness = readinessChecks();
-  const integrityIssues = dataIntegrityIssues(state);
+  const rewardIssues = rewardIntegrityIssues(state);
+  const integrityIssues = dataIntegrityIssues(state, { includeRewardIssues: false });
   const testChecklist = testChecklistReport();
+  const deployChecklist = deployChecklistReport();
+  const readinessStatus = readinessSummary();
+  const cloudFunctions = cloudFunctionStatusReport();
+  const rulesStatus = rulesStatusReport();
+  const deploymentStatus = deploymentStatusReport();
   const bundle = {
     exportedAt: new Date().toISOString(),
     appVersion: APP_VERSION,
@@ -2726,14 +3034,30 @@ function exportBundle() {
       adminLogs: (state.adminLogs || []).length,
       riskItems: readiness.length,
       riskPendingItems: readiness.filter((check) => !check.ok).length,
+      rewardIssues: rewardIssues.length,
       integrityIssues: integrityIssues.length,
       testChecklistDone: testChecklist.done,
       testChecklistTotal: testChecklist.total,
+      deployChecklistDone: deployChecklist.done,
+      deployChecklistTotal: deployChecklist.total,
+      readinessStatus: readinessStatus.status,
+      readinessLabel: readinessStatus.label,
+      readinessDetail: readinessStatus.detail,
+      cloudFunctionsStatus: cloudFunctions.status,
+      cloudFunctionsRequiredForMvp: cloudFunctions.requiredForMvp,
+      rulesStatus: rulesStatus.status,
+      deploymentStatus: deploymentStatus.status,
     },
     riskReport: {
+      summary: readinessStatus,
+      cloudFunctions,
+      rulesStatus,
+      deploymentStatus,
       checks: readiness,
+      rewardIssues,
       integrityIssues,
       testChecklist,
+      deployChecklist,
     },
     data: state,
   };
@@ -2748,14 +3072,26 @@ function exportBundle() {
 
 function exportRiskReport() {
   const checks = readinessChecks();
-  const issues = dataIntegrityIssues(state);
+  const issues = dataIntegrityIssues(state, { includeRewardIssues: false });
+  const rewardIssues = rewardIntegrityIssues(state);
   const testChecklist = testChecklistReport();
+  const deployChecklist = deployChecklistReport();
+  const readinessStatus = readinessSummary();
+  const cloudFunctions = cloudFunctionStatusReport();
+  const rulesStatus = rulesStatusReport();
+  const deploymentStatus = deploymentStatusReport();
   downloadCsv(
     `amsystem-risk-report-${exportStamp()}.csv`,
     ["类型", "状态", "项目", "详情", "完成时间"],
     [
+      ["上线状态", readinessStatus.label, readinessStatus.status, readinessStatus.detail, ""],
+      ["Cloud Functions", cloudFunctions.label, cloudFunctions.status, cloudFunctions.detail, ""],
+      ["Rules", rulesStatus.label, rulesStatus.status, rulesStatus.detail, ""],
+      ["部署环境", deploymentStatus.label, deploymentStatus.status, deploymentStatus.detail, ""],
       ...checks.map((check) => ["自检", check.ok ? "通过" : "待处理", check.label, check.detail, ""]),
       ...testChecklist.items.map((item) => ["实机测试", item.done ? "完成" : "未完成", `步骤 ${item.index}`, item.text, item.completedAt || ""]),
+      ...deployChecklist.items.map((item) => ["部署检查", item.done ? "完成" : "未完成", `步骤 ${item.index}`, item.text, item.completedAt || ""]),
+      ...rewardIssues.map((issue) => ["奖励发放", "异常", "明细", issue, ""]),
       ...issues.map((issue) => ["数据一致性", "异常", "明细", issue, ""]),
     ]
   );
@@ -2766,6 +3102,22 @@ function exportTestChecklistReport() {
   downloadCsv(
     `amsystem-test-checklist-${exportStamp()}.csv`,
     ["步骤", "状态", "测试内容", "完成时间", "导出人", "导出时间"],
+    report.items.map((item) => [
+      item.index,
+      item.done ? "完成" : "未完成",
+      item.text,
+      item.completedAt || "",
+      firebaseUser?.email || "",
+      new Date().toISOString(),
+    ])
+  );
+}
+
+function exportDeployChecklistReport() {
+  const report = deployChecklistReport();
+  downloadCsv(
+    `amsystem-deploy-checklist-${exportStamp()}.csv`,
+    ["步骤", "状态", "部署检查内容", "完成时间", "导出人", "导出时间"],
     report.items.map((item) => [
       item.index,
       item.done ? "完成" : "未完成",
@@ -2971,6 +3323,7 @@ function renderAdminLocked() {
   document.querySelector("#metricPendingOrders").textContent = "-";
   document.querySelector("#metricPendingRewards").textContent = "-";
   document.querySelector("#metricWithdraws").textContent = "-";
+  document.querySelector("#metricReadiness").textContent = "-";
   document.querySelector("#adminPlanList").innerHTML = `<article class="plan-card"><strong>后台已锁定</strong><span>请使用管理员 Google 邮箱登录。</span></article>`;
   document.querySelector("#adminUserTable").innerHTML = `<tr><td colspan="12">无管理员权限</td></tr>`;
   document.querySelector("#repeatCreditLogTable").innerHTML = `<tr><td colspan="6">无管理员权限</td></tr>`;
@@ -3115,6 +3468,7 @@ function scrollToAdminFocus(tabId, focus) {
     incompleteProfiles: "#adminUserTable",
     allUsers: "#adminUserTable",
     duplicateOrders: "#adminRiskList",
+    rewardIssues: "#adminRiskList",
     integrityIssues: "#adminRiskList",
     readiness: "#adminRiskList",
   };
@@ -3179,6 +3533,34 @@ document.addEventListener("click", (event) => {
   saveTestChecklistState({});
   renderAdminRiskRules();
   toast("测试清单已重置");
+});
+
+document.addEventListener("change", (event) => {
+  const checkbox = event.target.closest("[data-deploy-check]");
+  if (!checkbox) return;
+  const checked = deployChecklistState();
+  if (checkbox.checked) {
+    checked[checkbox.dataset.deployCheck] = {
+      done: true,
+      completedAt: new Date().toISOString(),
+    };
+  } else {
+    delete checked[checkbox.dataset.deployCheck];
+  }
+  saveDeployChecklistState(checked);
+  renderAdminRiskRules();
+});
+
+document.addEventListener("click", (event) => {
+  if (event.target?.id === "exportDeployChecklistBtn") {
+    exportDeployChecklistReport();
+    toast("部署清单已导出");
+    return;
+  }
+  if (event.target?.id !== "resetDeployChecklistBtn") return;
+  saveDeployChecklistState({});
+  renderAdminRiskRules();
+  toast("部署清单已重置");
 });
 
 document.addEventListener("click", (event) => {
@@ -3803,7 +4185,7 @@ document.body.addEventListener("click", async (event) => {
     } catch (error) {
       console.error(error);
       applyPaidOrder(state, order);
-      addAdminLog("确认付款", order.id, `金额 ${money(order.amount)} / 前端管理员确认 / ${order.reviewNote || "无备注"}`);
+      addAdminLog("确认付款", order.id, `金额 ${money(order.amount)} / 前端管理员确认 / ${order.confirmSummary || "无处理摘要"} / ${order.reviewNote || "无备注"}`);
       await saveState();
       renderAll();
       toast("云函数未启用，已使用管理员前端确认付款");
