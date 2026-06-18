@@ -25,7 +25,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260618-26";
+const APP_VERSION = "20260618-27";
 const WITHDRAW_COOLDOWN_HOURS = 24;
 const SYSTEM_DOC_PATH = ["amsystem", "main"];
 const USER_COLLECTION = "amsystemUsers";
@@ -722,6 +722,33 @@ function findPlan(planId) {
   return state.plans.find((item) => item.id === planId);
 }
 
+function planSnapshot(plan) {
+  return {
+    id: plan.id,
+    name: plan.name,
+    amount: Number(plan.amount || 0),
+    points: Number(plan.points || 0),
+    slots: Number(plan.slots || 0),
+    repeatCredits: planRepeatCredits(plan),
+    repeatCooldownHours: planRepeatCooldownHours(plan),
+    validDays: Number(plan.validDays || 0),
+    firstRate: Number(plan.firstRate || 0),
+    repeatRate: Number(plan.repeatRate || 0),
+  };
+}
+
+function orderPlan(order, data = state) {
+  const currentPlan = (data.plans || []).find((item) => item.id === order.planId);
+  const snapshot = order.planSnapshot || {};
+  if (!currentPlan && !Object.keys(snapshot).length) return null;
+  return {
+    ...(currentPlan || {}),
+    ...snapshot,
+    id: order.planId,
+    name: snapshot.name || currentPlan?.name || "已删除配套",
+  };
+}
+
 function currentUser() {
   return findUser(state.currentUserId) || state.users[0];
 }
@@ -869,9 +896,16 @@ function orderRiskLabels(order, data = state) {
   const labels = [];
   const paymentRef = String(order.paymentRef || "").trim().toLowerCase();
   const proofName = String(order.proofName || "").trim().toLowerCase();
-  const plan = (data.plans || []).find((item) => item.id === order.planId);
-  if (plan && Number(order.amount || 0) !== Number(plan.amount || 0)) {
-    labels.push(`订单金额 ${money(order.amount)} 与当前配套金额 ${money(plan.amount)} 不一致`);
+  const currentPlan = (data.plans || []).find((item) => item.id === order.planId);
+  const lockedPlan = orderPlan(order, data);
+  if (!currentPlan && lockedPlan) {
+    labels.push("当前配套已删除，将按订单快照处理");
+  }
+  if (currentPlan && Number(order.amount || 0) !== Number(currentPlan.amount || 0)) {
+    labels.push(`订单金额 ${money(order.amount)} 与当前配套金额 ${money(currentPlan.amount)} 不一致`);
+  }
+  if (lockedPlan && Number(order.amount || 0) !== Number(lockedPlan.amount || 0)) {
+    labels.push(`订单金额 ${money(order.amount)} 与订单配套快照 ${money(lockedPlan.amount)} 不一致`);
   }
   if (paymentRef) {
     const duplicateRef = (data.orders || []).find((item) =>
@@ -960,10 +994,10 @@ function dataIntegrityIssues(data = state, options = {}) {
 
   orders.forEach((order) => {
     if (!usersById.has(order.userId)) issues.push(`订单 ${order.id} 的用户不存在`);
-    if (!(data.plans || []).some((plan) => plan.id === order.planId) && order.status !== "cancelled") issues.push(`订单 ${order.id} 的配套不存在或已删除`);
+    if (!(data.plans || []).some((plan) => plan.id === order.planId) && !order.planSnapshot && order.status !== "cancelled") issues.push(`订单 ${order.id} 的配套不存在或已删除`);
     if (order.status === "paid" && Number(order.points || 0) <= 0) issues.push(`已付款订单 ${order.id} 积分为 0`);
     orderRiskLabels(order, data).forEach((risk) => {
-      if (risk.includes("金额")) issues.push(`订单 ${order.id}：${risk}`);
+      if (risk.includes("金额") || risk.includes("配套")) issues.push(`订单 ${order.id}：${risk}`);
     });
   });
 
@@ -1014,6 +1048,7 @@ function createOrder(data, userId, planId, type, status = "paid", createdAt = ne
     id: orderNo(data, userId),
     userId,
     planId,
+    planSnapshot: planSnapshot(plan),
     type: orderType,
     status,
     amount: plan.amount,
@@ -1039,7 +1074,7 @@ function createOrder(data, userId, planId, type, status = "paid", createdAt = ne
 
 function applyPaidOrder(data, order, paidAt = new Date().toISOString()) {
   const user = data.users.find((item) => item.id === order.userId);
-  const plan = data.plans.find((item) => item.id === order.planId);
+  const plan = orderPlan(order, data);
   if (!user || !plan || order.points > 0) return;
   order.type = actualOrderType(data, order.userId, order.id);
   order.status = "paid";
@@ -1187,7 +1222,7 @@ function recalculateOrderRewards(data, order) {
   if (!order || order.status !== "paid") return { ok: false, message: "只有已支付订单可以重算奖励" };
   if (!canRecalculateOrderRewards(order)) return { ok: false, message: "已有非待确认奖励，不能自动重算" };
   const buyer = data.users.find((item) => item.id === order.userId);
-  const plan = data.plans.find((item) => item.id === order.planId);
+  const plan = orderPlan(order, data);
   if (!buyer || !plan) return { ok: false, message: "订单用户或配套不存在" };
 
   const removedRewards = (data.rewards || []).filter((reward) => reward.orderId === order.id).length;
@@ -1209,7 +1244,7 @@ function recalculateOrderRewards(data, order) {
 
 function orderConfirmPreview(order) {
   const user = findUser(order.userId);
-  const plan = findPlan(order.planId);
+  const plan = orderPlan(order);
   if (!user || !plan) return "订单资料不完整，仍要继续确认吗？";
   const previewType = actualOrderType(state, order.userId, order.id);
   const risks = orderRiskLabels(order);
@@ -1246,7 +1281,7 @@ function orderConfirmPreview(order) {
 
 function orderDetailText(order) {
   const user = findUser(order.userId);
-  const plan = findPlan(order.planId);
+  const plan = orderPlan(order);
   if (!order || !user || !plan) return "订单资料不完整";
   const resolvedType = order.status === "pending" ? actualOrderType(state, order.userId, order.id) : order.type;
   const risks = orderRiskLabels(order);
@@ -1792,7 +1827,7 @@ function renderMemberPlans(user) {
 
 function renderMemberOrders(user) {
   const rows = state.orders.filter((order) => order.userId === user.id).slice().reverse().map((order) => {
-    const plan = findPlan(order.planId);
+    const plan = orderPlan(order);
     const noteText = order.reviewNote ? `<span class="muted-line">处理备注：${order.reviewNote}</span>` : "";
     return `<tr><td>${order.id}</td><td>${plan?.name || "-"}</td><td>${order.type === "first" ? "首充" : "复购"}</td><td>${money(order.amount)}</td><td>${points(order.points)}</td><td><span class="tag ${order.status}">${labelStatus(order.status)}</span>${noteText}</td><td>${new Date(order.createdAt).toLocaleString("zh-CN")}</td></tr>`;
   }).join("");
@@ -2271,7 +2306,7 @@ function renderAdminOrders() {
   const orders = filteredOrders();
   const rows = orders.slice().reverse().map((order) => {
     const user = findUser(order.userId);
-    const plan = findPlan(order.planId);
+    const plan = orderPlan(order);
     const resolvedType = order.status === "pending" ? actualOrderType(state, order.userId, order.id) : order.type;
     const typeWarning = order.status === "pending" && order.type !== resolvedType
       ? ` <span class="tag warning">将按${resolvedType === "first" ? "首充" : "复购"}确认</span>`
@@ -2627,7 +2662,7 @@ function filteredOrders() {
 
   return state.orders.filter((order) => {
     const user = findUser(order.userId);
-    const plan = findPlan(order.planId);
+    const plan = orderPlan(order);
     const searchable = [
       order.id,
       user?.name,
@@ -3160,7 +3195,7 @@ document.querySelector("#exportOrdersBtn")?.addEventListener("click", () => {
     ["订单号", "用户", "配套", "类型", "金额", "付款方式", "付款参考号", "凭证状态", "风险提示", "状态", "处理备注", "申请时间", "确认时间", "取消时间"],
     filteredOrders().map((order) => {
       const user = findUser(order.userId);
-      const plan = findPlan(order.planId);
+      const plan = orderPlan(order);
       return [
         order.id,
         user?.name || "",

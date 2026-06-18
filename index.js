@@ -44,6 +44,18 @@ function planRepeatCredits(plan) {
   return Number(plan.repeatCredits ?? 10);
 }
 
+function orderPlan(order, plans) {
+  const currentPlan = (plans || []).find((item) => item.id === order.planId);
+  const snapshot = order.planSnapshot || {};
+  if (!currentPlan && !Object.keys(snapshot).length) return null;
+  return {
+    ...(currentPlan || {}),
+    ...snapshot,
+    id: order.planId,
+    name: snapshot.name || (currentPlan && currentPlan.name) || "Deleted plan",
+  };
+}
+
 function rewardAmount(order, rate) {
   return Number((Number(order.amount || 0) * (Number(rate || 0) / 100)).toFixed(2));
 }
@@ -129,7 +141,7 @@ exports.confirmOrder = onCall(async (request) => {
 
     const systemSnap = await tx.get(systemRef);
     const plans = systemSnap.exists && Array.isArray(systemSnap.data().plans) ? systemSnap.data().plans : [];
-    const plan = plans.find((item) => item.id === order.planId);
+    const plan = orderPlan(order, plans);
     if (!plan) {
       throw new HttpsError("not-found", "Plan not found.");
     }
