@@ -252,6 +252,9 @@ exports.confirmOrder = onCall(async (request) => {
         createReward(tx, {
           userId: buyer.referrerId,
           sourceUserId: order.userId,
+          sourceUserName: buyer.name || "",
+          sourceUserAccount: buyer.account || "",
+          sourceUserInviteCode: buyer.inviteCode || "",
           orderId: order.id,
           type: "first",
           rate,
@@ -285,6 +288,9 @@ exports.confirmOrder = onCall(async (request) => {
         createReward(tx, {
           userId: repeatReceiver.id,
           sourceUserId: order.userId,
+          sourceUserName: buyer.name || "",
+          sourceUserAccount: buyer.account || "",
+          sourceUserInviteCode: buyer.inviteCode || "",
           orderId: order.id,
           type: "repeat",
           rewardMode: "pool",
@@ -305,6 +311,9 @@ exports.confirmOrder = onCall(async (request) => {
         createReward(tx, {
           userId: buyer.referrerId,
           sourceUserId: order.userId,
+          sourceUserName: buyer.name || "",
+          sourceUserAccount: buyer.account || "",
+          sourceUserInviteCode: buyer.inviteCode || "",
           orderId: order.id,
           type: "repeat",
           rewardMode: "direct",

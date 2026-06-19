@@ -26,7 +26,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260619-60";
+const APP_VERSION = "20260619-61";
 const PUBLIC_SITE_URL = "https://stunleyhoh001.github.io/simplesystem/";
 const TEST_CHECKLIST_KEY = "amsystemTestChecklist";
 const DEPLOY_CHECKLIST_KEY = "amsystemDeployChecklist";
@@ -340,13 +340,19 @@ async function loadState() {
     }
     if (firebaseUser) {
       const userSnapshot = await getDoc(doc(db, USER_COLLECTION, firebaseUser.uid));
+      const referralDocs = snapshotDocs(await getDocs(query(referralsRef, where("referrerId", "==", firebaseUser.uid))));
+      const inviteeIds = referralDocs.map((referral) => referral.inviteeId).filter(Boolean);
+      const inviteeOrders = [];
+      for (const inviteeId of inviteeIds) {
+        inviteeOrders.push(...snapshotDocs(await getDocs(query(ordersRef, where("userId", "==", inviteeId)))));
+      }
       const records = {
-        orders: snapshotDocs(await getDocs(query(ordersRef, where("userId", "==", firebaseUser.uid)))),
+        orders: mergeById(snapshotDocs(await getDocs(query(ordersRef, where("userId", "==", firebaseUser.uid)))), inviteeOrders),
         rewards: snapshotDocs(await getDocs(query(rewardsRef, where("userId", "==", firebaseUser.uid)))),
         withdraws: snapshotDocs(await getDocs(query(withdrawsRef, where("userId", "==", firebaseUser.uid)))),
         pointLogs: snapshotDocs(await getDocs(query(pointLogsRef, where("userId", "==", firebaseUser.uid)))),
         repeatCreditLogs: snapshotDocs(await getDocs(query(repeatCreditLogsRef, where("userId", "==", firebaseUser.uid)))),
-        referrals: snapshotDocs(await getDocs(query(referralsRef, where("referrerId", "==", firebaseUser.uid)))),
+        referrals: referralDocs,
       };
       return finalize(mergeLocalPendingState(composeStateFromUserDoc(snapshot, userSnapshot, seeded, records), localState, firebaseUser.uid));
     }
@@ -1545,6 +1551,9 @@ function createFirstReward(data, order, buyer, plan, paidAt = order.createdAt) {
     id: id("rew"),
     userId: referrer.id,
     sourceUserId: buyer.id,
+    sourceUserName: buyer.name || "",
+    sourceUserAccount: buyer.account || "",
+    sourceUserInviteCode: buyer.inviteCode || "",
     orderId: order.id,
     type: "first",
     rate,
@@ -1570,6 +1579,9 @@ function createRepeatDirectReward(data, order, buyer, plan, paidAt = order.creat
     id: id("rew"),
     userId: referrer.id,
     sourceUserId: buyer.id,
+    sourceUserName: buyer.name || "",
+    sourceUserAccount: buyer.account || "",
+    sourceUserInviteCode: buyer.inviteCode || "",
     orderId: order.id,
     type: "repeat",
     rewardMode: "direct",
@@ -1599,6 +1611,9 @@ function createRepeatPoolReward(data, order, buyer, plan, paidAt = order.created
     id: id("rew"),
     userId: receiver.id,
     sourceUserId: buyer.id,
+    sourceUserName: buyer.name || "",
+    sourceUserAccount: buyer.account || "",
+    sourceUserInviteCode: buyer.inviteCode || "",
     orderId: order.id,
     type: "repeat",
     rewardMode: "pool",
@@ -1760,7 +1775,7 @@ function rewardDetailText(reward) {
   return [
     `奖励：${reward.id}`,
     `奖励人：${user ? `${user.name} / ${user.account}` : reward.userId}`,
-    `来源用户：${sourceUser ? `${sourceUser.name} / ${sourceUser.account}` : reward.sourceUserId || "-"}`,
+    `来源用户：${sourceUser ? `${sourceUser.name} / ${sourceUser.account}` : rewardSourceText(reward)}`,
     `订单：${reward.orderId}`,
     `订单金额：${order ? money(order.amount) : "-"}`,
     `配套快照：${plan ? `${plan.name} / ${orderPlanSummary(plan)}` : "-"}`,
@@ -2344,6 +2359,18 @@ function renderMemberReferrals(user) {
   document.querySelector("#memberReferralTable").innerHTML = rows || `<tr><td colspan="5">暂无直接推荐用户</td></tr>`;
 }
 
+function rewardSourceText(reward) {
+  const sourceUser = findUser(reward.sourceUserId);
+  if (sourceUser) return sourceUser.name || sourceUser.account || sourceUser.inviteCode || sourceUser.id;
+  const referral = (state.referrals || []).find((item) => item.inviteeId === reward.sourceUserId);
+  return reward.sourceUserName
+    || referral?.inviteeName
+    || reward.sourceUserAccount
+    || referral?.inviteeAccount
+    || reward.sourceUserId
+    || "-";
+}
+
 function renderRewardRules() {
   document.querySelector("#rewardRules").innerHTML = state.plans.map((plan) => `
     <article class="rule-card">
@@ -2359,9 +2386,8 @@ function renderRewardRules() {
 
 function renderMemberRewards(user) {
   const rows = state.rewards.filter((reward) => reward.userId === user.id).slice().reverse().map((reward) => {
-    const sourceUser = findUser(reward.sourceUserId);
     const noteText = reward.reviewNote ? `<span class="muted-line">审核备注：${reward.reviewNote}</span>` : "";
-    return `<tr><td>${sourceUser?.name || "-"}</td><td>${reward.orderId}</td><td>${rewardTypeText(reward)}</td><td>${reward.rate}%</td><td>${rewardAmountText(reward)}</td><td><span class="tag ${reward.status}">${labelStatus(reward.status)}</span>${noteText}</td><td>${rewardNextDateText(reward)}</td><td><button class="link" type="button" data-member-reward-detail="${reward.id}">详情</button></td></tr>`;
+    return `<tr><td>${rewardSourceText(reward)}</td><td>${reward.orderId}</td><td>${rewardTypeText(reward)}</td><td>${reward.rate}%</td><td>${rewardAmountText(reward)}</td><td><span class="tag ${reward.status}">${labelStatus(reward.status)}</span>${noteText}</td><td>${rewardNextDateText(reward)}</td><td><button class="link" type="button" data-member-reward-detail="${reward.id}">详情</button></td></tr>`;
   }).join("");
   document.querySelector("#memberRewardTable").innerHTML = rows || `<tr><td colspan="8">暂无奖励</td></tr>`;
 }
