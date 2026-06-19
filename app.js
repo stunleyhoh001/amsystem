@@ -26,7 +26,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260619-39";
+const APP_VERSION = "20260619-48";
 const TEST_CHECKLIST_KEY = "amsystemTestChecklist";
 const DEPLOY_CHECKLIST_KEY = "amsystemDeployChecklist";
 const WITHDRAW_COOLDOWN_HOURS = 24;
@@ -837,6 +837,41 @@ function money(value) {
 
 function points(value) {
   return Number(value || 0).toLocaleString("zh-CN");
+}
+
+async function copyText(text) {
+  const value = String(text || "");
+  if (!value) throw new Error("empty-copy-text");
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch (error) {
+      console.warn("Clipboard API failed, trying fallback.", error);
+    }
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("copy-command-failed");
+}
+
+function inviteMessage(user = currentUser()) {
+  const inviteLink = document.querySelector("#inviteLink")?.textContent || `${location.origin}${location.pathname}?ref=${user.inviteCode}`;
+  return [
+    `${user.name || "朋友"} 邀请你加入 AMSYSTEM。`,
+    `推荐码：${user.inviteCode}`,
+    `注册链接：${inviteLink}`,
+    "注册后输入推荐码绑定推荐人，再申请充值配套。",
+  ].join("\n");
 }
 
 function addDays(iso, days) {
@@ -2118,9 +2153,9 @@ function renderMemberOrders(user) {
     const plan = orderPlan(order);
     const noteText = order.reviewNote ? `<span class="muted-line">处理备注：${order.reviewNote}</span>` : "";
     const summaryText = order.confirmSummary ? `<span class="muted-line">处理结果：${order.confirmSummary}</span>` : "";
-    return `<tr><td>${order.id}</td><td>${plan?.name || "-"}</td><td>${order.type === "first" ? "首充" : "复购"}</td><td>${money(order.amount)}</td><td>${points(order.points)}</td><td><span class="tag ${order.status}">${labelStatus(order.status)}</span>${noteText}${summaryText}</td><td>${new Date(order.createdAt).toLocaleString("zh-CN")}</td></tr>`;
+    return `<tr><td>${order.id}</td><td>${plan?.name || "-"}</td><td>${order.type === "first" ? "首充" : "复购"}</td><td>${money(order.amount)}</td><td>${points(order.points)}</td><td><span class="tag ${order.status}">${labelStatus(order.status)}</span>${noteText}${summaryText}</td><td>${new Date(order.createdAt).toLocaleString("zh-CN")}</td><td><button class="link" type="button" data-member-order-detail="${order.id}">详情</button></td></tr>`;
   }).join("");
-  document.querySelector("#memberOrderTable").innerHTML = rows || `<tr><td colspan="7">暂无订单</td></tr>`;
+  document.querySelector("#memberOrderTable").innerHTML = rows || `<tr><td colspan="8">暂无订单</td></tr>`;
 }
 
 function renderMemberOrderProofStatuses(user) {
@@ -2180,9 +2215,9 @@ function renderMemberRewards(user) {
   const rows = state.rewards.filter((reward) => reward.userId === user.id).slice().reverse().map((reward) => {
     const sourceUser = findUser(reward.sourceUserId);
     const noteText = reward.reviewNote ? `<span class="muted-line">审核备注：${reward.reviewNote}</span>` : "";
-    return `<tr><td>${sourceUser?.name || "-"}</td><td>${reward.orderId}</td><td>${rewardTypeText(reward)}</td><td>${reward.rate}%</td><td>${rewardAmountText(reward)}</td><td><span class="tag ${reward.status}">${labelStatus(reward.status)}</span>${noteText}</td><td>${rewardNextDateText(reward)}</td></tr>`;
+    return `<tr><td>${sourceUser?.name || "-"}</td><td>${reward.orderId}</td><td>${rewardTypeText(reward)}</td><td>${reward.rate}%</td><td>${rewardAmountText(reward)}</td><td><span class="tag ${reward.status}">${labelStatus(reward.status)}</span>${noteText}</td><td>${rewardNextDateText(reward)}</td><td><button class="link" type="button" data-member-reward-detail="${reward.id}">详情</button></td></tr>`;
   }).join("");
-  document.querySelector("#memberRewardTable").innerHTML = rows || `<tr><td colspan="7">暂无奖励</td></tr>`;
+  document.querySelector("#memberRewardTable").innerHTML = rows || `<tr><td colspan="8">暂无奖励</td></tr>`;
 }
 
 function renderMemberRepeatCreditLogs(user) {
@@ -2205,9 +2240,9 @@ function renderMemberWithdraws(user) {
   const rows = state.withdraws.filter((item) => item.userId === user.id).slice().reverse().map((item) => {
     const paidText = item.paidAt ? new Date(item.paidAt).toLocaleString("zh-CN") : "-";
     const noteText = item.reviewNote ? `<span class="muted-line">备注：${item.reviewNote}</span>` : "";
-    return `<tr><td>${item.id}</td><td>${money(item.amount)}</td><td>${item.source === "reward" ? "奖励提现" : item.source || "-"}</td><td>${item.method}</td><td>${item.account}</td><td><span class="tag ${item.status}">${labelStatus(item.status)}</span>${noteText}</td><td>${new Date(item.createdAt).toLocaleString("zh-CN")}</td><td>${paidText}</td></tr>`;
+    return `<tr><td>${item.id}</td><td>${money(item.amount)}</td><td>${item.source === "reward" ? "奖励提现" : item.source || "-"}</td><td>${item.method}</td><td>${item.account}</td><td><span class="tag ${item.status}">${labelStatus(item.status)}</span>${noteText}</td><td>${new Date(item.createdAt).toLocaleString("zh-CN")}</td><td>${paidText}</td><td><button class="link" type="button" data-member-withdraw-detail="${item.id}">详情</button></td></tr>`;
   }).join("");
-  document.querySelector("#memberWithdrawTable").innerHTML = rows || `<tr><td colspan="8">暂无提现记录</td></tr>`;
+  document.querySelector("#memberWithdrawTable").innerHTML = rows || `<tr><td colspan="9">暂无提现记录</td></tr>`;
 }
 
 function renderAdmin() {
@@ -2525,7 +2560,7 @@ function renderAdminUsers() {
     const payoutRisk = sharedUsers.length ? `<span class="risk-line">共享账号 ${sharedUsers.length}</span>` : "-";
     const missingFields = profileMissingFields(user);
     const profileRisk = missingFields.length ? `<span class="profile-line">缺：${missingFields.join("、")}</span>` : "";
-    return `<tr><td>${user.name}${profileRisk}</td><td>${user.account}</td><td>${user.phone || "-"}</td><td>${user.inviteCode}</td><td>${referrer?.name || "无"}</td><td>${points(user.points)}</td><td><span class="tag ${statusClass}">${statusLabel}</span></td><td>${directReferralCount(user.id)} / ${user.slots || 0}</td><td>${points(user.repeatCredits || 0)}</td><td>${payoutRisk}</td><td><span class="tag ${user.frozen ? "frozen" : "active"}">${user.frozen ? "已冻结" : "正常"}</span></td><td><button class="link" data-user-detail="${user.id}">详情</button><button class="link" data-freeze-user="${user.id}">${user.frozen ? "解冻" : "冻结"}</button></td></tr>`;
+    return `<tr><td>${user.name}${profileRisk}</td><td>${user.account}</td><td>${user.phone || "-"}</td><td>${user.inviteCode}</td><td>${referrer?.name || "无"}</td><td>${points(user.points)}</td><td><span class="tag ${statusClass}">${statusLabel}</span></td><td>${directReferralCount(user.id)} / ${user.slots || 0}</td><td>${points(user.repeatCredits || 0)}</td><td>${payoutRisk}</td><td><span class="tag ${user.frozen ? "frozen" : "active"}">${user.frozen ? "已冻结" : "正常"}</span></td><td><button class="link" data-user-detail="${user.id}">详情</button><button class="link" data-export-user-records="${user.id}">导出</button><button class="link" data-freeze-user="${user.id}">${user.frozen ? "解冻" : "冻结"}</button></td></tr>`;
   }).join("") || `<tr><td colspan="12">没有符合条件的用户</td></tr>`;
 }
 
@@ -3235,6 +3270,104 @@ function exportTodoReport() {
   );
 }
 
+function sumRows(rows, pick) {
+  return rows.reduce((sum, row) => sum + Number(pick(row) || 0), 0);
+}
+
+function exportFinanceSummary() {
+  const orders = state.orders || [];
+  const rewards = state.rewards || [];
+  const withdraws = state.withdraws || [];
+  const users = state.users || [];
+  const paidOrders = orders.filter((order) => order.status === "paid");
+  const pendingOrders = orders.filter((order) => order.status === "pending");
+  const cancelledOrders = orders.filter((order) => ["cancelled", "refunded"].includes(order.status));
+  const confirmedFirstRewards = rewards.filter((reward) => reward.type === "first" && reward.status === "confirmed");
+  const repeatRewards = rewards.filter((reward) => reward.type === "repeat");
+  const pendingRewards = rewards.filter((reward) => reward.status === "pending");
+  const releasingRewards = rewards.filter((reward) => reward.status === "releasing");
+  const cancelledRewards = rewards.filter((reward) => ["cancelled", "frozen"].includes(reward.status));
+  const pendingWithdraws = withdraws.filter((withdraw) => withdraw.status === "pending");
+  const approvedWithdraws = withdraws.filter((withdraw) => withdraw.status === "approved");
+  const paidoutWithdraws = withdraws.filter((withdraw) => withdraw.status === "paidout");
+  const rejectedWithdraws = withdraws.filter((withdraw) => withdraw.status === "rejected");
+  const userBreakdowns = users.map((user) => withdrawBreakdown(user.id));
+  downloadCsv(
+    `amsystem-finance-summary-${exportStamp()}.csv`,
+    ["分类", "项目", "数量", "金额", "说明"],
+    [
+      ["充值订单", "已支付充值", paidOrders.length, sumRows(paidOrders, (order) => order.amount), "已确认付款的订单总额"],
+      ["充值订单", "待审核充值", pendingOrders.length, sumRows(pendingOrders, (order) => order.amount), "用户已提交但后台未确认"],
+      ["充值订单", "已取消/退款", cancelledOrders.length, sumRows(cancelledOrders, (order) => order.amount), "不计入有效充值"],
+      ["奖励", "已确认首充奖励", confirmedFirstRewards.length, sumRows(confirmedFirstRewards, (reward) => reward.amount), "可进入提现余额"],
+      ["奖励", "已释放复购奖励", repeatRewards.length, sumRows(repeatRewards, (reward) => reward.releasedAmount || (reward.status === "confirmed" ? reward.amount : 0)), "已释放部分可提现"],
+      ["奖励", "待确认奖励", pendingRewards.length, sumRows(pendingRewards, (reward) => reward.amount), "等待确认日或管理员处理"],
+      ["奖励", "分期中待释放", releasingRewards.length, sumRows(releasingRewards, (reward) => Number(reward.amount || 0) - Number(reward.releasedAmount || 0)), "复购奖励剩余未释放"],
+      ["奖励", "已取消/冻结奖励", cancelledRewards.length, sumRows(cancelledRewards, (reward) => reward.amount), "不进入可提现余额"],
+      ["提现", "待审核提现", pendingWithdraws.length, sumRows(pendingWithdraws, (withdraw) => withdraw.amount), "等待管理员审核"],
+      ["提现", "已通过待打款", approvedWithdraws.length, sumRows(approvedWithdraws, (withdraw) => withdraw.amount), "已审核通过但未标记打款"],
+      ["提现", "已打款提现", paidoutWithdraws.length, sumRows(paidoutWithdraws, (withdraw) => withdraw.amount), "已经标记打款"],
+      ["提现", "已拒绝提现", rejectedWithdraws.length, sumRows(rejectedWithdraws, (withdraw) => withdraw.amount), "不扣除可提现余额"],
+      ["用户余额", "当前全体可提现余额", users.length, sumRows(userBreakdowns, (item) => item.available), "首充奖励可提现 + 复购奖励已释放 - 申请/处理中"],
+      ["用户余额", "复购奖励待释放", users.length, sumRows(userBreakdowns, (item) => item.pendingRelease), "未来可能释放的复购奖励"],
+    ]
+  );
+}
+
+function exportMyRecords(user = currentUser()) {
+  const referrer = findUser(user.referrerId);
+  const [, statusLabel] = packageStatus(user);
+  const breakdown = withdrawBreakdown(user.id);
+  const rows = [
+    ["用户资料", "用户ID", user.id, ""],
+    ["用户资料", "显示名称", user.name || "", ""],
+    ["用户资料", "账号", user.account || "", ""],
+    ["用户资料", "手机", user.phone || "", ""],
+    ["用户资料", "推荐码", user.inviteCode || "", ""],
+    ["用户资料", "推荐人", referrer ? `${referrer.name} / ${referrer.inviteCode}` : "无", ""],
+    ["用户资料", "配套状态", statusLabel, ""],
+    ["用户资料", "充值积分", user.points || 0, "充值积分不可提现"],
+    ["用户资料", "可提现奖励", breakdown.available, "仅包含已确认/已释放奖励"],
+    ["用户资料", "复购资格", user.repeatCredits || 0, ""],
+    ["订单", "订单号", "配套/类型/金额", "状态/时间/处理结果"],
+    ...(state.orders || []).filter((order) => order.userId === user.id).map((order) => {
+      const plan = orderPlan(order);
+      return [
+        "订单",
+        order.id,
+        `${plan?.name || "-"} / ${order.type === "first" ? "首充" : "复购"} / ${money(order.amount)}`,
+        `${labelStatus(order.status)} / ${order.createdAt || ""} / ${order.confirmSummary || order.reviewNote || "-"}`,
+      ];
+    }),
+    ["奖励", "奖励ID", "类型/金额/比例", "状态/可处理日/来源订单"],
+    ...(state.rewards || []).filter((reward) => reward.userId === user.id).map((reward) => [
+      "奖励",
+      reward.id,
+      `${rewardTypeText(reward)} / ${rewardAmountText(reward)} / ${Number(reward.rate || 0)}%`,
+      `${labelStatus(reward.status)} / ${rewardNextDateText(reward)} / ${reward.orderId}`,
+    ]),
+    ["提现", "提现ID", "金额/方式/账号", "状态/申请时间/打款时间"],
+    ...(state.withdraws || []).filter((withdraw) => withdraw.userId === user.id).map((withdraw) => [
+      "提现",
+      withdraw.id,
+      `${money(withdraw.amount)} / ${withdraw.method || "-"} / ${withdraw.account || "-"}`,
+      `${labelStatus(withdraw.status)} / ${withdraw.createdAt || ""} / ${withdraw.paidAt || "-"}`,
+    ]),
+    ["复购资格流水", "流水ID", "变动/余额/原因", "时间/来源/备注"],
+    ...(state.repeatCreditLogs || []).filter((log) => log.userId === user.id).map((log) => [
+      "复购资格流水",
+      log.id,
+      `${Number(log.change || 0)} / ${Number(log.balance || 0)} / ${repeatCreditReasonText(log.reason)}`,
+      `${log.createdAt || ""} / ${log.source || "-"} / ${log.note || "-"}`,
+    ]),
+  ];
+  downloadCsv(
+    `amsystem-my-records-${normalizeInviteCode(user.inviteCode || user.id)}-${exportStamp()}.csv`,
+    ["分类", "项目", "内容", "备注"],
+    rows
+  );
+}
+
 function csvEscape(value) {
   const text = String(value ?? "");
   return `"${text.replace(/"/g, '""')}"`;
@@ -3823,6 +3956,12 @@ document.querySelector("#firebaseLogoutBtn").addEventListener("click", async () 
   toast("已退出登录");
 });
 
+document.querySelector("#exportMyRecordsBtn")?.addEventListener("click", () => {
+  if (!firebaseUser) return toast("请先使用 Google 登录");
+  exportMyRecords(currentUser());
+  toast("我的记录已导出");
+});
+
 document.querySelector("#testFirestoreBtn").addEventListener("click", async () => {
   if (!firebaseUser) return toast("请先使用 Google 登录");
   state.lastSyncTestAt = new Date().toISOString();
@@ -3877,6 +4016,57 @@ document.querySelector("#exportUsersBtn")?.addEventListener("click", () => {
       ];
     })
   );
+});
+
+function referralExportRows() {
+  const usersById = new Map((state.users || []).map((user) => [user.id, user]));
+  const rows = new Map();
+  (state.users || []).filter((user) => user.referrerId).forEach((user) => {
+    const referral = referralDocForUser(user);
+    rows.set(referral.id, referral);
+  });
+  (state.referrals || []).forEach((referral) => {
+    if (!referral.referrerId || !referral.inviteeId) return;
+    const key = referral.id || `${referral.referrerId}_${referral.inviteeId}`;
+    rows.set(key, { ...(rows.get(key) || {}), ...referral, id: key });
+  });
+  return [...rows.values()].map((referral) => {
+    const referrer = usersById.get(referral.referrerId);
+    const invitee = usersById.get(referral.inviteeId);
+    const [, statusLabel] = invitee ? packageStatus(invitee) : ["neutral", "用户不存在"];
+    const paidTotal = (state.orders || [])
+      .filter((order) => order.userId === referral.inviteeId && order.status === "paid")
+      .reduce((sum, order) => sum + Number(order.amount || 0), 0);
+    return [
+      referral.id,
+      referral.referrerId,
+      referrer?.name || referral.referrerName || "",
+      referrer?.account || "",
+      referrer?.inviteCode || "",
+      referral.inviteeId,
+      invitee?.name || referral.inviteeName || "",
+      invitee?.account || referral.inviteeAccount || "",
+      invitee?.inviteCode || "",
+      statusLabel,
+      paidTotal,
+      invitee ? "是" : "否",
+      referral.createdAt || "",
+    ];
+  });
+}
+
+document.querySelector("#exportReferralsBtn")?.addEventListener("click", async () => {
+  if (!requireAdmin()) return;
+  const rows = referralExportRows();
+  downloadCsv(
+    `amsystem-referrals-${exportStamp()}.csv`,
+    ["关系ID", "推荐人ID", "推荐人", "推荐人账号", "推荐人邀请码", "下线ID", "下线", "下线账号", "下线邀请码", "下线配套状态", "下线累计充值", "下线用户是否存在", "绑定时间"],
+    rows
+  );
+  addAdminLog("导出推荐关系", "用户管理", `导出 ${rows.length} 条推荐关系`);
+  await saveState();
+  renderAll();
+  toast("推荐关系已导出");
 });
 
 document.querySelector("#exportPlansBtn")?.addEventListener("click", async () => {
@@ -4206,6 +4396,33 @@ document.querySelector("#confirmDueBtn").addEventListener("click", async () => {
 });
 
 document.body.addEventListener("click", async (event) => {
+  const memberOrderDetail = event.target.closest("[data-member-order-detail]");
+  if (memberOrderDetail) {
+    const user = currentUser();
+    const order = state.orders.find((item) => item.id === memberOrderDetail.dataset.memberOrderDetail && item.userId === user.id);
+    if (!order) return toast("找不到订单");
+    window.alert(orderDetailText(order));
+    return;
+  }
+
+  const memberRewardDetail = event.target.closest("[data-member-reward-detail]");
+  if (memberRewardDetail) {
+    const user = currentUser();
+    const reward = state.rewards.find((item) => item.id === memberRewardDetail.dataset.memberRewardDetail && item.userId === user.id);
+    if (!reward) return toast("找不到奖励记录");
+    window.alert(rewardDetailText(reward));
+    return;
+  }
+
+  const memberWithdrawDetail = event.target.closest("[data-member-withdraw-detail]");
+  if (memberWithdrawDetail) {
+    const user = currentUser();
+    const withdraw = state.withdraws.find((item) => item.id === memberWithdrawDetail.dataset.memberWithdrawDetail && item.userId === user.id);
+    if (!withdraw) return toast("找不到提现申请");
+    window.alert(withdrawDetailText(withdraw));
+    return;
+  }
+
   const orderDetail = event.target.closest("[data-order-detail]");
   if (orderDetail) {
     if (!requireAdmin()) return;
@@ -4242,6 +4459,19 @@ document.body.addEventListener("click", async (event) => {
     return;
   }
 
+  const exportUserRecords = event.target.closest("[data-export-user-records]");
+  if (exportUserRecords) {
+    if (!requireAdmin()) return;
+    const user = findUser(exportUserRecords.dataset.exportUserRecords);
+    if (!user) return toast("找不到用户");
+    exportMyRecords(user);
+    addAdminLog("导出用户记录", user.name || user.id, `导出 ${user.account || user.id} 的个人记录`);
+    await saveState();
+    renderAll();
+    toast("用户记录已导出");
+    return;
+  }
+
   const editPlan = event.target.closest("[data-edit-plan]");
   if (editPlan) {
     if (!requireAdmin()) return;
@@ -4271,8 +4501,12 @@ document.body.addEventListener("click", async (event) => {
 
   const copyInviteCode = event.target.closest("[data-copy-invite-code]");
   if (copyInviteCode) {
-    await navigator.clipboard.writeText(copyInviteCode.dataset.copyInviteCode);
-    toast("推荐码已复制");
+    try {
+      await copyText(copyInviteCode.dataset.copyInviteCode);
+      toast("推荐码已复制");
+    } catch (error) {
+      toast("复制失败，请手动长按推荐码复制");
+    }
     return;
   }
 
@@ -4349,8 +4583,22 @@ document.body.addEventListener("click", async (event) => {
   }
 
   if (event.target.closest("#copyInviteBtn")) {
-    await navigator.clipboard.writeText(document.querySelector("#inviteLink").textContent);
-    toast("推荐链接已复制");
+    try {
+      await copyText(document.querySelector("#inviteLink").textContent);
+      toast("推荐链接已复制");
+    } catch (error) {
+      toast("复制失败，请手动长按推荐链接复制");
+    }
+    return;
+  }
+
+  if (event.target.closest("#copyInviteTextBtn")) {
+    try {
+      await copyText(inviteMessage(currentUser()));
+      toast("邀请文案已复制");
+    } catch (error) {
+      toast("复制失败，请手动复制推荐码和链接");
+    }
     return;
   }
 
@@ -4590,6 +4838,15 @@ document.querySelector("#exportTodosBtn")?.addEventListener("click", async () =>
   await saveState();
   renderAll();
   toast("待办清单已导出");
+});
+
+document.querySelector("#exportFinanceSummaryBtn")?.addEventListener("click", async () => {
+  if (!requireAdmin()) return;
+  exportFinanceSummary();
+  addAdminLog("导出财务汇总", "待办中心", "导出充值、奖励、提现与可提现余额汇总");
+  await saveState();
+  renderAll();
+  toast("财务汇总已导出");
 });
 
 document.querySelector("#resetBtn").addEventListener("click", async () => {

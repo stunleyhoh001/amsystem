@@ -226,6 +226,10 @@ main { padding: 0 clamp(18px, 4vw, 48px) 40px; }
 .referral-code-box small {
   color: var(--muted);
 }
+.referral-code-box .button {
+  width: fit-content;
+  margin-top: 4px;
+}
 .proof-retry {
   display: inline-block;
   margin-top: 6px;
