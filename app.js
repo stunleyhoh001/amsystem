@@ -26,7 +26,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260619-56";
+const APP_VERSION = "20260619-57";
 const PUBLIC_SITE_URL = "https://stunleyhoh001.github.io/simplesystem/";
 const TEST_CHECKLIST_KEY = "amsystemTestChecklist";
 const DEPLOY_CHECKLIST_KEY = "amsystemDeployChecklist";
@@ -293,17 +293,14 @@ function pastDate(days) {
 }
 
 function createSeedData() {
-  const data = {
-    currentUserId: "u_1002",
+  return {
+    currentUserId: "",
+    testDataClearedAt: new Date().toISOString(),
     plans: [
       { id: "plan_rm180", name: "RM180 启动配套", amount: 180, points: 18000, slots: 10, repeatCredits: 10, repeatCooldownHours: 24, validDays: 30, firstRate: 20, directRepeatRate: 10, repeatRate: 10 },
       { id: "plan_rm580", name: "RM580 进阶配套", amount: 580, points: 58000, slots: 35, repeatCredits: 10, repeatCooldownHours: 24, validDays: 60, firstRate: 20, directRepeatRate: 10, repeatRate: 10 },
     ],
-    users: [
-      { id: "u_1001", name: "李明", account: "liming@example.com", phone: "", withdrawMethod: "", withdrawAccount: "", inviteCode: "LM1001", referrerId: "", level: "推广用户", points: 18000, slots: 10, repeatCredits: 5, repeatCreditQueueAt: pastDate(7), repeatCooldownUntil: "", packageUntil: futureDate(20), frozen: false },
-      { id: "u_1002", name: "王芳", account: "13800000002", phone: "", withdrawMethod: "", withdrawAccount: "", inviteCode: "WF1002", referrerId: "u_1001", level: "高级推广用户", points: 58000, slots: 35, repeatCredits: 0, repeatCreditQueueAt: "", repeatCooldownUntil: "", packageUntil: futureDate(45), frozen: false },
-      { id: "u_1003", name: "陈杰", account: "chenjie@example.com", phone: "", withdrawMethod: "", withdrawAccount: "", inviteCode: "CJ1003", referrerId: "u_1001", level: "普通用户", points: 0, slots: 0, repeatCredits: 0, repeatCreditQueueAt: "", repeatCooldownUntil: "", packageUntil: "", frozen: false },
-    ],
+    users: [],
     orders: [],
     pointLogs: [],
     rewards: [],
@@ -312,10 +309,6 @@ function createSeedData() {
     referrals: [],
     adminLogs: [],
   };
-  createOrder(data, "u_1002", "plan_rm580", "first", "paid", pastDate(8));
-  createOrder(data, "u_1003", "plan_rm180", "first", "paid", pastDate(1));
-  data.referrals = data.users.filter((user) => user.referrerId).map((user) => referralDocForUser(user, data));
-  return data;
 }
 
 async function loadState() {
@@ -3739,7 +3732,7 @@ function renderAdminActionButtons() {
   }
   if (resetBtn) {
     resetBtn.disabled = !canAdmin;
-    resetBtn.title = canAdmin ? "危险操作：会重置演示数据" : "请使用管理员账号登录";
+    resetBtn.title = canAdmin ? "清空演示订单、奖励、提现和流水，保留用户与配套" : "请使用管理员账号登录";
   }
 }
 
@@ -4993,17 +4986,18 @@ document.querySelector("#exportFinanceSummaryBtn")?.addEventListener("click", as
 
 document.querySelector("#resetBtn").addEventListener("click", async () => {
   if (!requireAdmin()) return;
-  const answer = window.prompt("危险操作：这会重置演示数据。系统会先导出备份包。\n\n如果确定继续，请输入 RESET");
-  if (answer !== "RESET") {
-    toast("已取消重置");
+  const answer = window.prompt("清空演示数据会先导出备份包，然后清空订单、奖励、提现、积分流水、复购资格流水和操作日志；会保留用户、推荐关系和配套规则。\n\n如果确定继续，请输入 CLEAR");
+  if (answer !== "CLEAR") {
+    toast("已取消清空");
     return;
   }
   exportBundle();
-  state = createSeedData();
-  addAdminLog("重置演示数据", "系统", "已重置为种子数据；重置前已触发备份包下载");
+  clearBusinessTestData();
+  resetPlanForm();
+  addAdminLog("清空演示数据", "系统", "保留用户、推荐关系和配套规则；清空订单、奖励、提现和流水");
   await saveState();
   renderAll();
-  toast("演示数据已重置，重置前备份包已下载");
+  toast("演示数据已清空，清空前备份包已下载");
 });
 
 onAuthStateChanged(auth, async (user) => {
