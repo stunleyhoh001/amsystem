@@ -26,7 +26,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260619-49";
+const APP_VERSION = "20260619-50";
+const PUBLIC_SITE_URL = "https://stunleyhoh001.github.io/simplesystem/";
 const TEST_CHECKLIST_KEY = "amsystemTestChecklist";
 const DEPLOY_CHECKLIST_KEY = "amsystemDeployChecklist";
 const WITHDRAW_COOLDOWN_HOURS = 24;
@@ -2875,8 +2876,9 @@ function deploymentStatusReport() {
     label: "需手动确认",
     projectId: firebaseConfig.projectId,
     authDomain: firebaseConfig.authDomain,
+    publicSiteUrl: PUBLIC_SITE_URL,
     hostingPublic: ".",
-    detail: "部署到 GitHub Pages 或 Firebase Hosting 前，请确认 Firebase Authentication 已授权当前域名，并确认 app.js 版本参数已更新。",
+    detail: `部署网址：${PUBLIC_SITE_URL}。请确认 Firebase Authentication 已授权当前域名，并确认 app.js 版本参数已更新。`,
   };
 }
 
