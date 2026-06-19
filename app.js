@@ -26,7 +26,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260619-54";
+const APP_VERSION = "20260619-55";
 const PUBLIC_SITE_URL = "https://stunleyhoh001.github.io/simplesystem/";
 const TEST_CHECKLIST_KEY = "amsystemTestChecklist";
 const DEPLOY_CHECKLIST_KEY = "amsystemDeployChecklist";
@@ -2376,12 +2376,8 @@ function adminTodoItems() {
   const orderRisks = orderRiskIssues(state);
   const withdrawRisks = withdrawRiskIssues(state);
   const duplicateRisks = duplicateOrderRisks(state);
-  const payoutRisks = payoutRiskUsers(state);
-  const incompleteProfiles = incompleteProfileUsers(state);
   const rewardIssues = rewardIntegrityIssues(state);
   const integrityIssues = dataIntegrityIssues(state, { includeProfileIssues: false, includeOrderIssues: false, includeRewardIssues: false, includeWithdrawIssues: false });
-  const checks = readinessChecks();
-  const failedChecks = checks.filter((check) => !check.ok);
 
   return [
     {
@@ -2457,24 +2453,6 @@ function adminTodoItems() {
       focus: "withdrawRisks",
     },
     {
-      title: "共享收款账号",
-      count: payoutRisks.length,
-      level: payoutRisks.length ? "danger" : "ok",
-      detail: payoutRisks.length ? `${payoutRisks.length} 个用户的默认收款账号与其他用户共享。` : "没有发现共享默认收款账号。",
-      action: "到用户管理查看",
-      tab: "adminUsers",
-      focus: "payoutRiskUsers",
-    },
-    {
-      title: "用户资料待完善",
-      count: incompleteProfiles.length,
-      level: incompleteProfiles.length ? "warn" : "ok",
-      detail: incompleteProfiles.length ? `${incompleteProfiles.length} 个用户缺少手机或默认收款资料。` : "用户联系与收款资料完整。",
-      action: "到用户管理查看",
-      tab: "adminUsers",
-      focus: "incompleteProfiles",
-    },
-    {
       title: "数据异常",
       count: integrityIssues.length,
       level: integrityIssues.length ? "danger" : "ok",
@@ -2483,22 +2461,26 @@ function adminTodoItems() {
       tab: "adminRisk",
       focus: "integrityIssues",
     },
-    {
-      title: "上线自检",
-      count: failedChecks.length,
-      level: failedChecks.length ? "warn" : "ok",
-      detail: failedChecks.length ? `${failedChecks.length} 项自检待处理：${failedChecks.slice(0, 2).map((check) => check.label).join("、")}` : "上线自检全部通过。",
-      action: "到风控规则查看",
-      tab: "adminRisk",
-      focus: "readiness",
-    },
   ];
 }
 
 function renderAdminTodos() {
   const target = document.querySelector("#adminTodoList");
   if (!target) return;
-  target.innerHTML = adminTodoItems().map((item) => `
+  const items = adminTodoItems();
+  const activeItems = items.filter((item) => Number(item.count || 0) > 0);
+  if (!activeItems.length) {
+    target.innerHTML = `
+      <article class="todo-card ok">
+        <span>业务待办</span>
+        <strong>0</strong>
+        <p>没有待审核订单、奖励、提现或业务风控风险。用户资料和上线自检请到风控规则页查看。</p>
+        <button class="link" type="button" data-open-admin-tab="adminRisk" data-todo-focus="readiness">到风控规则查看</button>
+      </article>
+    `;
+    return;
+  }
+  target.innerHTML = activeItems.map((item) => `
     <article class="todo-card ${item.level}">
       <span>${item.title}</span>
       <strong>${item.count}</strong>
