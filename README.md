@@ -1,118 +1,139 @@
 # 一分钟联盟营销系统
 
-Firebase 版双界面联盟营销系统原型。
+当前前端版本：`20260619-30`
 
-## 已完成
+这是一个 Firebase 版联盟营销 MVP，包含用户界面和后台管理界面。当前阶段以免费资源和前端管理员确认为主，Cloud Functions 已准备但暂时放最后启用。
 
-- Google 登录
-- 用户界面和后台界面
-- 管理员邮箱权限
-- Firestore 安全规则
-- Firebase Storage 付款证明上传
-- 后台确认付款后才发积分和奖励
-- 后台操作日志
-- 订单、奖励、提现、积分流水已拆成独立集合
-- 后台订单、奖励、提现支持状态筛选和 CSV 导出
-- Cloud Functions：已预留后端函数；当前可先用前端管理员确认付款 fallback
-
-## 管理员邮箱
-
-在 `app.js` 和 `firestore.rules`、`storage.rules` 里，把：
+## 当前管理员
 
 ```txt
 stanleyhoh79@gmail.com
 ```
 
-改成你的管理员 Google 邮箱。
+管理员邮箱需要同时保持在这些地方一致：
 
-## Firestore 结构
+- `app.js`
+- `firestore.rules`
+- `storage.rules`
+- `functions/index.js`
+
+## 核心规则
+
+- 推荐关系固定，绑定后不能随意更换。
+- 用户首充后，推荐人获得首充奖励。
+- 用户复购后，买家获得复购资格。
+- 后续复购订单会从复购资格池派发奖励。
+- 买家不会获得自己这笔复购订单的资格池奖励。
+- 每派发 1 次资格池奖励，接收人扣 1 个复购资格。
+- 复购奖励分 3 期释放：第 7 / 14 / 30 天。
+- 充值积分不能提现。
+- 只有已确认的首充奖励和已释放的复购奖励可以提现。
+- 最低提现金额：`RM50`。
+- 提现冷却时间：`24` 小时。
+
+## 用户测试流程
+
+1. 用户 A 使用 Google 登录。
+2. 用户 A 保存显示名称、手机号码、默认收款方式和收款账号。
+3. 用户 A 复制推荐码或推荐链接。
+4. 用户 B 使用另一个 Google 账号登录。
+5. 用户 B 输入用户 A 的推荐码并绑定推荐人。
+6. 用户 B 申请首充配套，并填写付款资料。
+7. 管理员在后台确认付款。
+8. 检查用户 B 是否获得积分和配套。
+9. 检查用户 A 是否获得首充推荐奖励。
+10. 用户 B 再次申请复购配套。
+11. 管理员确认复购付款。
+12. 检查用户 B 是否获得复购资格和冷却时间。
+13. 检查资格池用户是否收到复购资格奖励。
+14. 测试奖励释放后是否进入可提现余额。
+15. 用户申请提现，管理员审核并标记打款。
+
+## 后台使用重点
+
+后台包含这些模块：
+
+- 待办中心
+- 用户管理
+- 订单管理
+- 奖励审核
+- 提现审核
+- 操作日志
+- 风控规则
+
+建议管理员每天先看 `待办中心`，再依次处理：
+
+1. 充值订单待审核
+2. 付款凭证异常
+3. 奖励待处理
+4. 奖励发放异常
+5. 提现待审核
+6. 提现风控风险
+7. 数据异常
+8. 上线自检
+
+## 风控与自检
+
+系统目前已经有这些自检：
+
+- 上线前自检
+- 奖励发放自检
+- 提现风控自检
+- 数据一致性检查
+- 实机测试清单
+- 部署前自检清单
+- Rules 发布状态
+- Cloud Functions 状态
+
+如果上线状态不是“可准备上线”，请先按风控页提示处理。
+
+## 导出资料
+
+后台支持导出：
+
+- 完整备份包
+- 用户 CSV
+- 订单 CSV
+- 奖励 CSV
+- 提现 CSV
+- 复购资格流水 CSV
+- 待办清单 CSV
+- 异常报告 CSV
+- 操作日志 CSV
+
+建议每次大改规则、批量审核或正式测试前，先导出完整备份包。
+
+## Firebase 发布
+
+需要在 Firebase Console 手动发布：
+
+- `firestore.rules`
+- `storage.rules`
+
+如果出现 `permission-denied`，优先检查 Firestore Rules 是否已发布。
+
+如果付款凭证上传失败，优先检查 Storage Rules 是否已发布。
+
+## GitHub Pages
+
+发布后确认页面加载的是最新版本：
 
 ```txt
-amsystem/main
-amsystemUsers/{用户ID}
-amsystemOrders/{订单ID}
-amsystemRewards/{奖励ID}
-amsystemWithdraws/{提现ID}
-amsystemPointLogs/{流水ID}
-amsystemAdminLogs/{日志ID}
+app.js?v=20260619-30
 ```
 
-说明：
+如果页面仍是旧版本，请刷新浏览器缓存，或确认 GitHub Pages 已完成部署。
 
-- `amsystem/main`：系统配套规则。
-- `amsystemUsers`：用户资料。
-- `amsystemOrders`：充值订单。
-- `amsystemRewards`：奖励记录。
-- `amsystemWithdraws`：提现申请。
-- `amsystemPointLogs`：积分流水。
-- `amsystemAdminLogs`：后台操作日志，只允许管理员读取。
+## Cloud Functions
 
-## Firestore Rules
+当前 `functions/index.js` 已准备 `confirmOrder`。
 
-把 `firestore.rules` 的内容复制到 Firebase Console 的 Firestore Rules 并发布。
+当前策略：
 
-## Storage Rules
-
-付款证明保存在：
-
-```txt
-paymentProofs/{用户ID}/{文件名}
-```
-
-把 `storage.rules` 的内容复制到 Firebase Console 的 Storage Rules 并发布。
-
-## 充值订单流程
-
-1. 用户填写付款方式、付款参考号和备注。
-2. 用户上传付款证明，支持图片或 PDF，最大 5MB。
-3. 用户点击申请充值配套。
-4. 系统创建待处理订单。
-5. 管理员进入后台订单管理，核对付款资料和凭证。
-6. 管理员确认付款。
-7. 系统发积分、更新配套有效期、生成推荐奖励。
-
-## 下一步建议
-
-1. 部署 Cloud Functions。
-2. 增加真实支付网关回调。
-3. 增加管理员操作日志导出。
-4. 增加更多日期/用户筛选。
-5. 增加手机端体验优化。
-
-## Cloud Functions（可选，正式上线再启用）
-
-已新增：
-
-```txt
-functions/index.js
-functions/package.json
-firebase.json
-.firebaserc
-```
-
-当前云函数：
-
-```txt
-confirmOrder
-```
-
-作用：
-
-- 只有管理员可以调用。
-- 确认待处理订单。
-- 发放积分。
-- 更新用户配套有效期。
-- 生成推荐奖励。
-- 写入积分流水。
-- 写入后台操作日志。
-
-部署前，请把 `functions/index.js` 里的：
-
-```txt
-stanleyhoh79@gmail.com
-```
-
-改成你的管理员邮箱。
+1. 系统优先尝试调用 `confirmOrder`。
+2. 如果 Cloud Functions 未启用或调用失败，会使用前端管理员确认 fallback。
+3. MVP 内测阶段可以先不启用 Cloud Functions。
+4. 正式扩大使用、涉及真实资金和大量订单时，建议启用 Cloud Functions。
 
 部署命令：
 
@@ -120,12 +141,20 @@ stanleyhoh79@gmail.com
 firebase deploy --only functions
 ```
 
-如果你暂时不想升级 Blaze 方案，可以先不部署 Cloud Functions。
+Cloud Functions 可能需要 Firebase Blaze 方案，所以建议最后处理。
 
-当前系统会这样处理：
+## 上线前必测清单
 
-1. 优先尝试调用 `confirmOrder` 云函数。
-2. 如果云函数未部署或不可用，管理员前端会 fallback 完成确认付款。
-3. 操作日志会标记为 `前端管理员确认`。
-
-这个 fallback 适合测试和内测。正式上线涉及真钱、积分和奖励时，建议再启用 Cloud Functions。
+- 普通用户能 Google 登录。
+- 普通用户能保存资料。
+- 推荐码和推荐链接能正确绑定推荐人。
+- 首充订单能保存到 Firestore。
+- 付款凭证能上传或暂存。
+- 后台确认首充后，积分和首充奖励正确。
+- 复购订单确认后，复购资格和资格池奖励正确。
+- 复购奖励分期释放正确。
+- 充值积分不能提现。
+- 可提现余额只来自奖励。
+- 提现审核和打款状态正确。
+- 手机端用户界面排版正常。
+- 后台风控页没有未处理异常。

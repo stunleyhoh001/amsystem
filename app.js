@@ -25,7 +25,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260619-19";
+const APP_VERSION = "20260619-30";
 const TEST_CHECKLIST_KEY = "amsystemTestChecklist";
 const DEPLOY_CHECKLIST_KEY = "amsystemDeployChecklist";
 const WITHDRAW_COOLDOWN_HOURS = 24;
@@ -1135,6 +1135,12 @@ function withdrawRiskLabels(withdraw, data = state) {
   return labels;
 }
 
+function withdrawRiskIssues(data = state) {
+  return (data.withdraws || []).flatMap((withdraw) =>
+    withdrawRiskLabels(withdraw, data).map((issue) => `提现 ${withdraw.id}：${issue}`)
+  );
+}
+
 function sharedWithdrawAccountUsers(account, currentUserId = "", data = state) {
   const normalized = String(account || "").trim().toLowerCase();
   if (!normalized) return [];
@@ -1204,6 +1210,7 @@ function rewardRiskLabels(reward, data = state) {
 function dataIntegrityIssues(data = state, options = {}) {
   const includeProfileIssues = options.includeProfileIssues !== false;
   const includeRewardIssues = options.includeRewardIssues !== false;
+  const includeWithdrawIssues = options.includeWithdrawIssues !== false;
   const issues = [];
   const users = data.users || [];
   const orders = data.orders || [];
@@ -1239,7 +1246,7 @@ function dataIntegrityIssues(data = state, options = {}) {
   withdraws.forEach((withdraw) => {
     if (!usersById.has(withdraw.userId)) issues.push(`提现 ${withdraw.id} 的用户不存在`);
     if (withdraw.source !== "reward") issues.push(`提现 ${withdraw.id} 不是奖励提现来源`);
-    withdrawRiskLabels(withdraw, data).forEach((risk) => issues.push(`提现 ${withdraw.id}：${risk}`));
+    if (includeWithdrawIssues) withdrawRiskLabels(withdraw, data).forEach((risk) => issues.push(`提现 ${withdraw.id}：${risk}`));
   });
 
   users.forEach((user) => {
@@ -2233,11 +2240,12 @@ function adminTodoItems() {
   );
   const pendingRewards = (state.rewards || []).filter((reward) => ["pending", "releasing"].includes(reward.status));
   const pendingWithdraws = (state.withdraws || []).filter((withdraw) => withdraw.status === "pending");
+  const withdrawRisks = withdrawRiskIssues(state);
   const duplicateRisks = duplicateOrderRisks(state);
   const payoutRisks = payoutRiskUsers(state);
   const incompleteProfiles = incompleteProfileUsers(state);
   const rewardIssues = rewardIntegrityIssues(state);
-  const integrityIssues = dataIntegrityIssues(state, { includeProfileIssues: false, includeRewardIssues: false });
+  const integrityIssues = dataIntegrityIssues(state, { includeProfileIssues: false, includeRewardIssues: false, includeWithdrawIssues: false });
   const checks = readinessChecks();
   const failedChecks = checks.filter((check) => !check.ok);
 
@@ -2283,8 +2291,8 @@ function adminTodoItems() {
       count: rewardIssues.length,
       level: rewardIssues.length ? "danger" : "ok",
       detail: rewardIssues.length ? rewardIssues.slice(0, 2).join("；") : "奖励发放规则正常。",
-      action: "到风控规则查看",
-      tab: "adminRisk",
+      action: "到奖励审核查看",
+      tab: "adminRewards",
       focus: "rewardIssues",
     },
     {
@@ -2295,6 +2303,15 @@ function adminTodoItems() {
       action: "到提现审核处理",
       tab: "adminWithdraws",
       focus: "pendingWithdraws",
+    },
+    {
+      title: "提现风控风险",
+      count: withdrawRisks.length,
+      level: withdrawRisks.length ? "danger" : "ok",
+      detail: withdrawRisks.length ? `${withdrawRisks.length} 项提现风控风险。` : "没有发现提现风控风险。",
+      action: "到提现审核查看",
+      tab: "adminWithdraws",
+      focus: "withdrawRisks",
     },
     {
       title: "共享收款账号",
@@ -2658,9 +2675,10 @@ function readinessChecks() {
   const incompleteProfiles = incompleteProfileUsers(state);
   const pendingOrders = (state.orders || []).filter((order) => order.status === "pending");
   const pendingWithdraws = (state.withdraws || []).filter((withdraw) => withdraw.status === "pending");
+  const withdrawRisks = withdrawRiskIssues(state);
   const pendingRewards = (state.rewards || []).filter((reward) => reward.status === "pending" || reward.status === "releasing");
   const rewardIssues = rewardIntegrityIssues(state);
-  const integrityIssues = dataIntegrityIssues(state, { includeProfileIssues: false, includeRewardIssues: false });
+  const integrityIssues = dataIntegrityIssues(state, { includeProfileIssues: false, includeRewardIssues: false, includeWithdrawIssues: false });
   const testChecklist = testChecklistReport();
 
   return [
@@ -2693,6 +2711,11 @@ function readinessChecks() {
       ok: pendingWithdraws.length === 0,
       label: "待审核提现",
       detail: pendingWithdraws.length ? `${pendingWithdraws.length} 笔提现等待审核` : "没有待审核提现",
+    },
+    {
+      ok: withdrawRisks.length === 0,
+      label: "提现风控风险",
+      detail: withdrawRisks.length ? `${withdrawRisks.length} 项提现风控风险` : "没有提现风控风险",
     },
     {
       ok: paidOrders.every((order) => Number(order.points || 0) > 0),
@@ -2807,6 +2830,7 @@ function renderAdminRiskRules() {
   if (!target) return;
   const planCooldowns = state.plans.map((plan) => `${plan.name}: ${planRepeatCooldownHours(plan)} 小时`).join(" / ");
   const rewardIssues = rewardIntegrityIssues(state);
+  const withdrawIssues = withdrawRiskIssues(state);
   const checks = readinessChecks();
   const summary = readinessSummary();
   const cloudFunctions = cloudFunctionStatusReport();
@@ -2874,6 +2898,19 @@ function renderAdminRiskRules() {
         "用户必须账户正常，且拥有有效配套。",
         "申请金额不能超过当前可提现余额。",
       ],
+    },
+    {
+      title: "提现风控自检",
+      rows: withdrawIssues.length
+        ? [
+          `<b class="check-warn">发现 ${withdrawIssues.length} 项提现风控风险</b>`,
+          ...withdrawIssues.slice(0, 6),
+          withdrawIssues.length > 6 ? `还有 ${withdrawIssues.length - 6} 项，请导出异常报告查看。` : "",
+        ].filter(Boolean)
+        : [
+          `<b class="check-ok">提现风控正常</b>`,
+          "没有发现共享收款账号等提现风险。",
+        ],
     },
     {
       title: "后台人工审核",
@@ -3012,7 +3049,8 @@ function exportBundle() {
   const paidOrders = (state.orders || []).filter((order) => order.status === "paid");
   const readiness = readinessChecks();
   const rewardIssues = rewardIntegrityIssues(state);
-  const integrityIssues = dataIntegrityIssues(state, { includeRewardIssues: false });
+  const withdrawIssues = withdrawRiskIssues(state);
+  const integrityIssues = dataIntegrityIssues(state, { includeRewardIssues: false, includeWithdrawIssues: false });
   const testChecklist = testChecklistReport();
   const deployChecklist = deployChecklistReport();
   const readinessStatus = readinessSummary();
@@ -3035,6 +3073,7 @@ function exportBundle() {
       riskItems: readiness.length,
       riskPendingItems: readiness.filter((check) => !check.ok).length,
       rewardIssues: rewardIssues.length,
+      withdrawIssues: withdrawIssues.length,
       integrityIssues: integrityIssues.length,
       testChecklistDone: testChecklist.done,
       testChecklistTotal: testChecklist.total,
@@ -3055,6 +3094,7 @@ function exportBundle() {
       deploymentStatus,
       checks: readiness,
       rewardIssues,
+      withdrawIssues,
       integrityIssues,
       testChecklist,
       deployChecklist,
@@ -3072,8 +3112,9 @@ function exportBundle() {
 
 function exportRiskReport() {
   const checks = readinessChecks();
-  const issues = dataIntegrityIssues(state, { includeRewardIssues: false });
+  const issues = dataIntegrityIssues(state, { includeRewardIssues: false, includeWithdrawIssues: false });
   const rewardIssues = rewardIntegrityIssues(state);
+  const withdrawIssues = withdrawRiskIssues(state);
   const testChecklist = testChecklistReport();
   const deployChecklist = deployChecklistReport();
   const readinessStatus = readinessSummary();
@@ -3092,6 +3133,7 @@ function exportRiskReport() {
       ...testChecklist.items.map((item) => ["实机测试", item.done ? "完成" : "未完成", `步骤 ${item.index}`, item.text, item.completedAt || ""]),
       ...deployChecklist.items.map((item) => ["部署检查", item.done ? "完成" : "未完成", `步骤 ${item.index}`, item.text, item.completedAt || ""]),
       ...rewardIssues.map((issue) => ["奖励发放", "异常", "明细", issue, ""]),
+      ...withdrawIssues.map((issue) => ["提现风控", "异常", "明细", issue, ""]),
       ...issues.map((issue) => ["数据一致性", "异常", "明细", issue, ""]),
     ]
   );
@@ -3236,10 +3278,12 @@ function filteredRewards() {
   const keyword = getInputValue("#rewardSearchInput").toLowerCase();
   const statusFilter = getSelectValue("#rewardStatusFilter", "all");
   const typeFilter = getSelectValue("#rewardTypeFilter", "all");
+  const riskFilter = getSelectValue("#rewardRiskFilter", "all");
 
   return state.rewards.filter((reward) => {
     const user = findUser(reward.userId);
     const sourceUser = findUser(reward.sourceUserId);
+    const hasRisk = rewardRiskLabels(reward).length > 0;
     const searchable = [
       reward.id,
       reward.orderId,
@@ -3256,17 +3300,22 @@ function filteredRewards() {
       || reward.status === statusFilter
       || (statusFilter === "due" && isDue);
     const matchesType = typeFilter === "all" || reward.type === typeFilter;
-    return matchesKeyword && matchesStatus && matchesType;
+    const matchesRisk = riskFilter === "all"
+      || (riskFilter === "risk" && hasRisk)
+      || (riskFilter === "normal" && !hasRisk);
+    return matchesKeyword && matchesStatus && matchesType && matchesRisk;
   });
 }
 
 function filteredWithdraws() {
   const keyword = getInputValue("#withdrawSearchInput").toLowerCase();
   const statusFilter = getSelectValue("#withdrawStatusFilter", "all");
+  const riskFilter = getSelectValue("#withdrawRiskFilter", "all");
   const minAmount = Number(getInputValue("#withdrawMinAmount") || 0);
 
   return state.withdraws.filter((item) => {
     const user = findUser(item.userId);
+    const hasRisk = withdrawRiskLabels(item).length > 0;
     const searchable = [
       item.id,
       user?.name,
@@ -3278,8 +3327,11 @@ function filteredWithdraws() {
     ].join(" ").toLowerCase();
     const matchesKeyword = !keyword || searchable.includes(keyword);
     const matchesStatus = statusFilter === "all" || item.status === statusFilter;
+    const matchesRisk = riskFilter === "all"
+      || (riskFilter === "risk" && hasRisk)
+      || (riskFilter === "normal" && !hasRisk);
     const matchesAmount = !minAmount || Number(item.amount || 0) >= minAmount;
-    return matchesKeyword && matchesStatus && matchesAmount;
+    return matchesKeyword && matchesStatus && matchesRisk && matchesAmount;
   });
 }
 
@@ -3419,15 +3471,30 @@ function applyTodoFocus(focus) {
   if (focus === "pendingRewards") {
     setValue("#rewardStatusFilter", "pending");
     setValue("#rewardTypeFilter", "all");
+    setValue("#rewardRiskFilter", "all");
     setValue("#rewardSearchInput", "");
   }
   if (focus === "dueRewards") {
     setValue("#rewardStatusFilter", "due");
     setValue("#rewardTypeFilter", "all");
+    setValue("#rewardRiskFilter", "all");
+    setValue("#rewardSearchInput", "");
+  }
+  if (focus === "rewardIssues") {
+    setValue("#rewardStatusFilter", "all");
+    setValue("#rewardTypeFilter", "all");
+    setValue("#rewardRiskFilter", "risk");
     setValue("#rewardSearchInput", "");
   }
   if (focus === "pendingWithdraws") {
     setValue("#withdrawStatusFilter", "pending");
+    setValue("#withdrawRiskFilter", "all");
+    setValue("#withdrawSearchInput", "");
+    setValue("#withdrawMinAmount", "");
+  }
+  if (focus === "withdrawRisks") {
+    setValue("#withdrawStatusFilter", "all");
+    setValue("#withdrawRiskFilter", "risk");
     setValue("#withdrawSearchInput", "");
     setValue("#withdrawMinAmount", "");
   }
@@ -3464,11 +3531,12 @@ function scrollToAdminFocus(tabId, focus) {
     pendingRewards: "#adminRewardTable",
     dueRewards: "#adminRewardTable",
     pendingWithdraws: "#adminWithdrawTable",
+    withdrawRisks: "#adminWithdrawTable",
     payoutRiskUsers: "#adminUserTable",
     incompleteProfiles: "#adminUserTable",
     allUsers: "#adminUserTable",
     duplicateOrders: "#adminRiskList",
-    rewardIssues: "#adminRiskList",
+    rewardIssues: "#adminRewardTable",
     integrityIssues: "#adminRiskList",
     readiness: "#adminRiskList",
   };
@@ -3572,7 +3640,7 @@ document.addEventListener("click", (event) => {
   firstEmpty?.focus();
 });
 
-["#orderStatusFilter", "#orderTypeFilter", "#orderProofFilter", "#rewardStatusFilter", "#rewardTypeFilter", "#withdrawStatusFilter", "#userPackageFilter", "#userAccountFilter", "#userPayoutRiskFilter", "#userProfileFilter", "#logActionFilter", "#logLimitFilter"].forEach((selector) => {
+["#orderStatusFilter", "#orderTypeFilter", "#orderProofFilter", "#rewardStatusFilter", "#rewardTypeFilter", "#rewardRiskFilter", "#withdrawStatusFilter", "#withdrawRiskFilter", "#userPackageFilter", "#userAccountFilter", "#userPayoutRiskFilter", "#userProfileFilter", "#logActionFilter", "#logLimitFilter"].forEach((selector) => {
   document.querySelector(selector)?.addEventListener("change", renderAll);
 });
 
@@ -3632,18 +3700,22 @@ document.querySelector("#clearRewardFiltersBtn")?.addEventListener("click", () =
   const searchInput = document.querySelector("#rewardSearchInput");
   const statusFilter = document.querySelector("#rewardStatusFilter");
   const typeFilter = document.querySelector("#rewardTypeFilter");
+  const riskFilter = document.querySelector("#rewardRiskFilter");
   if (searchInput) searchInput.value = "";
   if (statusFilter) statusFilter.value = "all";
   if (typeFilter) typeFilter.value = "all";
+  if (riskFilter) riskFilter.value = "all";
   renderAll();
 });
 
 document.querySelector("#clearWithdrawFiltersBtn")?.addEventListener("click", () => {
   const searchInput = document.querySelector("#withdrawSearchInput");
   const statusFilter = document.querySelector("#withdrawStatusFilter");
+  const riskFilter = document.querySelector("#withdrawRiskFilter");
   const minAmountInput = document.querySelector("#withdrawMinAmount");
   if (searchInput) searchInput.value = "";
   if (statusFilter) statusFilter.value = "all";
+  if (riskFilter) riskFilter.value = "all";
   if (minAmountInput) minAmountInput.value = "";
   renderAll();
 });
@@ -3759,7 +3831,7 @@ document.querySelector("#exportOrdersBtn")?.addEventListener("click", () => {
   if (!requireAdmin()) return;
   downloadCsv(
     `amsystem-orders-${exportStamp()}.csv`,
-    ["订单号", "用户", "配套", "类型", "金额", "锁定积分", "锁定推荐名额", "锁定有效天数", "锁定首充比例", "锁定复购比例", "锁定复购资格", "锁定冷却小时", "付款方式", "付款参考号", "凭证状态", "风险提示", "状态", "处理备注", "申请时间", "确认时间", "取消时间"],
+    ["订单号", "用户", "配套", "类型", "金额", "锁定积分", "锁定推荐名额", "锁定有效天数", "锁定首充比例", "锁定复购比例", "锁定复购资格", "锁定冷却小时", "付款方式", "付款参考号", "凭证状态", "风险提示", "状态", "处理备注", "处理结果", "申请时间", "确认时间", "取消时间"],
     filteredOrders().map((order) => {
       const user = findUser(order.userId);
       const plan = orderPlan(order);
@@ -3782,6 +3854,7 @@ document.querySelector("#exportOrdersBtn")?.addEventListener("click", () => {
         orderRiskLabels(order).join("；"),
         labelStatus(order.status),
         order.reviewNote || "",
+        order.confirmSummary || "",
         order.createdAt,
         order.reviewedAt || order.paidAt || "",
         order.cancelledAt || "",
@@ -3794,7 +3867,7 @@ document.querySelector("#exportRewardsBtn")?.addEventListener("click", () => {
   if (!requireAdmin()) return;
   downloadCsv(
     `amsystem-rewards-${exportStamp()}.csv`,
-    ["奖励ID", "奖励人", "来源用户", "订单", "订单金额", "配套快照", "类型", "比例", "金额", "按比例应得", "计算差额", "状态", "可确认日", "审核备注", "审核时间"],
+    ["奖励ID", "奖励人", "来源用户", "订单", "订单金额", "配套快照", "类型", "比例", "金额", "按比例应得", "计算差额", "风控风险", "状态", "可确认日", "审核备注", "审核时间"],
     filteredRewards().map((reward) => {
       const user = findUser(reward.userId);
       const sourceUser = findUser(reward.sourceUserId);
@@ -3802,6 +3875,7 @@ document.querySelector("#exportRewardsBtn")?.addEventListener("click", () => {
       const plan = order ? orderPlan(order) : null;
       const expectedAmount = order ? +(Number(order.amount || 0) * (Number(reward.rate || 0) / 100)).toFixed(2) : 0;
       const amountGap = order ? Number((Number(reward.amount || 0) - expectedAmount).toFixed(2)) : 0;
+      const risks = rewardRiskLabels(reward).join("；");
       return [
         reward.id,
         user?.name || "",
@@ -3814,6 +3888,7 @@ document.querySelector("#exportRewardsBtn")?.addEventListener("click", () => {
         rewardAmountText(reward),
         order ? expectedAmount : "",
         order ? amountGap : "",
+        risks,
         labelStatus(reward.status),
         rewardNextDateText(reward),
         reward.reviewNote || "",
@@ -3827,10 +3902,29 @@ document.querySelector("#exportWithdrawsBtn")?.addEventListener("click", () => {
   if (!requireAdmin()) return;
   downloadCsv(
     `amsystem-withdraws-${exportStamp()}.csv`,
-    ["提现ID", "用户", "金额", "来源", "方式", "账号", "风险提示", "状态", "审核备注", "申请时间", "审核时间", "打款时间"],
+    ["提现ID", "用户", "金额", "来源", "方式", "账号", "首充奖励可提现", "复购奖励已释放", "复购奖励待释放", "已申请/处理中", "当前可提现余额", "风险提示", "状态", "审核备注", "申请时间", "审核时间", "打款时间"],
     filteredWithdraws().map((item) => {
       const user = findUser(item.userId);
-      return [item.id, user?.name || "", item.amount, item.source === "reward" ? "奖励提现" : item.source || "", item.method, item.account, withdrawRiskLabels(item).join("；"), labelStatus(item.status), item.reviewNote || "", item.createdAt, item.reviewedAt || "", item.paidAt || ""];
+      const breakdown = user ? withdrawBreakdown(user.id) : {};
+      return [
+        item.id,
+        user?.name || "",
+        item.amount,
+        item.source === "reward" ? "奖励提现" : item.source || "",
+        item.method,
+        item.account,
+        breakdown.first || 0,
+        breakdown.repeatReleased || 0,
+        breakdown.pendingRelease || 0,
+        breakdown.requested || 0,
+        breakdown.available || 0,
+        withdrawRiskLabels(item).join("；"),
+        labelStatus(item.status),
+        item.reviewNote || "",
+        item.createdAt,
+        item.reviewedAt || "",
+        item.paidAt || "",
+      ];
     })
   );
 });

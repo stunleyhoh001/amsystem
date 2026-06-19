@@ -373,6 +373,13 @@
                       <option value="repeat">复购资格奖励</option>
                     </select>
                   </label>
+                  <label>风控
+                    <select id="rewardRiskFilter">
+                      <option value="all">全部</option>
+                      <option value="risk">只看异常</option>
+                      <option value="normal">只看正常</option>
+                    </select>
+                  </label>
                   <button id="clearRewardFiltersBtn" class="button ghost" type="button">清除筛选</button>
                 </div>
                 <div class="table-wrap">
@@ -401,6 +408,13 @@
                       <option value="approved">已通过</option>
                       <option value="rejected">已拒绝</option>
                       <option value="paidout">已打款</option>
+                    </select>
+                  </label>
+                  <label>风控
+                    <select id="withdrawRiskFilter">
+                      <option value="all">全部</option>
+                      <option value="risk">只看风险</option>
+                      <option value="normal">只看正常</option>
                     </select>
                   </label>
                   <label>最低金额 RM<input id="withdrawMinAmount" type="number" min="0" step="1" placeholder="可选" /></label>
@@ -464,7 +478,7 @@
     </main>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="./app.js?v=20260619-19"></script>
+    <script type="module" src="./app.js?v=20260619-30"></script>
   </body>
 </html>
 
