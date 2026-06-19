@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>一分钟联盟营销系统</title>
-    <link rel="stylesheet" href="./styles.css?v=20260617-5" />
+    <link rel="stylesheet" href="./styles.css?v=20260619-39" />
   </head>
   <body>
     <header class="app-header">
@@ -16,8 +16,11 @@
       <div class="header-actions">
         <button class="switch active" data-view="memberView">用户界面</button>
         <button class="switch" data-view="adminView">后台界面</button>
-        <button id="exportBtn" class="button ghost">导出备份包</button>
-        <button id="resetBtn" class="button danger">重置演示数据</button>
+        <button id="exportBtn" class="button ghost admin-tool">导出备份包</button>
+        <button id="restoreBackupBtn" class="button ghost admin-tool">导入备份包</button>
+        <input id="restoreBackupInput" type="file" accept="application/json,.json" hidden />
+        <button id="clearTestDataBtn" class="button ghost admin-tool">清理测试数据</button>
+        <button id="resetBtn" class="button danger admin-tool">重置演示数据</button>
       </div>
     </header>
 
@@ -196,7 +199,10 @@
 
         <section class="layout">
           <aside class="panel sidebar">
-            <h2>配套与奖励设置</h2>
+            <div class="panel-head compact-head">
+              <h2>配套与奖励设置</h2>
+              <button id="exportPlansBtn" class="button ghost compact-button" type="button">导出配套</button>
+            </div>
             <form id="planForm" class="stack">
               <label>配套名称<input name="name" required /></label>
               <label>充值金额 RM<input name="amount" type="number" min="1" step="1" required /></label>
@@ -332,6 +338,13 @@
                       <option value="inline">本地小图</option>
                       <option value="failed">上传失败</option>
                       <option value="none">未上传</option>
+                    </select>
+                  </label>
+                  <label>风控
+                    <select id="orderRiskFilter">
+                      <option value="all">全部</option>
+                      <option value="risk">只看风险</option>
+                      <option value="normal">只看正常</option>
                     </select>
                   </label>
                   <button id="clearOrderFiltersBtn" class="button ghost" type="button">清除筛选</button>
@@ -478,7 +491,7 @@
     </main>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="./app.js?v=20260619-30"></script>
+    <script type="module" src="./app.js?v=20260619-39"></script>
   </body>
 </html>
 

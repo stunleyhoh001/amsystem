@@ -8,6 +8,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -25,7 +26,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260619-30";
+const APP_VERSION = "20260619-39";
 const TEST_CHECKLIST_KEY = "amsystemTestChecklist";
 const DEPLOY_CHECKLIST_KEY = "amsystemDeployChecklist";
 const WITHDRAW_COOLDOWN_HOURS = 24;
@@ -388,37 +389,17 @@ async function saveState() {
     const cloudState = splitStateForCloud(state);
     if (isAdmin()) {
       await setDoc(systemRef, { plans: cloudState.plans, updatedAt: serverTimestamp() });
-      await Promise.all(
-        [
-          ...cloudState.users.map((user) =>
-            setDoc(doc(db, USER_COLLECTION, user.id), { ...user, updatedAt: serverTimestamp() }, { merge: true })
-          ),
-          ...cloudState.orders.map((order) =>
-            setDoc(doc(db, ORDER_COLLECTION, order.id), { ...order, updatedAt: serverTimestamp() }, { merge: true })
-          ),
-          ...cloudState.rewards.map((reward) =>
-            setDoc(doc(db, REWARD_COLLECTION, reward.id), { ...reward, updatedAt: serverTimestamp() }, { merge: true })
-          ),
-          ...cloudState.withdraws.map((withdraw) =>
-            setDoc(doc(db, WITHDRAW_COLLECTION, withdraw.id), { ...withdraw, updatedAt: serverTimestamp() }, { merge: true })
-          ),
-          ...cloudState.pointLogs.map((log) =>
-            setDoc(doc(db, POINT_LOG_COLLECTION, log.id), { ...log, updatedAt: serverTimestamp() }, { merge: true })
-          ),
-          ...cloudState.repeatCreditLogs.map((log) =>
-            setDoc(doc(db, REPEAT_CREDIT_LOG_COLLECTION, log.id), { ...log, updatedAt: serverTimestamp() }, { merge: true })
-          ),
-          ...cloudState.invites.map((invite) =>
-            setDoc(doc(db, INVITE_COLLECTION, invite.id), { ...invite, updatedAt: serverTimestamp() }, { merge: true })
-          ),
-          ...cloudState.referrals.map((referral) =>
-            setDoc(doc(db, REFERRAL_COLLECTION, referral.id), { ...referral, updatedAt: serverTimestamp() }, { merge: true })
-          ),
-          ...(cloudState.adminLogs || []).map((log) =>
-            setDoc(doc(db, ADMIN_LOG_COLLECTION, log.id), { ...log, updatedAt: serverTimestamp() }, { merge: true })
-          ),
-        ]
-      );
+      await Promise.all([
+        syncAdminCollection(usersRef, cloudState.users),
+        syncAdminCollection(ordersRef, cloudState.orders),
+        syncAdminCollection(rewardsRef, cloudState.rewards),
+        syncAdminCollection(withdrawsRef, cloudState.withdraws),
+        syncAdminCollection(pointLogsRef, cloudState.pointLogs),
+        syncAdminCollection(repeatCreditLogsRef, cloudState.repeatCreditLogs),
+        syncAdminCollection(invitesRef, cloudState.invites),
+        syncAdminCollection(referralsRef, cloudState.referrals),
+        syncAdminCollection(adminLogsRef, cloudState.adminLogs || []),
+      ]);
     } else {
       const user = cloudState.users.find((item) => item.id === firebaseUser.uid);
       if (!user) throw new Error("current-user-document-not-found");
@@ -459,6 +440,20 @@ async function saveState() {
     syncMessage = `Firestore：保存失败${error.syncStep ? `（${error.syncStep}）` : ""} ${error.code || error.name || "unknown"} - ${error.message || ""}`;
     toast(`Firestore 保存失败：${error.code || "unknown"}`);
   }
+}
+
+async function syncAdminCollection(collectionRef, rows = []) {
+  const desiredRows = rows.filter((row) => row?.id);
+  const desiredIds = new Set(desiredRows.map((row) => row.id));
+  const snapshot = await getDocs(collectionRef);
+  await Promise.all([
+    ...snapshot.docs
+      .filter((item) => !desiredIds.has(item.id))
+      .map((item) => deleteDoc(item.ref)),
+    ...desiredRows.map((row) =>
+      setDoc(doc(collectionRef, row.id), { ...row, updatedAt: serverTimestamp() })
+    ),
+  ]);
 }
 
 async function setDocWithSyncStep(step, ref, data, options = { merge: true }) {
@@ -1083,6 +1078,12 @@ function duplicateOrderRisks(data = state) {
   return risks;
 }
 
+function orderRiskIssues(data = state) {
+  return (data.orders || []).flatMap((order) =>
+    orderRiskLabels(order, data).map((issue) => `订单 ${order.id}：${issue}`)
+  );
+}
+
 function orderRiskLabels(order, data = state) {
   const labels = [];
   const paymentRef = String(order.paymentRef || "").trim().toLowerCase();
@@ -1209,6 +1210,7 @@ function rewardRiskLabels(reward, data = state) {
 
 function dataIntegrityIssues(data = state, options = {}) {
   const includeProfileIssues = options.includeProfileIssues !== false;
+  const includeOrderIssues = options.includeOrderIssues !== false;
   const includeRewardIssues = options.includeRewardIssues !== false;
   const includeWithdrawIssues = options.includeWithdrawIssues !== false;
   const issues = [];
@@ -1219,7 +1221,7 @@ function dataIntegrityIssues(data = state, options = {}) {
   const usersById = new Map(users.map((user) => [user.id, user]));
   const ordersById = new Map(orders.map((order) => [order.id, order]));
   const inviteCodes = new Map();
-  issues.push(...duplicateOrderRisks(data));
+  if (includeOrderIssues) issues.push(...duplicateOrderRisks(data));
 
   users.forEach((user) => {
     const code = normalizeInviteCode(user.inviteCode);
@@ -1236,9 +1238,11 @@ function dataIntegrityIssues(data = state, options = {}) {
     if (!usersById.has(order.userId)) issues.push(`订单 ${order.id} 的用户不存在`);
     if (!(data.plans || []).some((plan) => plan.id === order.planId) && !order.planSnapshot && order.status !== "cancelled") issues.push(`订单 ${order.id} 的配套不存在或已删除`);
     if (order.status === "paid" && Number(order.points || 0) <= 0) issues.push(`已付款订单 ${order.id} 积分为 0`);
-    orderRiskLabels(order, data).forEach((risk) => {
-      if (risk.includes("金额") || risk.includes("配套")) issues.push(`订单 ${order.id}：${risk}`);
-    });
+    if (includeOrderIssues) {
+      orderRiskLabels(order, data).forEach((risk) => {
+        if (risk.includes("金额") || risk.includes("配套")) issues.push(`订单 ${order.id}：${risk}`);
+      });
+    }
   });
 
   if (includeRewardIssues) issues.push(...rewardIntegrityIssues(data));
@@ -2240,12 +2244,13 @@ function adminTodoItems() {
   );
   const pendingRewards = (state.rewards || []).filter((reward) => ["pending", "releasing"].includes(reward.status));
   const pendingWithdraws = (state.withdraws || []).filter((withdraw) => withdraw.status === "pending");
+  const orderRisks = orderRiskIssues(state);
   const withdrawRisks = withdrawRiskIssues(state);
   const duplicateRisks = duplicateOrderRisks(state);
   const payoutRisks = payoutRiskUsers(state);
   const incompleteProfiles = incompleteProfileUsers(state);
   const rewardIssues = rewardIntegrityIssues(state);
-  const integrityIssues = dataIntegrityIssues(state, { includeProfileIssues: false, includeRewardIssues: false, includeWithdrawIssues: false });
+  const integrityIssues = dataIntegrityIssues(state, { includeProfileIssues: false, includeOrderIssues: false, includeRewardIssues: false, includeWithdrawIssues: false });
   const checks = readinessChecks();
   const failedChecks = checks.filter((check) => !check.ok);
 
@@ -2276,6 +2281,15 @@ function adminTodoItems() {
       action: "到风控规则查看",
       tab: "adminRisk",
       focus: "duplicateOrders",
+    },
+    {
+      title: "订单风控风险",
+      count: orderRisks.length,
+      level: orderRisks.length ? "danger" : "ok",
+      detail: orderRisks.length ? orderRisks.slice(0, 2).join("；") : "没有发现订单风控风险。",
+      action: "到订单管理查看",
+      tab: "adminOrders",
+      focus: "orderRisks",
     },
     {
       title: "奖励待处理",
@@ -2674,11 +2688,12 @@ function readinessChecks() {
   const adminUsers = users.filter((user) => ADMIN_EMAILS.includes(user.email));
   const incompleteProfiles = incompleteProfileUsers(state);
   const pendingOrders = (state.orders || []).filter((order) => order.status === "pending");
+  const orderRisks = orderRiskIssues(state);
   const pendingWithdraws = (state.withdraws || []).filter((withdraw) => withdraw.status === "pending");
   const withdrawRisks = withdrawRiskIssues(state);
   const pendingRewards = (state.rewards || []).filter((reward) => reward.status === "pending" || reward.status === "releasing");
   const rewardIssues = rewardIntegrityIssues(state);
-  const integrityIssues = dataIntegrityIssues(state, { includeProfileIssues: false, includeRewardIssues: false, includeWithdrawIssues: false });
+  const integrityIssues = dataIntegrityIssues(state, { includeProfileIssues: false, includeOrderIssues: false, includeRewardIssues: false, includeWithdrawIssues: false });
   const testChecklist = testChecklistReport();
 
   return [
@@ -2701,6 +2716,11 @@ function readinessChecks() {
       ok: pendingOrders.length === 0,
       label: "待处理充值订单",
       detail: pendingOrders.length ? `${pendingOrders.length} 笔订单等待审核` : "没有待处理充值订单",
+    },
+    {
+      ok: orderRisks.length === 0,
+      label: "订单风控风险",
+      detail: orderRisks.length ? `${orderRisks.length} 项订单风控风险` : "没有订单风控风险",
     },
     {
       ok: pendingRewards.length === 0,
@@ -2829,6 +2849,7 @@ function renderAdminRiskRules() {
   const target = document.querySelector("#adminRiskList");
   if (!target) return;
   const planCooldowns = state.plans.map((plan) => `${plan.name}: ${planRepeatCooldownHours(plan)} 小时`).join(" / ");
+  const orderIssues = orderRiskIssues(state);
   const rewardIssues = rewardIntegrityIssues(state);
   const withdrawIssues = withdrawRiskIssues(state);
   const checks = readinessChecks();
@@ -2891,6 +2912,19 @@ function renderAdminRiskRules() {
       ],
     },
     {
+      title: "订单风控自检",
+      rows: orderIssues.length
+        ? [
+          `<b class="check-warn">发现 ${orderIssues.length} 项订单风控风险</b>`,
+          ...orderIssues.slice(0, 6),
+          orderIssues.length > 6 ? `还有 ${orderIssues.length - 6} 项，请导出异常报告查看。` : "",
+        ].filter(Boolean)
+        : [
+          `<b class="check-ok">订单风控正常</b>`,
+          "没有发现重复付款参考号、重复凭证、金额或配套异常。",
+        ],
+    },
+    {
       title: "提现触发条件",
       rows: [
         `最低提现金额：${money(MIN_WITHDRAW_AMOUNT)}。`,
@@ -2926,6 +2960,16 @@ function renderAdminRiskRules() {
         `页面前端版本应显示：${APP_VERSION}。`,
         "如果出现 permission-denied，先发布最新 firestore.rules。",
         "如果凭证上传异常，先发布 storage.rules；MVP 会把小图暂存订单内。",
+      ],
+    },
+    {
+      title: "管理员上线顺序",
+      rows: [
+        "1. 发布最新 index.html、app.js、styles.css。",
+        "2. 到 Firebase Console 发布最新 firestore.rules 和 storage.rules。",
+        "3. 用管理员账号登录，确认后台指标、待办中心、风控页正常。",
+        "4. 用普通用户账号完成首充、复购、提现全流程实测。",
+        "5. 风控页没有未处理异常后，再对外开放链接。",
       ],
     },
     {
@@ -3048,9 +3092,10 @@ function exportStamp(date = new Date()) {
 function exportBundle() {
   const paidOrders = (state.orders || []).filter((order) => order.status === "paid");
   const readiness = readinessChecks();
+  const orderIssues = orderRiskIssues(state);
   const rewardIssues = rewardIntegrityIssues(state);
   const withdrawIssues = withdrawRiskIssues(state);
-  const integrityIssues = dataIntegrityIssues(state, { includeRewardIssues: false, includeWithdrawIssues: false });
+  const integrityIssues = dataIntegrityIssues(state, { includeOrderIssues: false, includeRewardIssues: false, includeWithdrawIssues: false });
   const testChecklist = testChecklistReport();
   const deployChecklist = deployChecklistReport();
   const readinessStatus = readinessSummary();
@@ -3072,6 +3117,7 @@ function exportBundle() {
       adminLogs: (state.adminLogs || []).length,
       riskItems: readiness.length,
       riskPendingItems: readiness.filter((check) => !check.ok).length,
+      orderIssues: orderIssues.length,
       rewardIssues: rewardIssues.length,
       withdrawIssues: withdrawIssues.length,
       integrityIssues: integrityIssues.length,
@@ -3093,6 +3139,7 @@ function exportBundle() {
       rulesStatus,
       deploymentStatus,
       checks: readiness,
+      orderIssues,
       rewardIssues,
       withdrawIssues,
       integrityIssues,
@@ -3112,7 +3159,8 @@ function exportBundle() {
 
 function exportRiskReport() {
   const checks = readinessChecks();
-  const issues = dataIntegrityIssues(state, { includeRewardIssues: false, includeWithdrawIssues: false });
+  const issues = dataIntegrityIssues(state, { includeOrderIssues: false, includeRewardIssues: false, includeWithdrawIssues: false });
+  const orderIssues = orderRiskIssues(state);
   const rewardIssues = rewardIntegrityIssues(state);
   const withdrawIssues = withdrawRiskIssues(state);
   const testChecklist = testChecklistReport();
@@ -3132,6 +3180,7 @@ function exportRiskReport() {
       ...checks.map((check) => ["自检", check.ok ? "通过" : "待处理", check.label, check.detail, ""]),
       ...testChecklist.items.map((item) => ["实机测试", item.done ? "完成" : "未完成", `步骤 ${item.index}`, item.text, item.completedAt || ""]),
       ...deployChecklist.items.map((item) => ["部署检查", item.done ? "完成" : "未完成", `步骤 ${item.index}`, item.text, item.completedAt || ""]),
+      ...orderIssues.map((issue) => ["订单风控", "异常", "明细", issue, ""]),
       ...rewardIssues.map((issue) => ["奖励发放", "异常", "明细", issue, ""]),
       ...withdrawIssues.map((issue) => ["提现风控", "异常", "明细", issue, ""]),
       ...issues.map((issue) => ["数据一致性", "异常", "明细", issue, ""]),
@@ -3210,10 +3259,12 @@ function filteredOrders() {
   const statusFilter = getSelectValue("#orderStatusFilter", "all");
   const typeFilter = getSelectValue("#orderTypeFilter", "all");
   const proofFilter = getSelectValue("#orderProofFilter", "all");
+  const riskFilter = getSelectValue("#orderRiskFilter", "all");
 
   return state.orders.filter((order) => {
     const user = findUser(order.userId);
     const plan = orderPlan(order);
+    const hasRisk = orderRiskLabels(order).length > 0;
     const searchable = [
       order.id,
       user?.name,
@@ -3234,7 +3285,10 @@ function filteredOrders() {
       || (proofFilter === "uploaded" && Boolean(order.proofUrl))
       || (proofFilter === "inline" && Boolean(order.proofInlineData))
       || (proofFilter === "none" && !order.proofUrl && !order.proofInlineData && order.proofStatus !== "failed");
-    return matchesKeyword && matchesStatus && matchesType && matchesProof;
+    const matchesRisk = riskFilter === "all"
+      || (riskFilter === "risk" && hasRisk)
+      || (riskFilter === "normal" && !hasRisk);
+    return matchesKeyword && matchesStatus && matchesType && matchesProof && matchesRisk;
   });
 }
 
@@ -3399,10 +3453,20 @@ function requireAdmin() {
 function renderAdminActionButtons() {
   const canAdmin = isAdmin();
   const exportBtn = document.querySelector("#exportBtn");
+  const restoreBackupBtn = document.querySelector("#restoreBackupBtn");
+  const clearTestDataBtn = document.querySelector("#clearTestDataBtn");
   const resetBtn = document.querySelector("#resetBtn");
   if (exportBtn) {
     exportBtn.disabled = !canAdmin;
     exportBtn.title = canAdmin ? "导出完整 JSON 备份包" : "请使用管理员账号登录";
+  }
+  if (restoreBackupBtn) {
+    restoreBackupBtn.disabled = !canAdmin;
+    restoreBackupBtn.title = canAdmin ? "从系统导出的 JSON 备份包恢复数据" : "请使用管理员账号登录";
+  }
+  if (clearTestDataBtn) {
+    clearTestDataBtn.disabled = !canAdmin;
+    clearTestDataBtn.title = canAdmin ? "清空测试订单、奖励、提现和流水，保留用户与配套" : "请使用管理员账号登录";
   }
   if (resetBtn) {
     resetBtn.disabled = !canAdmin;
@@ -3454,18 +3518,28 @@ function applyTodoFocus(focus) {
     setValue("#orderStatusFilter", "pending");
     setValue("#orderTypeFilter", "all");
     setValue("#orderProofFilter", "all");
+    setValue("#orderRiskFilter", "all");
     setValue("#orderSearchInput", "");
   }
   if (focus === "paidOrders") {
     setValue("#orderStatusFilter", "paid");
     setValue("#orderTypeFilter", "all");
     setValue("#orderProofFilter", "all");
+    setValue("#orderRiskFilter", "all");
     setValue("#orderSearchInput", "");
   }
   if (focus === "failedProofs") {
     setValue("#orderStatusFilter", "pending");
     setValue("#orderTypeFilter", "all");
     setValue("#orderProofFilter", "failed");
+    setValue("#orderRiskFilter", "all");
+    setValue("#orderSearchInput", "");
+  }
+  if (focus === "orderRisks") {
+    setValue("#orderStatusFilter", "all");
+    setValue("#orderTypeFilter", "all");
+    setValue("#orderProofFilter", "all");
+    setValue("#orderRiskFilter", "risk");
     setValue("#orderSearchInput", "");
   }
   if (focus === "pendingRewards") {
@@ -3528,6 +3602,7 @@ function scrollToAdminFocus(tabId, focus) {
     pendingOrders: "#adminOrderTable",
     paidOrders: "#adminOrderTable",
     failedProofs: "#adminOrderTable",
+    orderRisks: "#adminOrderTable",
     pendingRewards: "#adminRewardTable",
     dueRewards: "#adminRewardTable",
     pendingWithdraws: "#adminWithdrawTable",
@@ -3640,7 +3715,7 @@ document.addEventListener("click", (event) => {
   firstEmpty?.focus();
 });
 
-["#orderStatusFilter", "#orderTypeFilter", "#orderProofFilter", "#rewardStatusFilter", "#rewardTypeFilter", "#rewardRiskFilter", "#withdrawStatusFilter", "#withdrawRiskFilter", "#userPackageFilter", "#userAccountFilter", "#userPayoutRiskFilter", "#userProfileFilter", "#logActionFilter", "#logLimitFilter"].forEach((selector) => {
+["#orderStatusFilter", "#orderTypeFilter", "#orderProofFilter", "#orderRiskFilter", "#rewardStatusFilter", "#rewardTypeFilter", "#rewardRiskFilter", "#withdrawStatusFilter", "#withdrawRiskFilter", "#userPackageFilter", "#userAccountFilter", "#userPayoutRiskFilter", "#userProfileFilter", "#logActionFilter", "#logLimitFilter"].forEach((selector) => {
   document.querySelector(selector)?.addEventListener("change", renderAll);
 });
 
@@ -3689,10 +3764,12 @@ document.querySelector("#clearOrderFiltersBtn")?.addEventListener("click", () =>
   const statusFilter = document.querySelector("#orderStatusFilter");
   const typeFilter = document.querySelector("#orderTypeFilter");
   const proofFilter = document.querySelector("#orderProofFilter");
+  const riskFilter = document.querySelector("#orderRiskFilter");
   if (searchInput) searchInput.value = "";
   if (statusFilter) statusFilter.value = "all";
   if (typeFilter) typeFilter.value = "all";
   if (proofFilter) proofFilter.value = "all";
+  if (riskFilter) riskFilter.value = "all";
   renderAll();
 });
 
@@ -3800,6 +3877,31 @@ document.querySelector("#exportUsersBtn")?.addEventListener("click", () => {
       ];
     })
   );
+});
+
+document.querySelector("#exportPlansBtn")?.addEventListener("click", async () => {
+  if (!requireAdmin()) return;
+  downloadCsv(
+    `amsystem-plans-${exportStamp()}.csv`,
+    ["配套ID", "配套名称", "金额", "发放积分", "推荐名额", "复购资格", "复购冷却小时", "有效期天数", "首充奖励%", "资格复购奖励%", "是否已有订单使用"],
+    (state.plans || []).map((plan) => [
+      plan.id,
+      plan.name,
+      plan.amount,
+      plan.points,
+      plan.slots,
+      planRepeatCredits(plan),
+      planRepeatCooldownHours(plan),
+      plan.validDays,
+      plan.firstRate,
+      plan.repeatRate,
+      planUsed(plan.id) ? "是" : "否",
+    ])
+  );
+  addAdminLog("导出配套规则", "配套设置", `导出 ${state.plans.length} 个配套`);
+  await saveState();
+  renderAll();
+  toast("配套规则已导出");
 });
 
 document.addEventListener("click", (event) => {
@@ -4396,6 +4498,80 @@ document.querySelector("#exportBtn").addEventListener("click", () => {
   if (!requireAdmin()) return;
   exportBundle();
   toast("完整备份包已导出");
+});
+
+function backupStateFromJson(text) {
+  const parsed = JSON.parse(text);
+  const data = parsed?.data || parsed;
+  if (!data || !Array.isArray(data.users) || !Array.isArray(data.plans)) {
+    throw new Error("invalid-amsystem-backup");
+  }
+  return prepareLoadedState(data);
+}
+
+document.querySelector("#restoreBackupBtn")?.addEventListener("click", () => {
+  if (!requireAdmin()) return;
+  document.querySelector("#restoreBackupInput")?.click();
+});
+
+document.querySelector("#restoreBackupInput")?.addEventListener("change", async (event) => {
+  if (!requireAdmin()) return;
+  const input = event.target;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  try {
+    const restoredState = backupStateFromJson(await file.text());
+    const answer = window.prompt("导入备份包会先导出当前状态，然后用备份内容覆盖云端数据。\n\n如果确定继续，请输入 RESTORE");
+    if (answer !== "RESTORE") {
+      toast("已取消导入");
+      return;
+    }
+    exportBundle();
+    state = restoredState;
+    addAdminLog("导入备份包", file.name, `用户 ${state.users.length} / 订单 ${state.orders.length} / 奖励 ${state.rewards.length}`);
+    await saveState();
+    renderAll();
+    toast("备份包已导入，导入前状态已下载");
+  } catch (error) {
+    console.warn("Restore backup failed.", error);
+    toast("导入失败：请选择系统导出的 JSON 备份包");
+  }
+});
+
+function clearBusinessTestData() {
+  state.orders = [];
+  state.rewards = [];
+  state.withdraws = [];
+  state.pointLogs = [];
+  state.repeatCreditLogs = [];
+  state.adminLogs = [];
+  state.users = (state.users || []).map((user) => ({
+    ...user,
+    points: 0,
+    slots: 0,
+    repeatCredits: 0,
+    repeatCreditQueueAt: "",
+    repeatCooldownUntil: "",
+    packageUntil: "",
+    level: "普通用户",
+  }));
+  state.referrals = referralDocsForState(state);
+}
+
+document.querySelector("#clearTestDataBtn")?.addEventListener("click", async () => {
+  if (!requireAdmin()) return;
+  const answer = window.prompt("清理测试数据会先导出备份包，然后清空订单、奖励、提现、积分流水、复购资格流水和操作日志；会保留用户、推荐关系和配套规则。\n\n如果确定继续，请输入 CLEAR");
+  if (answer !== "CLEAR") {
+    toast("已取消清理");
+    return;
+  }
+  exportBundle();
+  clearBusinessTestData();
+  addAdminLog("清理测试数据", "系统", "保留用户、推荐关系和配套规则；清空订单、奖励、提现和流水");
+  await saveState();
+  renderAll();
+  toast("测试数据已清理，清理前备份包已下载");
 });
 
 document.querySelector("#exportRiskReportBtn")?.addEventListener("click", async () => {

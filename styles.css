@@ -51,6 +51,18 @@ h2 { margin-bottom: 12px; font-size: 19px; }
 }
 .subtitle, .panel p { color: var(--muted); margin-bottom: 0; }
 .header-actions, .tabs, .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.header-actions {
+  justify-content: flex-end;
+  max-width: min(760px, 100%);
+}
+.header-actions .switch,
+.header-actions .button {
+  min-width: 118px;
+  text-align: center;
+}
+.header-actions .admin-tool {
+  min-width: 126px;
+}
 .repeat-log-actions {
   display: flex;
   justify-content: flex-end;
@@ -121,6 +133,13 @@ main { padding: 0 clamp(18px, 4vw, 48px) 40px; }
   align-items: center;
   gap: 12px;
   margin-bottom: 16px;
+}
+.compact-head {
+  align-items: center;
+  margin-bottom: 12px;
+}
+.compact-head h2 {
+  margin-bottom: 0;
 }
 
 .member-hero {
@@ -589,7 +608,16 @@ th { color: var(--muted); font-size: 13px; }
 }
 @media (max-width: 720px) {
   .app-header, .panel-head { align-items: stretch; flex-direction: column; }
-  .header-actions { align-items: stretch; }
+  .header-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    max-width: none;
+  }
+  .header-actions .switch,
+  .header-actions .button {
+    width: 100%;
+    min-width: 0;
+  }
   .plan-grid, .rule-grid, .risk-grid, .todo-grid, .mini-grid, .metrics, .grid-form, .grid-form.compact, .filter-bar, .breakdown-box { grid-template-columns: 1fr; }
   .tabs { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; }
 }
