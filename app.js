@@ -26,12 +26,14 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260620-66";
+const APP_VERSION = "20260620-67";
 const PUBLIC_SITE_URL = "https://stunleyhoh001.github.io/simplesystem/";
 const TEST_CHECKLIST_KEY = "amsystemTestChecklist";
 const DEPLOY_CHECKLIST_KEY = "amsystemDeployChecklist";
 const TEST_INSTANT_MODE = true;
 const MAX_REPEAT_POOL_CREDITS = 10;
+const LEGACY_DEMO_INVITE_CODES = new Set(["LM1001", "WF1002", "CJ1003"]);
+const LEGACY_DEMO_ACCOUNTS = new Set(["liming@example.com", "13800000002", "chenjie@example.com"]);
 const WITHDRAW_COOLDOWN_HOURS = TEST_INSTANT_MODE ? 0 : 24;
 const SYSTEM_DOC_PATH = ["amsystem", "main"];
 const USER_COLLECTION = "amsystemUsers";
@@ -1046,11 +1048,38 @@ function prepareLoadedState(data) {
     data.planRulesResetReason = "检测到配套参数不完整，已恢复默认充值配套";
   }
   data = filterBusinessRecordsAfterClear(data);
+  purgeLegacyDemoUsers(data);
   cleanupAutoRepeatCreditGrants(data);
   syncReferralPoolCredits(data);
   capRepeatPoolCredits(data);
   backfillOrderPlanSnapshots(data);
   return data;
+}
+
+function isLegacyDemoUser(user) {
+  return LEGACY_DEMO_INVITE_CODES.has(normalizeInviteCode(user.inviteCode))
+    || LEGACY_DEMO_ACCOUNTS.has(String(user.account || "").toLowerCase())
+    || (user.name === "李明" && normalizeInviteCode(user.inviteCode) === "LM1001")
+    || (user.name === "王芳" && normalizeInviteCode(user.inviteCode) === "WF1002")
+    || (user.name === "陈杰" && normalizeInviteCode(user.inviteCode) === "CJ1003");
+}
+
+function purgeLegacyDemoUsers(data) {
+  const demoIds = new Set((data.users || []).filter(isLegacyDemoUser).map((user) => user.id));
+  if (!demoIds.size) return;
+  if (demoIds.has(data.currentUserId)) data.currentUserId = "";
+  data.users = (data.users || []).filter((user) => !demoIds.has(user.id));
+  data.orders = (data.orders || []).filter((order) => !demoIds.has(order.userId));
+  data.rewards = (data.rewards || []).filter((reward) =>
+    !demoIds.has(reward.userId) && !demoIds.has(reward.sourceUserId)
+  );
+  data.withdraws = (data.withdraws || []).filter((withdraw) => !demoIds.has(withdraw.userId));
+  data.pointLogs = (data.pointLogs || []).filter((log) => !demoIds.has(log.userId));
+  data.repeatCreditLogs = (data.repeatCreditLogs || []).filter((log) => !demoIds.has(log.userId));
+  data.referrals = (data.referrals || []).filter((referral) =>
+    !demoIds.has(referral.referrerId) && !demoIds.has(referral.inviteeId)
+  );
+  data.legacyDemoUsersPurgedAt = data.legacyDemoUsersPurgedAt || new Date().toISOString();
 }
 
 function cleanupAutoRepeatCreditGrants(data) {
@@ -3893,7 +3922,7 @@ function renderAdminActionButtons() {
   }
   if (resetBtn) {
     resetBtn.disabled = !canAdmin;
-    resetBtn.title = canAdmin ? "清空演示订单、奖励、提现和流水，保留用户与配套" : "请使用管理员账号登录";
+    resetBtn.title = canAdmin ? "清空演示订单、奖励、提现和流水，并移除旧演示用户" : "请使用管理员账号登录";
   }
 }
 
@@ -5162,15 +5191,16 @@ document.querySelector("#exportFinanceSummaryBtn")?.addEventListener("click", as
 
 document.querySelector("#resetBtn").addEventListener("click", async () => {
   if (!requireAdmin()) return;
-  const answer = window.prompt("清空演示数据会先导出备份包，然后清空订单、奖励、提现、积分流水、奖励池资格流水和操作日志；会保留用户、推荐关系和配套规则。\n\n如果确定继续，请输入 CLEAR");
+  const answer = window.prompt("清空演示数据会先导出备份包，然后清空订单、奖励、提现、积分流水、奖励池资格流水、操作日志，并移除旧演示用户（李明、王芳、陈杰）；会保留真实用户、推荐关系和配套规则。\n\n如果确定继续，请输入 CLEAR");
   if (answer !== "CLEAR") {
     toast("已取消清空");
     return;
   }
   exportBundle();
+  purgeLegacyDemoUsers(state);
   clearBusinessTestData();
   resetPlanForm();
-  addAdminLog("清空演示数据", "系统", "保留用户、推荐关系和配套规则；清空订单、奖励、提现和流水");
+  addAdminLog("清空演示数据", "系统", "移除旧演示用户；保留真实用户、推荐关系和配套规则；清空订单、奖励、提现和流水");
   await saveState();
   renderAll();
   toast("演示数据已清空，清空前备份包已下载");
