@@ -1,4 +1,4 @@
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+﻿const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 
 admin.initializeApp();
@@ -12,6 +12,12 @@ const ADMIN_EMAILS = [
 const TEST_INSTANT_MODE = true;
 const CONFIRM_DAYS = TEST_INSTANT_MODE ? 0 : 7;
 const REPEAT_RELEASE_DAYS = TEST_INSTANT_MODE ? [0] : [7, 14, 30];
+const PACKAGE_UNIT_AMOUNT = 180;
+
+function isValidPackageAmount(amount) {
+  const value = Number(amount || 0);
+  return value > 0 && value % PACKAGE_UNIT_AMOUNT === 0;
+}
 
 function assertAdmin(request) {
   const email = request.auth && request.auth.token && request.auth.token.email;
@@ -112,7 +118,7 @@ function createReward(tx, payload) {
     status: TEST_INSTANT_MODE ? "confirmed" : "pending",
     confirmAfter: addDays(payload.createdAt, CONFIRM_DAYS),
     reviewedAt: TEST_INSTANT_MODE ? payload.createdAt : "",
-    reviewNote: TEST_INSTANT_MODE ? "测试即时模式自动确认" : "",
+    reviewNote: TEST_INSTANT_MODE ? "娴嬭瘯鍗虫椂妯″紡鑷姩纭" : "",
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     ...payload,
   });
@@ -160,6 +166,9 @@ exports.confirmOrder = onCall(async (request) => {
     const plan = orderPlan(order, plans);
     if (!plan) {
       throw new HttpsError("not-found", "Plan not found.");
+    }
+    if (!isValidPackageAmount(order.amount) || !isValidPackageAmount(plan.amount)) {
+      throw new HttpsError("failed-precondition", `Package amount must be a multiple of RM${PACKAGE_UNIT_AMOUNT}.`);
     }
 
     const buyer = userSnap.data();
@@ -214,7 +223,7 @@ exports.confirmOrder = onCall(async (request) => {
       repeatCreditQueueAt: buyerQueueAt,
       repeatCooldownUntil: actualType === "repeat" ? addHours(paidAt, planRepeatCooldownHours(plan)) : (buyer.repeatCooldownUntil || ""),
       packageUntil: addDays(paidAt, Number(plan.validDays || 0)),
-      level: Number(plan.amount || 0) >= 580 ? "高级推广用户" : "推广用户",
+      level: Number(plan.amount || 0) >= 720 ? "楂樼骇鎺ㄥ箍鐢ㄦ埛" : "鎺ㄥ箍鐢ㄦ埛",
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
 
@@ -225,7 +234,7 @@ exports.confirmOrder = onCall(async (request) => {
       change: pointChange,
       balance: newBalance,
       source: order.id,
-      note: `${plan.name} 积分发放`,
+      note: `${plan.name} 绉垎鍙戞斁`,
       createdAt: paidAt,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -311,8 +320,9 @@ exports.confirmOrder = onCall(async (request) => {
       }
     }
 
-    createAdminLog(tx, "确认付款", order.id, `金额 ${money(order.amount)}`, adminEmail);
+    createAdminLog(tx, "纭浠樻", order.id, `閲戦 ${money(order.amount)}`, adminEmail);
   });
 
   return { ok: true };
 });
+

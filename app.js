@@ -26,11 +26,13 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260620-67";
+const APP_VERSION = "20260626-68";
 const PUBLIC_SITE_URL = "https://stunleyhoh001.github.io/simplesystem/";
 const TEST_CHECKLIST_KEY = "amsystemTestChecklist";
 const DEPLOY_CHECKLIST_KEY = "amsystemDeployChecklist";
 const TEST_INSTANT_MODE = true;
+const PACKAGE_UNIT_AMOUNT = 180;
+const PACKAGE_UNIT_POINTS = 18000;
 const MAX_REPEAT_POOL_CREDITS = 10;
 const LEGACY_DEMO_INVITE_CODES = new Set(["LM1001", "WF1002", "CJ1003"]);
 const LEGACY_DEMO_ACCOUNTS = new Set(["liming@example.com", "13800000002", "chenjie@example.com"]);
@@ -298,8 +300,9 @@ function pastDate(days) {
 
 function defaultAffiliatePlans() {
   return [
-    { id: "plan_rm180", name: "RM180 启动配套", amount: 180, points: 18000, slots: 10, repeatCredits: 10, repeatCooldownHours: 0, validDays: 30, firstRate: 20, directRepeatRate: 10, repeatRate: 10 },
-    { id: "plan_rm580", name: "RM580 进阶配套", amount: 580, points: 58000, slots: 35, repeatCredits: 10, repeatCooldownHours: 0, validDays: 60, firstRate: 20, directRepeatRate: 10, repeatRate: 10 },
+    { id: "plan_rm180", name: "RM180 单位配套", amount: 180, points: 18000, slots: 10, repeatCredits: 10, repeatCooldownHours: 0, validDays: 30, firstRate: 20, directRepeatRate: 10, repeatRate: 10 },
+    { id: "plan_rm360", name: "RM360 双单位配套", amount: 360, points: 36000, slots: 20, repeatCredits: 10, repeatCooldownHours: 0, validDays: 30, firstRate: 20, directRepeatRate: 10, repeatRate: 10 },
+    { id: "plan_rm720", name: "RM720 四单位配套", amount: 720, points: 72000, slots: 40, repeatCredits: 10, repeatCooldownHours: 0, validDays: 30, firstRate: 20, directRepeatRate: 10, repeatRate: 10 },
   ];
 }
 
@@ -891,6 +894,22 @@ function money(value) {
   return `RM${Number(value || 0).toLocaleString("en-MY", { maximumFractionDigits: 2 })}`;
 }
 
+function packageUnits(amount) {
+  return Number(amount || 0) / PACKAGE_UNIT_AMOUNT;
+}
+
+function isValidPackageAmount(amount) {
+  const value = Number(amount || 0);
+  return value > 0 && value % PACKAGE_UNIT_AMOUNT === 0;
+}
+
+function packageUnitLabel(amount) {
+  const units = packageUnits(amount);
+  return isValidPackageAmount(amount)
+    ? `${PACKAGE_UNIT_AMOUNT} × ${units} 单位`
+    : `需为 RM${PACKAGE_UNIT_AMOUNT} 的整数倍`;
+}
+
 function points(value) {
   return Number(value || 0).toLocaleString("zh-CN");
 }
@@ -982,6 +1001,8 @@ function planSnapshot(plan) {
     id: plan.id,
     name: plan.name,
     amount: Number(plan.amount || 0),
+    unitAmount: PACKAGE_UNIT_AMOUNT,
+    unitCount: packageUnits(plan.amount),
     points: Number(plan.points || 0),
     slots: Number(plan.slots || 0),
     repeatCredits: planRepeatCredits(plan),
@@ -1121,6 +1142,7 @@ function orderPlanSummary(plan) {
   if (!plan) return "-";
   return [
     `积分 ${points(plan.points)}`,
+    `单位 ${packageUnitLabel(plan.amount)}`,
     `名额 ${Number(plan.slots || 0)}`,
     `有效 ${Number(plan.validDays || 0)} 天`,
     `推荐奖励 ${Number(plan.firstRate || 0)}%`,
@@ -1358,6 +1380,15 @@ function orderRiskLabels(order, data = state) {
   if (!currentPlan && lockedPlan) {
     labels.push("当前配套已删除，将按订单快照处理");
   }
+  if (!isValidPackageAmount(order.amount)) {
+    labels.push(`订单金额必须是 RM${PACKAGE_UNIT_AMOUNT} 的整数倍`);
+  }
+  if (currentPlan && !isValidPackageAmount(currentPlan.amount)) {
+    labels.push(`当前配套金额不符合 RM${PACKAGE_UNIT_AMOUNT} 单位规则`);
+  }
+  if (lockedPlan && !isValidPackageAmount(lockedPlan.amount)) {
+    labels.push(`订单配套快照金额不符合 RM${PACKAGE_UNIT_AMOUNT} 单位规则`);
+  }
   if (currentPlan && Number(order.amount || 0) !== Number(currentPlan.amount || 0)) {
     labels.push(`订单金额 ${money(order.amount)} 与当前配套金额 ${money(currentPlan.amount)} 不一致`);
   }
@@ -1550,6 +1581,7 @@ function createOrder(data, userId, planId, type, status = "paid", createdAt = ne
   const user = data.users.find((item) => item.id === userId);
   const plan = data.plans.find((item) => item.id === planId);
   if (!user || !plan) return null;
+  if (!isValidPackageAmount(plan.amount)) return null;
   const orderType = type || actualOrderType(data, userId);
   const order = {
     id: orderNo(data, userId),
@@ -1591,7 +1623,7 @@ function applyPaidOrder(data, order, paidAt = new Date().toISOString()) {
   user.points += plan.points;
   user.slots = Math.max(user.slots || 0, plan.slots);
   user.packageUntil = addDays(paidAt, plan.validDays);
-  user.level = plan.amount >= 580 ? "高级推广用户" : "推广用户";
+  user.level = plan.amount >= 720 ? "高级推广用户" : "推广用户";
   data.pointLogs.push({ id: id("log"), userId: user.id, change: plan.points, balance: user.points, source: order.id, note: `${plan.name} 积分发放`, createdAt: paidAt });
   summary.push(`判定：${order.type === "first" ? "首充" : "复购"}`);
   summary.push(`买家积分 +${points(plan.points)}`);
@@ -2433,16 +2465,21 @@ function ensureStorageTestButton() {
 
 function renderMemberPlans(user) {
   const nextType = actualOrderType(state, user.id);
-  document.querySelector("#memberPlanCards").innerHTML = state.plans.map((plan) => `
-    <article class="plan-card">
-      <strong>${plan.name} · ${money(plan.amount)}</strong>
-      <span>发放积分：${points(plan.points)}</span>
-      <span>直接推荐：开放 / 有效期：${plan.validDays} 天</span>
-      <span>奖励池资格：每直接推荐 1 人解锁 1 个，最多 ${MAX_REPEAT_POOL_CREDITS} 个 / 冷却：${planRepeatCooldownHours(plan)} 小时</span>
-      <span>奖励：推荐 ${plan.firstRate}% / 下线复购 ${planDirectRepeatRate(plan)}% / 奖励池 ${planPoolRepeatRate(plan)}%</span>
-      <button class="button primary" data-buy-plan="${plan.id}" data-buy-type="${nextType}">申请充值配套</button>
-    </article>
-  `).join("");
+  document.querySelector("#memberPlanCards").innerHTML = state.plans.map((plan) => {
+    const validAmount = isValidPackageAmount(plan.amount);
+    return `
+      <article class="plan-card">
+        <strong>${plan.name} · ${money(plan.amount)}</strong>
+        <span>配套单位：${packageUnitLabel(plan.amount)} / 发放积分：${points(plan.points)}</span>
+        <span>直接推荐：开放 / 有效期：${plan.validDays} 天</span>
+        <span>奖励池资格：每直接推荐 1 人解锁 1 个，最多 ${MAX_REPEAT_POOL_CREDITS} 个 / 冷却：${planRepeatCooldownHours(plan)} 小时</span>
+        <span>奖励：推荐 ${plan.firstRate}% / 下线复购 ${planDirectRepeatRate(plan)}% / 奖励池 ${planPoolRepeatRate(plan)}%</span>
+        ${validAmount
+          ? `<button class="button primary" data-buy-plan="${plan.id}" data-buy-type="${nextType}">申请充值配套</button>`
+          : `<button class="button ghost" type="button" disabled>金额需为 RM${PACKAGE_UNIT_AMOUNT} 整数倍</button>`}
+      </article>
+    `;
+  }).join("");
 }
 
 function renderMemberOrders(user) {
@@ -2512,6 +2549,7 @@ function renderRewardRules() {
   document.querySelector("#rewardRules").innerHTML = state.plans.map((plan) => `
     <article class="rule-card">
       <strong>${plan.name}</strong>
+      <span>配套单位：${packageUnitLabel(plan.amount)}，奖励按 RM${PACKAGE_UNIT_AMOUNT} 单位统一计算。</span>
       <span>推荐奖励：下线首次购买 ${money(plan.amount)}，推荐人获得 ${money(plan.amount * plan.firstRate / 100)}。</span>
       <span>下线复购奖励：下线复购时，原推荐人获得 ${money(plan.amount * planDirectRepeatRate(plan) / 100)}，需推荐人配套有效。</span>
       <span>奖励池资格：每直接推荐 1 人解锁 1 个，最多 ${MAX_REPEAT_POOL_CREDITS} 个；派发成功扣 1 个资格。</span>
@@ -2777,6 +2815,22 @@ function ensurePlanCancelButton() {
   submitButton.insertAdjacentElement("afterend", button);
 }
 
+function syncPlanUnitFields() {
+  const form = document.querySelector("#planForm");
+  if (!form) return;
+  const amountInput = form.querySelector("[name='amount']");
+  const pointsInput = form.querySelector("[name='points']");
+  if (!amountInput || !pointsInput) return;
+  const amount = Number(amountInput.value || 0);
+  if (isValidPackageAmount(amount)) {
+    pointsInput.value = packageUnits(amount) * PACKAGE_UNIT_POINTS;
+    amountInput.setCustomValidity("");
+  } else {
+    if (amount > 0) amountInput.setCustomValidity(`充值金额必须是 RM${PACKAGE_UNIT_AMOUNT} 的整数倍`);
+    if (!pointsInput.value) pointsInput.value = "";
+  }
+}
+
 function planUsed(planId) {
   return (state.orders || []).some((order) =>
     order.planId === planId
@@ -2786,10 +2840,14 @@ function planUsed(planId) {
 }
 
 function planFromForm(form) {
+  const amount = Number(form.get("amount"));
+  const units = isValidPackageAmount(amount) ? packageUnits(amount) : 0;
   return {
     name: form.get("name").trim(),
-    amount: Number(form.get("amount")),
-    points: Number(form.get("points")),
+    amount,
+    unitAmount: PACKAGE_UNIT_AMOUNT,
+    unitCount: units,
+    points: units ? units * PACKAGE_UNIT_POINTS : Number(form.get("points")),
     slots: Number(form.get("slots")),
     repeatCredits: Math.min(Number(form.get("repeatCredits")), MAX_REPEAT_POOL_CREDITS),
     repeatCooldownHours: Number(form.get("repeatCooldownHours") || 0),
@@ -2818,6 +2876,7 @@ function fillPlanForm(plan) {
   if (button) button.textContent = "保存配套";
   const cancelButton = form.querySelector("#cancelPlanEditBtn");
   if (cancelButton) cancelButton.hidden = false;
+  syncPlanUnitFields();
 }
 
 function resetPlanForm() {
@@ -2825,6 +2884,7 @@ function resetPlanForm() {
   if (!form) return;
   form.reset();
   editingPlanId = "";
+  syncPlanUnitFields();
   const button = form.querySelector("button[type='submit']");
   if (button) button.textContent = "新增配套";
   const cancelButton = form.querySelector("#cancelPlanEditBtn");
@@ -2835,7 +2895,7 @@ function renderAdminPlans() {
   document.querySelector("#adminPlanList").innerHTML = state.plans.map((plan) => `
     <article class="plan-card">
       <strong>${plan.name} · ${money(plan.amount)}</strong>
-      <span>积分 ${points(plan.points)} / 直接推荐开放 / 奖励池资格上限 ${MAX_REPEAT_POOL_CREDITS} 个</span>
+      <span>单位 ${packageUnitLabel(plan.amount)} / 积分 ${points(plan.points)} / 直接推荐开放 / 奖励池资格上限 ${MAX_REPEAT_POOL_CREDITS} 个</span>
       <span>冷却 ${planRepeatCooldownHours(plan)} 小时 / 有效期 ${plan.validDays} 天 / 推荐 ${plan.firstRate}% / 下线复购 ${planDirectRepeatRate(plan)}% / 奖励池 ${planPoolRepeatRate(plan)}%</span>
       <div class="actions">
         <button class="link" type="button" data-edit-plan="${plan.id}">编辑</button>
@@ -3012,6 +3072,7 @@ function renderAdminWithdraws() {
 function readinessChecks() {
   const usablePlans = (state.plans || []).filter((plan) =>
     Number(plan.amount || 0) > 0
+    && isValidPackageAmount(plan.amount)
     && Number(plan.points || 0) > 0
     && Number(plan.validDays || 0) > 0
     && Number(plan.firstRate || 0) >= 0
@@ -4393,11 +4454,13 @@ document.querySelector("#exportPlansBtn")?.addEventListener("click", async () =>
   if (!requireAdmin()) return;
   downloadCsv(
     `amsystem-plans-${exportStamp()}.csv`,
-    ["配套ID", "配套名称", "金额", "发放积分", "推荐名额", "奖励池资格记录", "复购冷却小时", "有效期天数", "推荐奖励%", "下线复购奖励%", "奖励池奖励%", "是否已有订单使用"],
+    ["配套ID", "配套名称", "金额", "单位金额", "单位数", "发放积分", "推荐名额", "奖励池资格记录", "复购冷却小时", "有效期天数", "推荐奖励%", "下线复购奖励%", "奖励池奖励%", "是否已有订单使用"],
     (state.plans || []).map((plan) => [
       plan.id,
       plan.name,
       plan.amount,
+      PACKAGE_UNIT_AMOUNT,
+      isValidPackageAmount(plan.amount) ? packageUnits(plan.amount) : "",
       plan.points,
       plan.slots,
       planRepeatCredits(plan),
@@ -4602,6 +4665,7 @@ document.querySelector("#planForm").addEventListener("submit", async (event) => 
   const form = new FormData(event.currentTarget);
   const data = planFromForm(form);
   if (!data.name || data.amount <= 0 || data.validDays <= 0) return toast("请填写完整配套资料");
+  if (!isValidPackageAmount(data.amount)) return toast(`充值金额必须是 RM${PACKAGE_UNIT_AMOUNT} 的整数倍，例如 RM180、RM360、RM720`);
   const wasEditing = Boolean(editingPlanId);
   if (editingPlanId) {
     const plan = findPlan(editingPlanId);
@@ -4623,6 +4687,8 @@ document.addEventListener("click", (event) => {
   resetPlanForm();
   toast("已取消编辑");
 });
+
+document.querySelector("#planForm [name='amount']")?.addEventListener("input", syncPlanUnitFields);
 
 document.querySelector("#pointsForm").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -4891,6 +4957,7 @@ document.body.addEventListener("click", async (event) => {
     }
     toast("正在提交配套申请...");
     const order = createOrder(state, user.id, buyPlan.dataset.buyPlan, orderType, "pending", new Date().toISOString(), paymentInfo);
+    if (!order) return toast(`配套金额不符合 RM${PACKAGE_UNIT_AMOUNT} 单位规则，请联系管理员更新配套`);
     const proofFile = document.querySelector("#paymentInfoForm [name='paymentProof']").files[0];
     if (proofFile) {
       const duplicateProofOrder = duplicateProofName(proofFile.name, user.id);

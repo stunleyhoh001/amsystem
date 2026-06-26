@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>简单的联盟营销系统</title>
-    <link rel="stylesheet" href="./styles.css?v=20260620-67" />
+    <link rel="stylesheet" href="./styles.css?v=20260626-68" />
   </head>
   <body>
     <header class="app-header">
@@ -209,8 +209,8 @@
             </div>
             <form id="planForm" class="stack">
               <label>配套名称<input name="name" required /></label>
-              <label>充值金额 RM<input name="amount" type="number" min="1" step="1" required /></label>
-              <label>发放积分<input name="points" type="number" min="0" step="1" required /></label>
+              <label>充值金额 RM<input name="amount" type="number" min="180" step="180" placeholder="180 / 360 / 720" required /></label>
+              <label>发放积分<input name="points" type="number" min="0" step="1" readonly required /></label>
               <label>推荐名额（开放后仅记录）<input name="slots" type="number" min="0" step="1" required /></label>
               <label>奖励池资格上限<input name="repeatCredits" type="number" min="0" max="10" step="1" value="10" required /></label>
               <label>有效期天数<input name="validDays" type="number" min="1" step="1" required /></label>
@@ -502,7 +502,7 @@
     </main>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="./app.js?v=20260620-67"></script>
+    <script type="module" src="./app.js?v=20260626-68"></script>
   </body>
 </html>
 
