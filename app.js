@@ -1,3746 +1,5031 @@
-﻿import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-import {
-  getAuth,
-  GoogleAuthProvider,
-  onAuthStateChanged,
-  signInWithPopup,
-  signOut,
-} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-import {
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  getDocs,
-  getFirestore,
-  query,
-  serverTimestamp,
-  setDoc,
-  where,
-} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-import {
-  getDownloadURL,
-  getStorage,
-  ref as storageRef,
-  uploadBytes,
-} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
-
-const STORAGE_KEY = "amsystemFirebaseFallback";
-const APP_VERSION = "20260626-68";
-const PUBLIC_SITE_URL = "https://stunleyhoh001.github.io/simplesystem/";
-const TEST_CHECKLIST_KEY = "amsystemTestChecklist";
-const DEPLOY_CHECKLIST_KEY = "amsystemDeployChecklist";
-const TEST_INSTANT_MODE = true;
-const PACKAGE_UNIT_AMOUNT = 180;
-const PACKAGE_UNIT_POINTS = 18000;
-const MAX_REPEAT_POOL_CREDITS = 10;
-const LEGACY_DEMO_INVITE_CODES = new Set(["LM1001", "WF1002", "CJ1003"]);
-const LEGACY_DEMO_ACCOUNTS = new Set(["liming@example.com", "13800000002", "chenjie@example.com"]);
-const WITHDRAW_COOLDOWN_HOURS = TEST_INSTANT_MODE ? 0 : 24;
-const SYSTEM_DOC_PATH = ["amsystem", "main"];
-const USER_COLLECTION = "amsystemUsers";
-const ORDER_COLLECTION = "amsystemOrders";
-const REWARD_COLLECTION = "amsystemRewards";
-const WITHDRAW_COLLECTION = "amsystemWithdraws";
-const POINT_LOG_COLLECTION = "amsystemPointLogs";
-const REPEAT_CREDIT_LOG_COLLECTION = "amsystemRepeatCreditLogs";
-const ADMIN_LOG_COLLECTION = "amsystemAdminLogs";
-const INVITE_COLLECTION = "amsystemInviteCodes";
-const REFERRAL_COLLECTION = "amsystemReferrals";
-const CONFIRM_DAYS = TEST_INSTANT_MODE ? 0 : 7;
-const REPEAT_RELEASE_DAYS = TEST_INSTANT_MODE ? [0] : [7, 14, 30];
-const MIN_WITHDRAW_AMOUNT = 50;
-const PROOF_UPLOAD_TIMEOUT_MS = 60000;
-const PROOF_STORAGE_ATTEMPT_MS = 12000;
-const INLINE_PROOF_MAX_BYTES = 750 * 1024;
-const ADMIN_EMAILS = [
-  "stanleyhoh79@gmail.com",
-];
-const TEST_CHECKLIST = [
-  "管理员账号登录后，确认后台指标、待办中心、配套设置可正常显示。",
-  "用户 A 登录，填写手机和默认收款资料，确认资料完整提示消失。",
-  "用户 A 复制推荐链接或推荐码，用户 B 用另一个 Google 账号打开并绑定推荐人。",
-  "用户 B 提交首充订单，后台确认付款后，B 获得积分和配套，A 获得 20% 推荐奖励。",
-  "用户 B 再提交复购订单，确认付款后，A 获得 10% 下线复购奖励，奖励池接收人扣 1 个资格。",
-  "准备一个有奖励池资格的用户，确认奖励池奖励会派发给排队最早且不是买家的人，金额为 10%，并扣 1 个资格。",
-  "到期后测试奖励确认或分期释放，确认只有已释放奖励进入可提现余额。",
-  "用户申请提现，后台通过并标记打款，导出订单/奖励/提现/异常报告核对金额。",
-];
-const DEPLOY_CHECKLIST = [
-  "GitHub Pages 或 Firebase Hosting 已发布最新 index.html / app.js / styles.css。",
-  "Firebase Authentication 已加入当前访问域名为授权域名。",
-  "Firebase Console 已发布最新 firestore.rules。",
-  "Firebase Console 已发布最新 storage.rules。",
-  "使用普通用户账号测试 Google 登录成功。",
-  "普通用户可提交充值订单并保存到 Firestore。",
-  "普通用户可上传或暂存付款凭证。",
-  "手机浏览器打开页面，用户界面和后台界面排版正常。",
-];
-
-const firebaseConfig = {
-  apiKey: "AIzaSyDvPQgQiMVSqTsSe00D75k8bwMoFTjm164",
-  authDomain: "amsystem-faafb.firebaseapp.com",
-  projectId: "amsystem-faafb",
-  storageBucket: "amsystem-faafb.firebasestorage.app",
-  messagingSenderId: "526690797426",
-  appId: "1:526690797426:web:6206d7ffb46abfcc98bfeb",
+const STORAGE_KEYS = {
+  products: "simple-herbal-pos-products",
+  sales: "simple-herbal-pos-sales",
+  adminEmail: "simple-herbal-pos-admin-email",
+  branchId: "simple-herbal-pos-branch-id",
+  branches: "simple-herbal-pos-branches",
+  authorizedUsers: "simple-herbal-pos-authorized-users",
+  operatorEmail: "simple-herbal-pos-operator-email",
+  paymentMethod: "simple-herbal-pos-payment-method",
+  currentShift: "simple-herbal-pos-current-shift",
+  shifts: "simple-herbal-pos-shifts",
+  pendingSales: "simple-herbal-pos-pending-sales",
+  pendingSaleUpdates: "simple-herbal-pos-pending-sale-updates",
+  pendingProducts: "simple-herbal-pos-pending-products",
+  pendingStockAdjustments: "simple-herbal-pos-pending-stock-adjustments",
+  pendingAuditLogs: "simple-herbal-pos-pending-audit-logs",
+  pendingManagement: "simple-herbal-pos-pending-management",
+  stockAdjustments: "simple-herbal-pos-stock-adjustments",
+  auditLogs: "simple-herbal-pos-local-audit-logs",
+  settings: "simple-herbal-pos-settings",
+  printerSettings: "simple-herbal-pos-printer-settings"
 };
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const storage = getStorage(app);
-const systemRef = doc(db, ...SYSTEM_DOC_PATH);
-const usersRef = collection(db, USER_COLLECTION);
-const ordersRef = collection(db, ORDER_COLLECTION);
-const rewardsRef = collection(db, REWARD_COLLECTION);
-const withdrawsRef = collection(db, WITHDRAW_COLLECTION);
-const pointLogsRef = collection(db, POINT_LOG_COLLECTION);
-const repeatCreditLogsRef = collection(db, REPEAT_CREDIT_LOG_COLLECTION);
-const adminLogsRef = collection(db, ADMIN_LOG_COLLECTION);
-const invitesRef = collection(db, INVITE_COLLECTION);
-const referralsRef = collection(db, REFERRAL_COLLECTION);
+const ADMIN_EMAIL_HASH = "967c8833b2067bcf8ad711b817f9662dc8fd48e79e82992bfd56d5af919a6915";
+const APP_VERSION = "v0.88";
+const AUTHORIZATION_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
+const OFFLINE_PASSWORD_ITERATIONS = 210000;
+const defaultBranches = [
+  { id: "hq", name: "总店" },
+  { id: "branch-1", name: "分行 1" },
+  { id: "branch-2", name: "分行 2" }
+];
+const defaultAuthorizedUsers = [];
+const defaultSettings = {
+  businessName: "简单POS",
+  defaultServiceName: "一般销售",
+  serviceDays: 1,
+  lowStockThreshold: 5,
+  receiptFooter: "谢谢惠顾"
+};
+const defaultPrinterSettings = {
+  paperWidth: "58",
+  autoPrint: false,
+  deviceId: "",
+  deviceName: ""
+};
 
-let firebaseReady = false;
-let cloudAvailable = false;
-let firebaseUser = null;
-let state = null;
-let syncMessage = "Firestore：等待检测";
-let editingPlanId = "";
+const storageReadIssues = [];
+const protectedCorruptStorageKeys = new Set();
+let storageErrorAlertShown = false;
+let lastStorageWriteError = "";
 
-function isIgnorableSdkError(message) {
-  return String(message || "").includes("INTERNAL ASSERTION FAILED: Pending promise was never set");
-}
+const sampleProducts = [
+  { id: createId(), name: "3星期跟进服务", barcode: "SLIM-COACH-3W", category: "服务", price: 0, stock: 99, branchStock: { hq: 99, "branch-1": 99, "branch-2": 99 } },
+  { id: "affiliate-plan-rm180", name: "简单联盟 RM180 配套", barcode: "AFF-PLAN-RM180", category: "联盟配套", price: 180, stock: 99, branchStock: { hq: 99, "branch-1": 99, "branch-2": 99 }, affiliatePlanId: "plan_rm180" }
+];
 
-window.addEventListener("error", (event) => {
-  if (isIgnorableSdkError(event.message)) {
-    event.preventDefault();
-    return;
+const LEGACY_DEMO_PRODUCT_BARCODES = new Set([
+  "SLIM-P1-3W",
+  "SLIM-P1-REFILL"
+]);
+
+let products = load(STORAGE_KEYS.products, sampleProducts);
+let sales = load(STORAGE_KEYS.sales, []).map(normalizeSaleExternalReferences);
+let branches = load(STORAGE_KEYS.branches, defaultBranches);
+let authorizedUsers = load(STORAGE_KEYS.authorizedUsers, defaultAuthorizedUsers);
+let pendingSales = load(STORAGE_KEYS.pendingSales, []).map(normalizeSaleExternalReferences);
+let pendingSaleUpdates = load(STORAGE_KEYS.pendingSaleUpdates, []).map(normalizeSaleExternalReferences);
+let pendingProducts = load(STORAGE_KEYS.pendingProducts, []);
+let pendingStockAdjustments = load(STORAGE_KEYS.pendingStockAdjustments, []);
+let pendingAuditLogs = load(STORAGE_KEYS.pendingAuditLogs, []);
+let pendingManagement = normalizePendingManagement(
+  load(STORAGE_KEYS.pendingManagement, { branches: [], users: [], settings: null })
+);
+let stockAdjustments = load(STORAGE_KEYS.stockAdjustments, []);
+let auditLogs = load(STORAGE_KEYS.auditLogs, []);
+let appSettings = load(STORAGE_KEYS.settings, defaultSettings);
+let printerSettings = {
+  ...defaultPrinterSettings,
+  ...load(STORAGE_KEYS.printerSettings, defaultPrinterSettings)
+};
+let cart = [];
+let deferredInstallPrompt = null;
+let adminEmail = readSessionEmail(STORAGE_KEYS.adminEmail);
+let currentBranchId = localStorage.getItem(STORAGE_KEYS.branchId) || "hq";
+let operatorEmail = readSessionEmail(STORAGE_KEYS.operatorEmail);
+let preferredPaymentMethod = localStorage.getItem(STORAGE_KEYS.paymentMethod) || "现金";
+let currentShift = load(STORAGE_KEYS.currentShift, null);
+let shifts = load(STORAGE_KEYS.shifts, []);
+let cloudSessionActive = false;
+let currentCloudUser = null;
+let reportRangeInitialized = false;
+let autoFillPaid = true;
+let currentView = "order";
+let paymentMethodInitialized = false;
+let showMoreSales = false;
+let lastReceiptSale = null;
+let editingProductId = "";
+let editingIntegrationSaleId = "";
+let showAllSalesDates = false;
+let returnToSettlementAfterCashMovement = false;
+let lastAuthorizationCheckAt = 0;
+let authorizationRefreshInFlight = false;
+let pendingSyncPromise = null;
+let cloudDataLoadPromise = null;
+let checkoutInProgress = false;
+let cashMovementInProgress = false;
+
+const VIEW_META = {
+  order: { title: "下单", subtitle: "选择商品并完成当前订单" },
+  menu: { title: "菜单管理", subtitle: "新增商品和维护售价，库存请到库存页调整" },
+  inventory: { title: "库存", subtitle: "查看库存流水和低库存提醒" },
+  transactions: { title: "转账记录", subtitle: "查看销售记录、客户跟进和收款状态" },
+  report: { title: "报告", subtitle: "查看全局指标、分行表现和销售趋势" },
+  settings: { title: "设置", subtitle: "管理分行、员工、同步、备份和业务设置" }
+};
+
+function setAppView(view) {
+  currentView = view;
+  document.body.dataset.view = view;
+  for (const button of document.querySelectorAll("[data-app-view]")) {
+    button.classList.toggle("active", button.dataset.appView === view);
   }
-  const status = document.querySelector("#authStatus");
-  if (status) status.textContent = `脚本错误：${event.message}`;
-});
-
-window.addEventListener("unhandledrejection", (event) => {
-  const status = document.querySelector("#authStatus");
-  const message = event.reason?.message || event.reason?.code || "未知异步错误";
-  if (isIgnorableSdkError(message)) {
-    event.preventDefault();
-    return;
+  els.appMenu.classList.remove("open");
+  els.menuToggleBtn.setAttribute("aria-expanded", "false");
+  updateViewHeadings();
+  renderAdminAccess();
+  renderInventoryBranchFilter();
+  renderSalesBranchFilter();
+  renderInventoryOverview();
+  renderSales();
+  if (!canAccessView(view)) {
+    els.adminLoginMessage.textContent = `请先登录有权限的账号，才能查看「${VIEW_META[view]?.title || "这个功能"}」。`;
+    els.adminLoginMessage.classList.remove("error");
   }
-  if (status) status.textContent = `异步错误：${message}`;
-});
-
-function setAuthStatusText(message) {
-  const status = document.querySelector("#authStatus");
-  if (status) status.textContent = message;
 }
 
-function setSyncStatusText(message) {
-  const syncStatus = document.querySelector("#syncStatus");
-  if (syncStatus) syncStatus.textContent = readableSyncMessage(message);
+function updateViewHeadings() {
+  const meta = VIEW_META[currentView] || VIEW_META.order;
+  if (els.adminTitle) els.adminTitle.textContent = meta.title;
+  if (els.adminSubtitle) els.adminSubtitle.textContent = meta.subtitle;
 }
 
-function renderAppVersion() {
-  let target = document.querySelector("#appVersionText");
-  const syncStatus = document.querySelector("#syncStatus");
-  if (!target && syncStatus?.parentNode) {
-    target = document.createElement("p");
-    target.id = "appVersionText";
-    target.className = "help-text muted-line";
-    syncStatus.insertAdjacentElement("afterend", target);
-  }
-  if (target) target.textContent = `当前前端版本：${APP_VERSION}`;
-}
+const els = {
+  networkStatus: document.querySelector("#networkStatus"),
+  cloudStatus: document.querySelector("#cloudStatus"),
+  branchStatus: document.querySelector("#branchStatus"),
+  operatorStatus: document.querySelector("#operatorStatus"),
+  adminStatus: document.querySelector("#adminStatus"),
+  versionStatus: document.querySelector("#versionStatus"),
+  adminTitle: document.querySelector("#adminTitle"),
+  adminSubtitle: document.querySelector("#adminSubtitle"),
+  appMenu: document.querySelector("#appMenu"),
+  menuToggleBtn: document.querySelector("#menuToggleBtn"),
+  cashierMenu: document.querySelector("#cashierMenu"),
+  cashierToggleBtn: document.querySelector("#cashierToggleBtn"),
+  cashierOperatorText: document.querySelector("#cashierOperatorText"),
+  shiftStatusText: document.querySelector("#shiftStatusText"),
+  quickCheckoutBtn: document.querySelector("#quickCheckoutBtn"),
+  closeShiftBtn: document.querySelector("#closeShiftBtn"),
+  cashMovementBtn: document.querySelector("#cashMovementBtn"),
+  shiftOpeningCashPanel: document.querySelector("#shiftOpeningCashPanel"),
+  shiftOpeningCashInput: document.querySelector("#shiftOpeningCashInput"),
+  installBtn: document.querySelector("#installBtn"),
+  seedBtn: document.querySelector("#seedBtn"),
+  searchInput: document.querySelector("#searchInput"),
+  categoryFilter: document.querySelector("#categoryFilter"),
+  categoryRail: document.querySelector("#categoryRail"),
+  branchSelect: document.querySelector("#branchSelect"),
+  refreshCloudBtn: document.querySelector("#refreshCloudBtn"),
+  productGrid: document.querySelector("#productGrid"),
+  cartHint: document.querySelector("#cartHint"),
+  cartItems: document.querySelector("#cartItems"),
+  clearCartBtn: document.querySelector("#clearCartBtn"),
+  orderOptionsToggle: document.querySelector("#orderOptionsToggle"),
+  orderOptionsPanel: document.querySelector("#orderOptionsPanel"),
+  operatorLoginForm: document.querySelector("#operatorLoginForm"),
+  operatorEmailInput: document.querySelector("#operatorEmailInput"),
+  operatorPasswordInput: document.querySelector("#operatorPasswordInput"),
+  googleLoginBtn: document.querySelector("#googleLoginBtn"),
+  operatorLogoutBtn: document.querySelector("#operatorLogoutBtn"),
+  operatorMessage: document.querySelector("#operatorMessage"),
+  customerNameInput: document.querySelector("#customerNameInput"),
+  customerPhoneInput: document.querySelector("#customerPhoneInput"),
+  affiliateReferralCodeInput: document.querySelector("#affiliateReferralCodeInput"),
+  discountInput: document.querySelector("#discountInput"),
+  customPaidPanel: document.querySelector("#customPaidPanel"),
+  paidInput: document.querySelector("#paidInput"),
+  quickPaidButtons: document.querySelector("#quickPaidButtons"),
+  paymentMethodInput: document.querySelector("#paymentMethodInput"),
+  quickPaymentButtons: document.querySelector("#quickPaymentButtons"),
+  paymentReferenceInput: document.querySelector("#paymentReferenceInput"),
+  subtotalText: document.querySelector("#subtotalText"),
+  totalText: document.querySelector("#totalText"),
+  changeText: document.querySelector("#changeText"),
+  checkoutBtn: document.querySelector("#checkoutBtn"),
+  paymentDialog: document.querySelector("#paymentDialog"),
+  paymentDueText: document.querySelector("#paymentDueText"),
+  paymentChangePreview: document.querySelector("#paymentChangePreview"),
+  confirmPaymentBtn: document.querySelector("#confirmPaymentBtn"),
+  closePaymentBtn: document.querySelector("#closePaymentBtn"),
+  adminLoginForm: document.querySelector("#adminLoginForm"),
+  adminEmailInput: document.querySelector("#adminEmailInput"),
+  adminPasswordInput: document.querySelector("#adminPasswordInput"),
+  adminGoogleLoginBtn: document.querySelector("#adminGoogleLoginBtn"),
+  adminLoginMessage: document.querySelector("#adminLoginMessage"),
+  adminLogoutBtn: document.querySelector("#adminLogoutBtn"),
+  adminContent: document.querySelector("#adminContent"),
+  productForm: document.querySelector("#productForm"),
+  nameInput: document.querySelector("#nameInput"),
+  barcodeInput: document.querySelector("#barcodeInput"),
+  categoryInput: document.querySelector("#categoryInput"),
+  priceInput: document.querySelector("#priceInput"),
+  saveProductBtn: document.querySelector("#saveProductBtn"),
+  cancelProductEditBtn: document.querySelector("#cancelProductEditBtn"),
+  initCloudBtn: document.querySelector("#initCloudBtn"),
+  syncPendingBtn: document.querySelector("#syncPendingBtn"),
+  exportBtn: document.querySelector("#exportBtn"),
+  exportSummaryBtn: document.querySelector("#exportSummaryBtn"),
+  exportPaymentSummaryBtn: document.querySelector("#exportPaymentSummaryBtn"),
+  exportProductSalesBtn: document.querySelector("#exportProductSalesBtn"),
+  exportInventoryBtn: document.querySelector("#exportInventoryBtn"),
+  exportCustomersBtn: document.querySelector("#exportCustomersBtn"),
+  exportAuditBtn: document.querySelector("#exportAuditBtn"),
+  exportStockBtn: document.querySelector("#exportStockBtn"),
+  exportShiftsBtn: document.querySelector("#exportShiftsBtn"),
+  backupBtn: document.querySelector("#backupBtn"),
+  restoreBtn: document.querySelector("#restoreBtn"),
+  restoreInput: document.querySelector("#restoreInput"),
+  resetDataBtn: document.querySelector("#resetDataBtn"),
+  reportStartInput: document.querySelector("#reportStartInput"),
+  reportEndInput: document.querySelector("#reportEndInput"),
+  reportTodayBtn: document.querySelector("#reportTodayBtn"),
+  reportMonthBtn: document.querySelector("#reportMonthBtn"),
+  reportAllBtn: document.querySelector("#reportAllBtn"),
+  globalRevenueText: document.querySelector("#globalRevenueText"),
+  globalOrdersText: document.querySelector("#globalOrdersText"),
+  globalCustomersText: document.querySelector("#globalCustomersText"),
+  globalStockText: document.querySelector("#globalStockText"),
+  branchOverview: document.querySelector("#branchOverview"),
+  topProductsList: document.querySelector("#topProductsList"),
+  dailyTrendList: document.querySelector("#dailyTrendList"),
+  paymentSummaryList: document.querySelector("#paymentSummaryList"),
+  menuSearchInput: document.querySelector("#menuSearchInput"),
+  menuProductList: document.querySelector("#menuProductList"),
+  inventoryBranchFilter: document.querySelector("#inventoryBranchFilter"),
+  inventorySearchInput: document.querySelector("#inventorySearchInput"),
+  inventoryOverviewList: document.querySelector("#inventoryOverviewList"),
+  syncOverview: document.querySelector("#syncOverview"),
+  integrationOverview: document.querySelector("#integrationOverview"),
+  runDiagnosticsBtn: document.querySelector("#runDiagnosticsBtn"),
+  diagnosticsOverview: document.querySelector("#diagnosticsOverview"),
+  shiftList: document.querySelector("#shiftList"),
+  auditList: document.querySelector("#auditList"),
+  stockAdjustmentList: document.querySelector("#stockAdjustmentList"),
+  followUpList: document.querySelector("#followUpList"),
+  lowStockList: document.querySelector("#lowStockList"),
+  settingsForm: document.querySelector("#settingsForm"),
+  adminOfflinePasswordForm: document.querySelector("#adminOfflinePasswordForm"),
+  adminOfflinePasswordInput: document.querySelector("#adminOfflinePasswordInput"),
+  adminOfflinePasswordConfirm: document.querySelector("#adminOfflinePasswordConfirm"),
+  adminOfflinePasswordStatus: document.querySelector("#adminOfflinePasswordStatus"),
+  businessNameInput: document.querySelector("#businessNameInput"),
+  defaultServiceNameInput: document.querySelector("#defaultServiceNameInput"),
+  serviceDaysInput: document.querySelector("#serviceDaysInput"),
+  lowStockThresholdInput: document.querySelector("#lowStockThresholdInput"),
+  receiptFooterInput: document.querySelector("#receiptFooterInput"),
+  branchForm: document.querySelector("#branchForm"),
+  branchNameInput: document.querySelector("#branchNameInput"),
+  branchSimplePayMerchantIdInput: document.querySelector("#branchSimplePayMerchantIdInput"),
+  branchList: document.querySelector("#branchList"),
+  userForm: document.querySelector("#userForm"),
+  userNameInput: document.querySelector("#userNameInput"),
+  userEmailInput: document.querySelector("#userEmailInput"),
+  userPasswordInput: document.querySelector("#userPasswordInput"),
+  userBranchSelect: document.querySelector("#userBranchSelect"),
+  userList: document.querySelector("#userList"),
+  salesSummary: document.querySelector("#salesSummary"),
+  salesDateInput: document.querySelector("#salesDateInput"),
+  salesSearchInput: document.querySelector("#salesSearchInput"),
+  salesBranchFilter: document.querySelector("#salesBranchFilter"),
+  salesPaymentFilter: document.querySelector("#salesPaymentFilter"),
+  salesIntegrationFilter: document.querySelector("#salesIntegrationFilter"),
+  dailyPaymentSummaryList: document.querySelector("#dailyPaymentSummaryList"),
+  exportDailySettlementBtn: document.querySelector("#exportDailySettlementBtn"),
+  exportIntegrationQueueBtn: document.querySelector("#exportIntegrationQueueBtn"),
+  toggleSalesLimitBtn: document.querySelector("#toggleSalesLimitBtn"),
+  todaySalesBtn: document.querySelector("#todaySalesBtn"),
+  allSalesDatesBtn: document.querySelector("#allSalesDatesBtn"),
+  salesList: document.querySelector("#salesList"),
+  receiptDialog: document.querySelector("#receiptDialog"),
+  receiptTitle: document.querySelector("#receiptTitle"),
+  receiptNo: document.querySelector("#receiptNo"),
+  receiptText: document.querySelector("#receiptText"),
+  receiptSimplePayPanel: document.querySelector("#receiptSimplePayPanel"),
+  receiptSimplePayQr: document.querySelector("#receiptSimplePayQr"),
+  receiptSimplePayIntent: document.querySelector("#receiptSimplePayIntent"),
+  receiptPaymentStatus: document.querySelector("#receiptPaymentStatus"),
+  receiptCheckPaymentBtn: document.querySelector("#receiptCheckPaymentBtn"),
+  closeReceiptBtn: document.querySelector("#closeReceiptBtn"),
+  printReceiptBtn: document.querySelector("#printReceiptBtn"),
+  bluetoothPrintReceiptBtn: document.querySelector("#bluetoothPrintReceiptBtn"),
+  receiptPrinterStatus: document.querySelector("#receiptPrinterStatus"),
+  printerPaperWidth: document.querySelector("#printerPaperWidth"),
+  printerAutoPrint: document.querySelector("#printerAutoPrint"),
+  printerConnectBtn: document.querySelector("#printerConnectBtn"),
+  printerPairBtn: document.querySelector("#printerPairBtn"),
+  printerTestBtn: document.querySelector("#printerTestBtn"),
+  printerForgetBtn: document.querySelector("#printerForgetBtn"),
+  printerStatus: document.querySelector("#printerStatus"),
+  integrationDialog: document.querySelector("#integrationDialog"),
+  integrationForm: document.querySelector("#integrationForm"),
+  integrationOrderNo: document.querySelector("#integrationOrderNo"),
+  integrationPosOrderId: document.querySelector("#integrationPosOrderId"),
+  integrationSimplePayReference: document.querySelector("#integrationSimplePayReference"),
+  integrationSimplePayStatus: document.querySelector("#integrationSimplePayStatus"),
+  integrationAffiliateReferralCode: document.querySelector("#integrationAffiliateReferralCode"),
+  integrationAffiliateOrderId: document.querySelector("#integrationAffiliateOrderId"),
+  integrationAffiliateStatus: document.querySelector("#integrationAffiliateStatus"),
+  closeIntegrationBtn: document.querySelector("#closeIntegrationBtn"),
+  copyIntegrationOrderIdBtn: document.querySelector("#copyIntegrationOrderIdBtn"),
+  shiftSettlementDialog: document.querySelector("#shiftSettlementDialog"),
+  shiftSettlementForm: document.querySelector("#shiftSettlementForm"),
+  settlementShiftInfo: document.querySelector("#settlementShiftInfo"),
+  settlementOrders: document.querySelector("#settlementOrders"),
+  settlementTotal: document.querySelector("#settlementTotal"),
+  settlementExpectedCash: document.querySelector("#settlementExpectedCash"),
+  settlementVoids: document.querySelector("#settlementVoids"),
+  settlementPaymentList: document.querySelector("#settlementPaymentList"),
+  settlementWarnings: document.querySelector("#settlementWarnings"),
+  settlementOpeningCash: document.querySelector("#settlementOpeningCash"),
+  settlementCashIn: document.querySelector("#settlementCashIn"),
+  settlementCashOut: document.querySelector("#settlementCashOut"),
+  settlementCountedCash: document.querySelector("#settlementCountedCash"),
+  settlementCashDifference: document.querySelector("#settlementCashDifference"),
+  settlementNote: document.querySelector("#settlementNote"),
+  closeSettlementBtn: document.querySelector("#closeSettlementBtn"),
+  exportCurrentSettlementBtn: document.querySelector("#exportCurrentSettlementBtn"),
+  settlementCashMovementBtn: document.querySelector("#settlementCashMovementBtn"),
+  cashMovementDialog: document.querySelector("#cashMovementDialog"),
+  cashMovementForm: document.querySelector("#cashMovementForm"),
+  cashMovementShiftInfo: document.querySelector("#cashMovementShiftInfo"),
+  cashMovementType: document.querySelector("#cashMovementType"),
+  cashMovementAmount: document.querySelector("#cashMovementAmount"),
+  cashMovementReason: document.querySelector("#cashMovementReason"),
+  cashMovementSubmitBtn: document.querySelector("#cashMovementSubmitBtn"),
+  cashMovementInTotal: document.querySelector("#cashMovementInTotal"),
+  cashMovementOutTotal: document.querySelector("#cashMovementOutTotal"),
+  cashMovementList: document.querySelector("#cashMovementList"),
+  closeCashMovementBtn: document.querySelector("#closeCashMovementBtn")
+};
 
-function readableSyncMessage(message) {
-  const text = String(message || "");
-  if (text.includes("permission-denied")) {
-    return "Firestore：权限被拒绝。请发布最新 firestore.rules，然后点“测试云端保存”。资料已暂存在本地。";
-  }
-  if (text.includes("storage/unauthorized")) {
-    return "Storage：付款证明上传权限不足。请检查 storage.rules 是否已发布。";
-  }
-  return text;
-}
-
-function localPendingSyncItems(userId = currentUser()?.id) {
-  if (!userId || !state) return [];
-  const pendingOrders = (state.orders || []).filter((order) => order.userId === userId && order.status === "pending").length;
-  const pendingWithdraws = (state.withdraws || []).filter((withdraw) => withdraw.userId === userId && withdraw.status === "pending").length;
-  const failedProofs = (state.orders || []).filter((order) => order.userId === userId && order.proofStatus === "failed").length;
-  const items = [];
-  if (pendingOrders) items.push(`${pendingOrders} 笔充值订单`);
-  if (pendingWithdraws) items.push(`${pendingWithdraws} 笔提现申请`);
-  if (failedProofs) items.push(`${failedProofs} 个付款凭证待补传`);
-  return items;
-}
-
-function ensureLocalSyncHint() {
-  let hint = document.querySelector("#localSyncHint");
-  if (hint) return hint;
-  const syncStatus = document.querySelector("#syncStatus");
-  if (!syncStatus?.parentNode) return null;
-  hint = document.createElement("p");
-  hint.id = "localSyncHint";
-  hint.className = "help-text warning-text";
-  hint.hidden = true;
-  syncStatus.insertAdjacentElement("afterend", hint);
-  return hint;
-}
-
-function renderLocalSyncHint(user = currentUser()) {
-  const hint = ensureLocalSyncHint();
-  if (!hint) return;
-  const items = user && !cloudAvailable ? localPendingSyncItems(user.id) : [];
-  hint.textContent = items.length
-    ? `本地暂存待同步：${items.join("、")}。发布 Rules 后点“测试云端保存”。`
-    : "";
-  hint.hidden = !hint.textContent;
-}
-
-function testChecklistState() {
+function readSessionEmail(key) {
   try {
-    const parsed = JSON.parse(localStorage.getItem(TEST_CHECKLIST_KEY) || "{}");
-    return parsed && typeof parsed === "object" ? parsed : {};
+    localStorage.removeItem(key);
+    return sessionStorage.getItem(key) || "";
   } catch {
-    return {};
+    return "";
   }
 }
 
-function saveTestChecklistState(items) {
-  localStorage.setItem(TEST_CHECKLIST_KEY, JSON.stringify(items || {}));
+function persistSessionEmail(key, value) {
+  try {
+    sessionStorage.setItem(key, value);
+    localStorage.removeItem(key);
+  } catch (error) {
+    reportStorageError(error);
+  }
 }
 
-function checklistReport(items, checked) {
-  const reportItems = items.map((text, index) => {
-    const value = checked[String(index)];
-    const done = typeof value === "object" ? Boolean(value.done) : Boolean(value);
-    return {
-      index: index + 1,
-      text,
-      done,
-      completedAt: done && typeof value === "object" ? value.completedAt || "" : "",
-    };
+function clearSessionEmail(key) {
+  try {
+    sessionStorage.removeItem(key);
+    localStorage.removeItem(key);
+  } catch (error) {
+    console.warn("Session clear failed", error);
+  }
+}
+
+function load(key, fallback) {
+  let raw = null;
+  try {
+    raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : structuredClone(fallback);
+  } catch (error) {
+    const recoveryKey = `${key}.corrupt-${Date.now()}`;
+    let preserved = false;
+    if (raw) {
+      try {
+        localStorage.setItem(recoveryKey, raw);
+        localStorage.removeItem(key);
+        preserved = true;
+      } catch {
+        protectedCorruptStorageKeys.add(key);
+      }
+    }
+    storageReadIssues.push({ key, recoveryKey: preserved ? recoveryKey : "", raw: preserved ? "" : (raw || ""), message: error.message });
+    return structuredClone(fallback);
+  }
+}
+
+function reportStorageError(error) {
+  lastStorageWriteError = error?.message || "本机储存无法写入";
+  console.error("Local storage write failed", error);
+  setTimeout(() => {
+    updateCloudStatus("本机储存失败，请立即导出备份");
+    if (!storageErrorAlertShown) {
+      storageErrorAlertShown = true;
+      alert("本机储存空间不足或无法写入。系统没有覆盖原资料，请立即导出完整备份并释放浏览器空间。");
+    }
+  }, 0);
+}
+
+function save(key, value) {
+  if (protectedCorruptStorageKeys.has(key)) {
+    reportStorageError(new Error(`${key} 含有尚未保存的损坏原始资料`));
+    return false;
+  }
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (error) {
+    reportStorageError(error);
+    return false;
+  }
+}
+
+function saveStorageBatch(entries, { allowProtected = false } = {}) {
+  const originals = new Map();
+  try {
+    const prepared = entries.map(([key, value]) => [key, JSON.stringify(value)]);
+    for (const [key] of entries) originals.set(key, localStorage.getItem(key));
+    for (const [key, serialized] of prepared) {
+      if (!allowProtected && protectedCorruptStorageKeys.has(key)) throw new Error(`${key} 含有尚未保存的损坏原始资料`);
+      localStorage.setItem(key, serialized);
+    }
+    if (allowProtected) {
+      for (const [key] of entries) protectedCorruptStorageKeys.delete(key);
+    }
+    return true;
+  } catch (error) {
+    for (const [key, original] of originals) {
+      try {
+        if (original === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, original);
+      } catch (rollbackError) {
+        console.error(`Storage rollback failed: ${key}`, rollbackError);
+      }
+    }
+    reportStorageError(error);
+    return false;
+  }
+}
+
+function getStorageRecoveryEntries() {
+  const entries = [];
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (!key?.includes(".corrupt-")) continue;
+    entries.push({ key, raw: localStorage.getItem(key) || "" });
+  }
+  for (const issue of storageReadIssues) {
+    if (!issue.raw || entries.some((entry) => entry.key === issue.key)) continue;
+    entries.push({ key: issue.key, raw: issue.raw, error: issue.message });
+  }
+  return entries;
+}
+
+function normalizeSaleExternalReferences(sale = {}) {
+  const payment = sale.payment || {};
+  const existing = sale.externalReferences || {};
+  const referralCode = String(
+    sale.customer?.referralCode || existing.affiliateReferralCode || ""
+  ).trim().toUpperCase();
+  const simplePayReference = String(
+    existing.simplePayReference
+      || (payment.method === "简单支付 / SimplePay" ? payment.reference : "")
+      || ""
+  ).trim();
+  const affiliateOrderId = String(existing.affiliateOrderId || "").trim();
+  return {
+    ...sale,
+    customer: {
+      ...(sale.customer || {}),
+      referralCode
+    },
+    externalReferences: {
+      ...existing,
+      posOrderId: existing.posOrderId || sale.id || "",
+      simplePayReference,
+      simplePayStatus: existing.simplePayStatus
+        || (payment.method === "简单支付 / SimplePay" ? (simplePayReference ? "linked" : "pending") : "not-used"),
+      affiliateReferralCode: referralCode,
+      affiliateOrderId,
+      affiliateStatus: existing.affiliateStatus
+        || (affiliateOrderId ? "linked" : (referralCode ? "pending" : "not-used"))
+    }
+  };
+}
+
+function attachIntegrationOutbox(sale, eventType = "checkout") {
+  if (!window.integrationContract) return sale;
+  return window.integrationContract.attachJobReferences(sale, eventType);
+}
+
+function getInventoryReviewStatus(sale) {
+  return sale?.inventoryReview?.status || "none";
+}
+
+function requiresInventoryReview(sale) {
+  return getInventoryReviewStatus(sale) === "required";
+}
+
+function getInventoryConflictSummary(sale) {
+  const conflicts = Array.isArray(sale?.inventoryReview?.conflicts) ? sale.inventoryReview.conflicts : [];
+  if (!conflicts.length) return "云端库存与离线销售不一致";
+  return conflicts.map((conflict) => {
+    const cloudStock = conflict.cloudStock === null || conflict.cloudStock === undefined
+      ? "云端无商品"
+      : `云端 ${conflict.cloudStock}`;
+    return `${conflict.productName || conflict.productId}：需 ${conflict.requestedQty || 0}，${cloudStock}`;
+  }).join("；");
+}
+
+function hasCloud() {
+  return Boolean(window.cloudPOS);
+}
+
+function updateCloudStatus(text, ok = false) {
+  const pendingCount = pendingSales.length
+    + pendingSaleUpdates.length
+    + pendingProducts.length
+    + pendingStockAdjustments.length
+    + pendingAuditLogs.length
+    + getPendingManagementCount();
+  const pendingText = pendingCount ? ` · 待同步 ${pendingCount}` : "";
+  const inventoryReviewCount = sales.filter(requiresInventoryReview).length;
+  const reviewText = inventoryReviewCount ? ` · 库存待复核 ${inventoryReviewCount}` : "";
+  els.cloudStatus.textContent = `${text}${pendingText}${reviewText}`;
+  els.cloudStatus.style.color = ok ? "#0f766e" : "#66756f";
+}
+
+function getErrorMessage(error) {
+  return error?.code || error?.message || "未知错误";
+}
+
+function savePendingSales() {
+  save(STORAGE_KEYS.pendingSales, pendingSales);
+}
+
+function queuePendingSale(sale) {
+  pendingSales = [
+    { ...sale, syncStatus: "pending" },
+    ...pendingSales.filter((item) => item.id !== sale.id)
+  ];
+  savePendingSales();
+  updateCloudStatus("订单待同步");
+}
+
+function markSaleSynced(saleId, patch = {}) {
+  pendingSales = pendingSales.filter((sale) => sale.id !== saleId);
+  savePendingSales();
+  sales = sales.map((sale) => sale.id === saleId ? { ...sale, syncStatus: "synced", ...patch } : sale);
+  save(STORAGE_KEYS.sales, sales);
+}
+
+function applyCheckoutSyncResult(saleId, result) {
+  if (result?.status !== "inventory-review") {
+    markSaleSynced(saleId);
+    return false;
+  }
+  const previous = sales.find((sale) => sale.id === saleId);
+  const inventoryReview = result.inventoryReview || {
+    status: "required",
+    detectedAt: new Date().toISOString(),
+    conflicts: []
+  };
+  markSaleSynced(saleId, {
+    syncStatus: "review-required",
+    inventoryReview
   });
-  return {
-    total: reportItems.length,
-    done: reportItems.filter((item) => item.done).length,
-    lastCompletedAt: reportItems
-      .filter((item) => item.completedAt)
-      .map((item) => item.completedAt)
-      .sort()
-      .at(-1) || "",
-    items: reportItems,
-  };
-}
-
-function testChecklistReport() {
-  return checklistReport(TEST_CHECKLIST, testChecklistState());
-}
-
-function deployChecklistState() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(DEPLOY_CHECKLIST_KEY) || "{}");
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveDeployChecklistState(items) {
-  localStorage.setItem(DEPLOY_CHECKLIST_KEY, JSON.stringify(items || {}));
-}
-
-function deployChecklistReport() {
-  return checklistReport(DEPLOY_CHECKLIST, deployChecklistState());
-}
-
-function renderTestChecklistRows() {
-  const report = testChecklistReport();
-  const complete = report.done === report.total;
-  return [
-    `<span class="test-progress ${complete ? "complete" : "pending"}">${complete ? "实机测试已完成" : `完成 ${report.done} / ${report.total}`}${report.lastCompletedAt ? ` · 最后完成：${new Date(report.lastCompletedAt).toLocaleString("zh-CN")}` : ""}</span>`,
-    ...report.items.map((item, index) => `
-      <label class="test-check">
-        <input type="checkbox" data-test-check="${index}" ${item.done ? "checked" : ""} />
-        <span>${item.index}. ${item.text}${item.completedAt ? `<small>完成时间：${new Date(item.completedAt).toLocaleString("zh-CN")}</small>` : ""}</span>
-      </label>
-    `),
-    `<span class="test-actions"><button class="link" type="button" id="exportTestChecklistBtn">导出测试清单</button><button class="link" type="button" id="resetTestChecklistBtn">重置测试清单</button></span>`,
-  ];
-}
-
-function renderDeployChecklistRows() {
-  const report = deployChecklistReport();
-  const complete = report.done === report.total;
-  return [
-    `<span class="test-progress ${complete ? "complete" : "pending"}">${complete ? "部署检查已完成" : `完成 ${report.done} / ${report.total}`}${report.lastCompletedAt ? ` · 最后完成：${new Date(report.lastCompletedAt).toLocaleString("zh-CN")}` : ""}</span>`,
-    ...report.items.map((item, index) => `
-      <label class="test-check">
-        <input type="checkbox" data-deploy-check="${index}" ${item.done ? "checked" : ""} />
-        <span>${item.index}. ${item.text}${item.completedAt ? `<small>完成时间：${new Date(item.completedAt).toLocaleString("zh-CN")}</small>` : ""}</span>
-      </label>
-    `),
-    `<span class="test-actions"><button class="link" type="button" id="exportDeployChecklistBtn">导出部署清单</button><button class="link" type="button" id="resetDeployChecklistBtn">重置部署清单</button></span>`,
-  ];
-}
-
-function futureDate(days) {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  return date.toISOString();
-}
-
-function pastDate(days) {
-  const date = new Date();
-  date.setDate(date.getDate() - days);
-  return date.toISOString();
-}
-
-function defaultAffiliatePlans() {
-  return [
-    { id: "plan_rm180", name: "RM180 单位配套", amount: 180, points: 18000, slots: 10, repeatCredits: 10, repeatCooldownHours: 0, validDays: 30, firstRate: 20, directRepeatRate: 10, repeatRate: 10 },
-    { id: "plan_rm360", name: "RM360 双单位配套", amount: 360, points: 36000, slots: 20, repeatCredits: 10, repeatCooldownHours: 0, validDays: 30, firstRate: 20, directRepeatRate: 10, repeatRate: 10 },
-    { id: "plan_rm720", name: "RM720 四单位配套", amount: 720, points: 72000, slots: 40, repeatCredits: 10, repeatCooldownHours: 0, validDays: 30, firstRate: 20, directRepeatRate: 10, repeatRate: 10 },
-  ];
-}
-
-function createSeedData() {
-  return {
-    currentUserId: "",
-    testDataClearedAt: new Date().toISOString(),
-    plans: defaultAffiliatePlans(),
-    users: [],
-    orders: [],
-    pointLogs: [],
-    rewards: [],
-    withdraws: [],
-    repeatCreditLogs: [],
-    referrals: [],
-    adminLogs: [],
-  };
-}
-
-async function loadState() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  const localState = saved ? JSON.parse(saved) : null;
-  const finalize = (data) => prepareLoadedState(data || createSeedData());
-  if (!firebaseUser) {
-    return finalize(localState || createSeedData());
-  }
-  try {
-    const snapshot = await getDoc(systemRef);
-    const seeded = createSeedData();
-    cloudAvailable = true;
-    if (firebaseUser && isAdmin()) {
-      const usersSnapshot = await getDocs(usersRef);
-      const records = {
-        orders: snapshotDocs(await getDocs(ordersRef)),
-        rewards: snapshotDocs(await getDocs(rewardsRef)),
-        withdraws: snapshotDocs(await getDocs(withdrawsRef)),
-        pointLogs: snapshotDocs(await getDocs(pointLogsRef)),
-        repeatCreditLogs: snapshotDocs(await getDocs(repeatCreditLogsRef)),
-        referrals: snapshotDocs(await getDocs(referralsRef)),
-        adminLogs: snapshotDocs(await getDocs(adminLogsRef)),
-      };
-      if (snapshot.exists() || !usersSnapshot.empty) {
-        return finalize(mergeLocalPendingState(composeStateFromCloud(snapshot, usersSnapshot, seeded, records), localState, firebaseUser.uid));
-      }
-    }
-    if (firebaseUser) {
-      const userSnapshot = await getDoc(doc(db, USER_COLLECTION, firebaseUser.uid));
-      const referralDocs = snapshotDocs(await getDocs(query(referralsRef, where("referrerId", "==", firebaseUser.uid))));
-      const inviteeIds = referralDocs.map((referral) => referral.inviteeId).filter(Boolean);
-      const inviteeOrders = [];
-      for (const inviteeId of inviteeIds) {
-        inviteeOrders.push(...snapshotDocs(await getDocs(query(ordersRef, where("userId", "==", inviteeId)))));
-      }
-      const records = {
-        orders: mergeById(snapshotDocs(await getDocs(query(ordersRef, where("userId", "==", firebaseUser.uid)))), inviteeOrders),
-        rewards: snapshotDocs(await getDocs(query(rewardsRef, where("userId", "==", firebaseUser.uid)))),
-        withdraws: snapshotDocs(await getDocs(query(withdrawsRef, where("userId", "==", firebaseUser.uid)))),
-        pointLogs: snapshotDocs(await getDocs(query(pointLogsRef, where("userId", "==", firebaseUser.uid)))),
-        repeatCreditLogs: snapshotDocs(await getDocs(query(repeatCreditLogsRef, where("userId", "==", firebaseUser.uid)))),
-        referrals: referralDocs,
-      };
-      return finalize(mergeLocalPendingState(composeStateFromUserDoc(snapshot, userSnapshot, seeded, records), localState, firebaseUser.uid));
-    }
-    if (snapshot.exists()) {
-      return finalize({
-        ...seeded,
-        plans: Array.isArray(snapshot.data().plans) ? snapshot.data().plans : seeded.plans,
-        adminLogs: [],
-      });
-    }
-    return finalize(seeded);
-  } catch (error) {
-    console.warn("Firestore unavailable, using local fallback.", error);
-    return finalize(localState || createSeedData());
-  }
-}
-
-async function saveState() {
-  if (firebaseUser) {
-    normalizePendingOrderIdsForOwner(firebaseUser.uid);
-  }
-  normalizeWithdrawSources();
-  normalizePendingOrderTypes();
-  backfillOrderConfirmSummaries(state);
-  const backfilledSnapshots = backfillOrderPlanSnapshots(state);
-  if (backfilledSnapshots && isAdmin()) {
-    addAdminLog("补齐订单快照", "系统", `自动补齐 ${backfilledSnapshots} 笔旧订单的配套快照`);
-  }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  if (!firebaseUser) {
-    syncMessage = "Firestore：未登录，暂存本地";
-    return;
-  }
-  try {
-    const cloudState = splitStateForCloud(state);
-    if (isAdmin()) {
-      await setDoc(systemRef, {
-        plans: cloudState.plans,
-        testDataClearedAt: cloudState.testDataClearedAt || "",
-        updatedAt: serverTimestamp(),
-      });
-      await Promise.all([
-        syncAdminCollection(usersRef, cloudState.users),
-        syncAdminCollection(ordersRef, cloudState.orders),
-        syncAdminCollection(rewardsRef, cloudState.rewards),
-        syncAdminCollection(withdrawsRef, cloudState.withdraws),
-        syncAdminCollection(pointLogsRef, cloudState.pointLogs),
-        syncAdminCollection(repeatCreditLogsRef, cloudState.repeatCreditLogs),
-        syncAdminCollection(invitesRef, cloudState.invites),
-        syncAdminCollection(referralsRef, cloudState.referrals),
-        syncAdminCollection(adminLogsRef, cloudState.adminLogs || []),
-      ]);
-    } else {
-      const user = cloudState.users.find((item) => item.id === firebaseUser.uid);
-      if (!user) throw new Error("current-user-document-not-found");
-      const userRef = doc(db, USER_COLLECTION, firebaseUser.uid);
-      const userExists = (await getDoc(userRef)).exists();
-      await setDocWithSyncStep("用户资料", userRef, { ...userSelfProfileForCloud(user, !userExists), updatedAt: serverTimestamp() }, { merge: true });
-      for (const order of cloudState.orders.filter((item) => item.userId === firebaseUser.uid && item.status === "pending")) {
-        await setDocWithSyncStep(`充值订单 ${order.id}`, doc(db, ORDER_COLLECTION, order.id), { ...order, updatedAt: serverTimestamp() }, { merge: true });
-      }
-      for (const withdraw of cloudState.withdraws.filter((item) => item.userId === firebaseUser.uid && item.status === "pending")) {
-        await setDocWithSyncStep(`提现申请 ${withdraw.id}`, doc(db, WITHDRAW_COLLECTION, withdraw.id), { ...withdraw, updatedAt: serverTimestamp() }, { merge: true });
-      }
-      const optionalWrites = [
-        ...cloudState.invites.filter((invite) => invite.userId === firebaseUser.uid).map((invite) => ({
-          label: "invite",
-          ref: doc(db, INVITE_COLLECTION, invite.id),
-          data: invite,
-        })),
-        ...cloudState.referrals.filter((referral) => referral.inviteeId === firebaseUser.uid).map((referral) => ({
-          label: "referral",
-          ref: doc(db, REFERRAL_COLLECTION, referral.id),
-          data: referral,
-        })),
-      ];
-      for (const item of optionalWrites) {
-        try {
-          await setDoc(item.ref, { ...item.data, updatedAt: serverTimestamp() }, { merge: true });
-        } catch (error) {
-          console.warn(`Optional Firestore ${item.label} sync failed.`, error);
-        }
-      }
-    }
-    cloudAvailable = true;
-    syncMessage = `Firestore：保存成功 ${new Date().toLocaleTimeString("zh-CN")}`;
-  } catch (error) {
-    cloudAvailable = false;
-    console.warn("Firestore save failed, fallback remains local.", error);
-    syncMessage = `Firestore：保存失败${error.syncStep ? `（${error.syncStep}）` : ""} ${error.code || error.name || "unknown"} - ${error.message || ""}`;
-    toast(`Firestore 保存失败：${error.code || "unknown"}`);
-  }
-}
-
-async function syncAdminCollection(collectionRef, rows = []) {
-  const desiredRows = rows.filter((row) => row?.id);
-  const desiredIds = new Set(desiredRows.map((row) => row.id));
-  const snapshot = await getDocs(collectionRef);
-  await Promise.all([
-    ...snapshot.docs
-      .filter((item) => !desiredIds.has(item.id))
-      .map((item) => deleteDoc(item.ref)),
-    ...desiredRows.map((row) =>
-      setDoc(doc(collectionRef, row.id), { ...row, updatedAt: serverTimestamp() })
-    ),
-  ]);
-}
-
-async function setDocWithSyncStep(step, ref, data, options = { merge: true }) {
-  try {
-    await setDoc(ref, data, options);
-  } catch (error) {
-    error.syncStep = step;
-    throw error;
-  }
-}
-
-function firestoreErrorHint(error) {
-  const code = error?.code || error?.name || "unknown";
-  const message = error?.message || "";
-  if (code === "permission-denied") {
-    return "Firestore：保存失败 permission-denied。请先发布最新 firestore.rules，然后回到页面点“测试云端保存”。本次资料已暂存在本地。";
-  }
-  if (code === "storage/unauthorized") {
-    return "Storage：付款证明上传权限不足。请检查 storage.rules 是否已发布；订单资料会先暂存在本地。";
-  }
-  if (code === "unavailable" || message.toLowerCase().includes("network")) {
-    return "Firestore：网络暂时不可用。本次资料已暂存在本地，稍后点“测试云端保存”可重新同步。";
-  }
-  return `Firestore：保存失败 ${code} - ${message}`;
-}
-
-function snapshotDocs(snapshot) {
-  return snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
-}
-
-function mergeById(primary = [], fallback = []) {
-  const seen = new Set(primary.map((item) => item.id));
-  return [
-    ...primary,
-    ...fallback.filter((item) => item?.id && !seen.has(item.id)),
-  ];
-}
-
-function latestIsoDate(...values) {
-  return values
-    .filter(Boolean)
-    .sort((a, b) => new Date(b) - new Date(a))[0] || "";
-}
-
-function recordIsAfterTestClear(record, data = state) {
-  if (!data?.testDataClearedAt) return true;
-  const recordDate = record?.createdAt || record?.paidAt || record?.reviewedAt || record?.updatedAt || "";
-  if (!recordDate) return false;
-  return new Date(recordDate) > new Date(data.testDataClearedAt);
-}
-
-function filterBusinessRecordsAfterClear(data) {
-  if (!data?.testDataClearedAt) return data;
-  return {
-    ...data,
-    orders: (data.orders || []).filter((item) => recordIsAfterTestClear(item, data)),
-    rewards: (data.rewards || []).filter((item) => recordIsAfterTestClear(item, data)),
-    withdraws: (data.withdraws || []).filter((item) => recordIsAfterTestClear(item, data)),
-    pointLogs: (data.pointLogs || []).filter((item) => recordIsAfterTestClear(item, data)),
-    repeatCreditLogs: (data.repeatCreditLogs || []).filter((item) => recordIsAfterTestClear(item, data)),
-  };
-}
-
-function mergeLocalPendingState(cloudState, localState, userId) {
-  if (!cloudState || !localState || !userId) return cloudState;
-  const testDataClearedAt = latestIsoDate(cloudState.testDataClearedAt, localState.testDataClearedAt);
-  const mergedClearState = { testDataClearedAt };
-  const localOwnerIds = new Set([userId]);
-  const localUser = (localState.users || []).find((user) =>
-    user.id === userId
-    || user.firebaseUid === userId
-    || (firebaseUser?.email && user.account === firebaseUser.email)
-  );
-  if (localUser?.id) localOwnerIds.add(localUser.id);
-  const localPendingOrders = (localState.orders || [])
-    .filter((order) =>
-      localOwnerIds.has(order.userId)
-      && order.status === "pending"
-      && recordIsAfterTestClear(order, mergedClearState)
-    )
-    .map((order) => ({ ...order, userId }));
-  const localPendingWithdraws = (localState.withdraws || [])
-    .filter((withdraw) =>
-      localOwnerIds.has(withdraw.userId)
-      && withdraw.status === "pending"
-      && recordIsAfterTestClear(withdraw, mergedClearState)
-    )
-    .map((withdraw) => ({ ...withdraw, userId }));
-  const hasUser = (cloudState.users || []).some((user) => user.id === userId);
-  return {
-    ...cloudState,
-    testDataClearedAt,
-    currentUserId: userId,
-    users: hasUser || !localUser ? cloudState.users : [...(cloudState.users || []), localUser],
-    orders: mergeById(cloudState.orders || [], localPendingOrders),
-    withdraws: mergeById(cloudState.withdraws || [], localPendingWithdraws),
-  };
-}
-
-function composeStateFromCloud(systemSnapshot, usersSnapshot, fallback, records = {}) {
-  if (systemSnapshot.exists() && systemSnapshot.data().state && usersSnapshot.empty) {
-    return systemSnapshot.data().state;
-  }
-  const systemData = systemSnapshot.exists() ? systemSnapshot.data() : {};
-  const plans = systemSnapshot.exists() && Array.isArray(systemSnapshot.data().plans)
-    ? systemSnapshot.data().plans
-    : fallback.plans;
-  const users = [];
-  const orders = [...(records.orders || [])];
-  const pointLogs = [...(records.pointLogs || [])];
-  const repeatCreditLogs = [...(records.repeatCreditLogs || [])];
-  const rewards = [...(records.rewards || [])];
-  const withdraws = [...(records.withdraws || [])];
-  const referrals = [...(records.referrals || [])];
-
-  usersSnapshot.forEach((snapshot) => {
-    const data = snapshot.data();
-    users.push(normalizeUserDoc(snapshot.id, data));
-    if (!records.orders?.length) orders.push(...(Array.isArray(data.orders) ? data.orders : []));
-    if (!records.pointLogs?.length) pointLogs.push(...(Array.isArray(data.pointLogs) ? data.pointLogs : []));
-    if (!records.repeatCreditLogs?.length) repeatCreditLogs.push(...(Array.isArray(data.repeatCreditLogs) ? data.repeatCreditLogs : []));
-    if (!records.rewards?.length) rewards.push(...(Array.isArray(data.rewards) ? data.rewards : []));
-    if (!records.withdraws?.length) withdraws.push(...(Array.isArray(data.withdraws) ? data.withdraws : []));
-  });
-
-  return {
-    currentUserId: state?.currentUserId || firebaseUser?.uid || fallback.currentUserId,
-    testDataClearedAt: systemData.testDataClearedAt || fallback.testDataClearedAt || "",
-    plans,
-    users: users.length ? users : fallback.users,
-    orders: orders.length ? orders : fallback.orders,
-    pointLogs: pointLogs.length ? pointLogs : fallback.pointLogs,
-    repeatCreditLogs: repeatCreditLogs.length ? repeatCreditLogs : (fallback.repeatCreditLogs || []),
-    rewards: rewards.length ? rewards : fallback.rewards,
-    withdraws: withdraws.length ? withdraws : fallback.withdraws,
-    referrals: referrals.length ? referrals : fallback.referrals,
-    adminLogs: records.adminLogs || [],
-  };
-}
-
-function composeStateFromUserDoc(systemSnapshot, userSnapshot, fallback, records = {}) {
-  const systemData = systemSnapshot.exists() ? systemSnapshot.data() : {};
-  const plans = systemSnapshot.exists() && Array.isArray(systemSnapshot.data().plans)
-    ? systemSnapshot.data().plans
-    : fallback.plans;
-
-  if (!userSnapshot.exists()) {
-    return {
-      ...fallback,
-      testDataClearedAt: systemData.testDataClearedAt || fallback.testDataClearedAt || "",
-      currentUserId: firebaseUser.uid,
-      plans,
-      users: [],
-      orders: records.orders || [],
-      pointLogs: records.pointLogs || [],
-      repeatCreditLogs: records.repeatCreditLogs || [],
-      rewards: records.rewards || [],
-      withdraws: records.withdraws || [],
-      referrals: records.referrals || [],
-    };
-  }
-
-  const data = userSnapshot.data();
-  const user = normalizeUserDoc(userSnapshot.id, data);
-  return {
-    currentUserId: user.id,
-    testDataClearedAt: systemData.testDataClearedAt || fallback.testDataClearedAt || "",
-    plans,
-    users: [user],
-    orders: records.orders?.length ? records.orders : (Array.isArray(data.orders) ? data.orders : []),
-    pointLogs: records.pointLogs?.length ? records.pointLogs : (Array.isArray(data.pointLogs) ? data.pointLogs : []),
-    repeatCreditLogs: records.repeatCreditLogs?.length ? records.repeatCreditLogs : (Array.isArray(data.repeatCreditLogs) ? data.repeatCreditLogs : []),
-    rewards: records.rewards?.length ? records.rewards : (Array.isArray(data.rewards) ? data.rewards : []),
-    withdraws: records.withdraws?.length ? records.withdraws : (Array.isArray(data.withdraws) ? data.withdraws : []),
-    referrals: records.referrals?.length ? records.referrals : (Array.isArray(data.referrals) ? data.referrals : []),
-    adminLogs: [],
-  };
-}
-
-function normalizeUserDoc(id, data) {
-  return {
-    id: data.id || id,
-    firebaseUid: data.firebaseUid || id,
-    name: data.name || "未命名用户",
-    account: data.account || "",
-    phone: data.phone || "",
-    photoURL: data.photoURL || "",
-    withdrawMethod: data.withdrawMethod || "",
-    withdrawAccount: data.withdrawAccount || "",
-    inviteCode: normalizeInviteCode(data.inviteCode || `${(data.name || "U").slice(0, 1).toUpperCase()}${id.slice(0, 4)}`),
-    referrerId: data.referrerId || "",
-    level: data.level || "普通用户",
-    points: Number(data.points || 0),
-    slots: Number(data.slots || 0),
-    repeatCredits: Number(data.repeatCredits || 0),
-    repeatCreditQueueAt: data.repeatCreditQueueAt || "",
-    repeatCooldownUntil: data.repeatCooldownUntil || "",
-    packageUntil: data.packageUntil || "",
-    frozen: Boolean(data.frozen),
-  };
-}
-
-function splitStateForCloud(data) {
-  return {
-    plans: data.plans,
-    testDataClearedAt: data.testDataClearedAt || "",
-    adminLogs: data.adminLogs || [],
-    users: data.users.map(userProfileForCloud),
-    orders: data.orders || [],
-    rewards: data.rewards || [],
-    withdraws: data.withdraws || [],
-    pointLogs: data.pointLogs || [],
-    repeatCreditLogs: data.repeatCreditLogs || [],
-    invites: data.users.map(inviteDocForUser).filter((invite) => invite.id),
-    referrals: referralDocsForState(data),
-  };
-}
-
-function userProfileForCloud(user) {
-  const { orders, rewards, withdraws, pointLogs, ...profile } = user;
-  return profile;
-}
-
-function userSelfProfileForCloud(user, includeProtectedDefaults = false) {
-  const profile = {
-    id: user.id,
-    firebaseUid: user.firebaseUid || user.id,
-    name: user.name || "",
-    account: user.account || "",
-    phone: user.phone || "",
-    photoURL: user.photoURL || "",
-    withdrawMethod: user.withdrawMethod || "",
-    withdrawAccount: user.withdrawAccount || "",
-    inviteCode: normalizeInviteCode(user.inviteCode),
-    referrerId: user.referrerId || "",
-  };
-  if (includeProtectedDefaults) {
-    Object.assign(profile, {
-      level: user.level || "普通用户",
-      points: Number(user.points || 0),
-      slots: Number(user.slots || 0),
-      repeatCredits: Number(user.repeatCredits || 0),
-      repeatCreditQueueAt: user.repeatCreditQueueAt || "",
-      repeatCooldownUntil: user.repeatCooldownUntil || "",
-      packageUntil: user.packageUntil || "",
-      frozen: Boolean(user.frozen),
+  if (!requiresInventoryReview(previous)) {
+    writeAuditLog("inventory.conflict.detected", {
+      saleId,
+      branchId: inventoryReview.branchId || previous?.branchId || "hq",
+      conflicts: inventoryReview.conflicts || []
     });
   }
-  return profile;
+  updateCloudStatus("订单已保存，库存待复核");
+  return true;
 }
 
-function normalizeInviteCode(code) {
-  return String(code || "").trim().toUpperCase();
+function savePendingSaleUpdates() {
+  save(STORAGE_KEYS.pendingSaleUpdates, pendingSaleUpdates);
 }
 
-function inviteCodeFromInput(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-  try {
-    const parsed = new URL(raw, location.origin);
-    const ref = parsed.searchParams.get("ref");
-    if (ref) return normalizeInviteCode(ref);
-  } catch (error) {
-    // Plain invite codes are handled below.
-  }
-  const refMatch = raw.match(/[?&]ref=([^&#]+)/i);
-  if (refMatch) return normalizeInviteCode(decodeURIComponent(refMatch[1]));
-  return normalizeInviteCode(raw);
-}
-
-function currentUrlInviteCode() {
-  return inviteCodeFromInput(new URLSearchParams(location.search).get("ref"));
-}
-
-function inviteDocForUser(user) {
-  const code = normalizeInviteCode(user.inviteCode);
-  return {
-    id: code,
-    code,
-    userId: user.id,
-    name: user.name || "",
-    slots: Number(user.slots || 0),
-    packageUntil: user.packageUntil || "",
-    frozen: Boolean(user.frozen),
-  };
-}
-
-function referralDocForUser(user, data = state) {
-  const referrer = data.users.find((item) => item.id === user.referrerId);
-  return {
-    id: `${user.referrerId}_${user.id}`,
-    referrerId: user.referrerId,
-    referrerName: referrer?.name || "",
-    inviteeId: user.id,
-    inviteeName: user.name || "",
-    inviteeAccount: user.account || "",
-    createdAt: new Date().toISOString(),
-  };
-}
-
-function referralDocsForState(data) {
-  const existing = new Map((data.referrals || []).map((item) => [item.id, item]));
-  data.users.filter((user) => user.referrerId).forEach((user) => {
-    const next = referralDocForUser(user, data);
-    existing.set(next.id, { ...next, ...(existing.get(next.id) || {}) });
-  });
-  return [...existing.values()];
-}
-
-function migrateUserId(oldId, newId) {
-  if (!oldId || !newId || oldId === newId || !state) return;
-  state.orders = (state.orders || []).map((order) => order.userId === oldId ? { ...order, userId: newId } : order);
-  state.withdraws = (state.withdraws || []).map((withdraw) => withdraw.userId === oldId ? { ...withdraw, userId: newId } : withdraw);
-  state.rewards = (state.rewards || []).map((reward) => reward.userId === oldId ? { ...reward, userId: newId } : reward);
-  state.pointLogs = (state.pointLogs || []).map((log) => log.userId === oldId ? { ...log, userId: newId } : log);
-  state.repeatCreditLogs = (state.repeatCreditLogs || []).map((log) => log.userId === oldId ? { ...log, userId: newId } : log);
-  state.users.forEach((item) => {
-    if (item.referrerId === oldId) item.referrerId = newId;
-  });
-  state.referrals = (state.referrals || []).map((referral) => ({
-    ...referral,
-    id: referral.id === `${referral.referrerId}_${referral.inviteeId}` ? undefined : referral.id,
-    referrerId: referral.referrerId === oldId ? newId : referral.referrerId,
-    inviteeId: referral.inviteeId === oldId ? newId : referral.inviteeId,
-  })).map((referral) => ({
-    ...referral,
-    id: referral.id || `${referral.referrerId}_${referral.inviteeId}`,
-  }));
-  if (state.currentUserId === oldId) state.currentUserId = newId;
-}
-
-function id(prefix) {
-  return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2, 7)}`;
-}
-
-function orderNo(data = state, userId = "") {
-  const ymd = new Date().toISOString().slice(0, 10).replaceAll("-", "");
-  const serial = `R${ymd}${String(data.orders.length + 1).padStart(4, "0")}`;
-  if (!firebaseUser?.uid) return serial;
-  const owner = String(userId || firebaseUser.uid).replace(/[^\w-]+/g, "").slice(0, 8);
-  return `${serial}-${owner}-${Math.random().toString(16).slice(2, 6)}`;
-}
-
-function normalizePendingOrderIdsForOwner(userId) {
-  if (!state || !userId) return;
-  const owner = String(userId).replace(/[^\w-]+/g, "").slice(0, 8);
-  state.orders = (state.orders || []).map((order) => {
-    if (order.userId !== userId || order.status !== "pending" || !/^R\d{12}$/.test(order.id)) return order;
-    return {
-      ...order,
-      id: `${order.id}-${owner}-${Math.random().toString(16).slice(2, 6)}`,
-    };
-  });
-}
-
-function normalizeWithdrawSources() {
-  if (!state) return;
-  state.withdraws = (state.withdraws || []).map((withdraw) => ({
-    ...withdraw,
-    source: withdraw.source || "reward",
-  }));
-}
-
-function normalizePendingOrderTypes() {
-  if (!state) return;
-  state.orders = (state.orders || []).map((order) => {
-    if (order.status !== "pending") return order;
-    return {
-      ...order,
-      type: actualOrderType(state, order.userId, order.id),
-    };
-  });
-}
-
-function orderConfirmSummaryFromRecords(data, order) {
-  const buyer = (data.users || []).find((item) => item.id === order.userId);
-  const plan = orderPlan(order, data);
-  if (!buyer || !plan || order.status !== "paid") return "";
-  const rewards = (data.rewards || []).filter((reward) => reward.orderId === order.id);
-  const summary = [
-    `判定：${order.type === "repeat" ? "复购" : "首充"}`,
-    `买家积分 +${points(order.points || plan.points)}`,
+function queuePendingSaleUpdate(sale) {
+  pendingSaleUpdates = [
+    sale,
+    ...pendingSaleUpdates.filter((item) => item.id !== sale.id)
   ];
-  if (buyer.packageUntil) summary.push(`配套有效至 ${new Date(buyer.packageUntil).toLocaleDateString("zh-CN")}`);
-  if (order.type === "repeat") {
-    const directRepeatReward = rewards.find((reward) => reward.type === "repeat" && reward.rewardMode === "direct");
-    const poolRepeatReward = rewards.find((reward) => reward.type === "repeat" && reward.rewardMode === "pool")
-      || rewards.find((reward) => reward.type === "repeat" && !reward.rewardMode);
-    const directReceiver = directRepeatReward ? (data.users || []).find((user) => user.id === directRepeatReward.userId) : null;
-    const poolReceiver = poolRepeatReward ? (data.users || []).find((user) => user.id === poolRepeatReward.userId) : null;
-    summary.push(`买家奖励池资格不变，当前 ${buyer.repeatCredits || 0}`);
-    if (buyer.repeatCooldownUntil) summary.push(`复购冷却至 ${new Date(buyer.repeatCooldownUntil).toLocaleString("zh-CN")}`);
-    summary.push(directRepeatReward
-      ? `下线复购奖励：${directReceiver?.name || directRepeatReward.userId} 获得 ${money(directRepeatReward.amount)}`
-      : "下线复购奖励：未找到现有奖励记录");
-    summary.push(poolRepeatReward
-      ? `奖励池奖励：${poolReceiver?.name || poolRepeatReward.userId} 获得 ${money(poolRepeatReward.amount)}，扣 1 个资格`
-      : "奖励池奖励：未找到现有奖励记录");
-  } else {
-    const firstReward = rewards.find((reward) => reward.type === "first");
-    const receiver = firstReward ? (data.users || []).find((user) => user.id === firstReward.userId) : null;
-    summary.push(firstReward
-      ? `推荐奖励：${receiver?.name || firstReward.userId} 获得 ${money(firstReward.amount)}`
-      : "推荐奖励：未找到现有奖励记录");
-  }
-  return summary.join(" / ");
+  savePendingSaleUpdates();
+  updateCloudStatus("订单更新待同步");
 }
 
-function backfillOrderConfirmSummaries(data = state) {
-  if (!data) return 0;
-  let count = 0;
-  (data.orders || []).forEach((order) => {
-    if (order.status !== "paid" || order.confirmSummary) return;
-    const summary = orderConfirmSummaryFromRecords(data, order);
-    if (!summary) return;
-    order.confirmSummary = summary;
-    count += 1;
+function markSaleUpdateSynced(saleId, patch = {}) {
+  pendingSaleUpdates = pendingSaleUpdates.filter((sale) => sale.id !== saleId);
+  savePendingSaleUpdates();
+  sales = sales.map((sale) => sale.id === saleId ? { ...sale, syncStatus: "synced", ...patch } : sale);
+  save(STORAGE_KEYS.sales, sales);
+}
+
+function applyVoidSyncResult(saleId, result) {
+  const reviewRequired = result?.stockStatus === "review-required";
+  markSaleUpdateSynced(saleId, {
+    syncStatus: reviewRequired ? "review-required" : "synced",
+    ...(result && Object.hasOwn(result, "inventoryReview")
+      ? { inventoryReview: result.inventoryReview }
+      : {})
   });
-  return count;
+  updateCloudStatus(reviewRequired ? "订单已作废，退款库存待复核" : "退款与库存已同步", !reviewRequired);
+  return reviewRequired;
 }
 
-function money(value) {
-  return `RM${Number(value || 0).toLocaleString("en-MY", { maximumFractionDigits: 2 })}`;
+function savePendingProducts() {
+  save(STORAGE_KEYS.pendingProducts, pendingProducts);
 }
 
-function packageUnits(amount) {
-  return Number(amount || 0) / PACKAGE_UNIT_AMOUNT;
+function queuePendingProduct(product) {
+  pendingProducts = [
+    product,
+    ...pendingProducts.filter((item) => item.id !== product.id)
+  ];
+  savePendingProducts();
+  updateCloudStatus("库存待同步");
 }
 
-function isValidPackageAmount(amount) {
-  const value = Number(amount || 0);
-  return value > 0 && value % PACKAGE_UNIT_AMOUNT === 0;
+function markProductSynced(productId) {
+  pendingProducts = pendingProducts.filter((product) => product.id !== productId);
+  savePendingProducts();
 }
 
-function packageUnitLabel(amount) {
-  const units = packageUnits(amount);
-  return isValidPackageAmount(amount)
-    ? `${PACKAGE_UNIT_AMOUNT} × ${units} 单位`
-    : `需为 RM${PACKAGE_UNIT_AMOUNT} 的整数倍`;
+function savePendingStockAdjustments() {
+  save(STORAGE_KEYS.pendingStockAdjustments, pendingStockAdjustments);
 }
 
-function points(value) {
-  return Number(value || 0).toLocaleString("zh-CN");
+function queuePendingStockAdjustment(adjustment) {
+  pendingStockAdjustments = [
+    adjustment,
+    ...pendingStockAdjustments.filter((item) => item.id !== adjustment.id)
+  ];
+  savePendingStockAdjustments();
+  updateCloudStatus("库存调整待同步");
 }
 
-async function copyText(text) {
-  const value = String(text || "");
-  if (!value) throw new Error("empty-copy-text");
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(value);
-      return;
-    } catch (error) {
-      console.warn("Clipboard API failed, trying fallback.", error);
-    }
-  }
-  const textarea = document.createElement("textarea");
-  textarea.value = value;
-  textarea.setAttribute("readonly", "");
-  textarea.style.position = "fixed";
-  textarea.style.left = "-9999px";
-  textarea.style.top = "0";
-  document.body.appendChild(textarea);
-  textarea.focus();
-  textarea.select();
-  const copied = document.execCommand("copy");
-  textarea.remove();
-  if (!copied) throw new Error("copy-command-failed");
+function markStockAdjustmentSynced(adjustmentId) {
+  pendingStockAdjustments = pendingStockAdjustments.filter((item) => item.id !== adjustmentId);
+  savePendingStockAdjustments();
 }
 
-function inviteMessage(user = currentUser()) {
-  const inviteLink = document.querySelector("#inviteLink")?.textContent || `${location.origin}${location.pathname}?ref=${user.inviteCode}`;
-  return [
-    `${user.name || "朋友"} 邀请你加入简单的联盟营销系统。`,
-    `推荐码：${user.inviteCode}`,
-    `注册链接：${inviteLink}`,
-    "注册后输入推荐码绑定推荐人，再申请充值配套。",
-  ].join("\n");
+function recordStockAdjustment(adjustment) {
+  stockAdjustments = [
+    adjustment,
+    ...stockAdjustments.filter((item) => item.id !== adjustment.id)
+  ].slice(0, 500);
+  save(STORAGE_KEYS.stockAdjustments, stockAdjustments);
 }
 
-function addDays(iso, days) {
-  const date = new Date(iso);
-  date.setDate(date.getDate() + days);
-  return date.toISOString();
+function savePendingAuditLogs() {
+  save(STORAGE_KEYS.pendingAuditLogs, pendingAuditLogs);
 }
 
-function addHours(iso, hours) {
-  const date = new Date(iso);
-  date.setHours(date.getHours() + Number(hours || 0));
-  return date.toISOString();
-}
-
-function planRepeatCooldownHours(plan) {
-  if (TEST_INSTANT_MODE) return 0;
-  return Number(plan.repeatCooldownHours ?? 24);
-}
-
-function planDirectRepeatRate(plan) {
-  return Number(plan?.directRepeatRate ?? 10);
-}
-
-function planPoolRepeatRate(plan) {
-  return Number(plan?.repeatRate ?? 10);
-}
-
-function repeatCooldownRemaining(user) {
-  if (!user.repeatCooldownUntil) return 0;
-  return Math.max(new Date(user.repeatCooldownUntil).getTime() - Date.now(), 0);
-}
-
-function repeatCooldownText(user) {
-  const remaining = repeatCooldownRemaining(user);
-  if (!remaining) return "";
-  const minutes = Math.ceil(remaining / 60000);
-  const hours = Math.floor(minutes / 60);
-  const restMinutes = minutes % 60;
-  return hours ? `${hours}小时${restMinutes}分钟` : `${restMinutes}分钟`;
-}
-
-function findUser(userId) {
-  return state.users.find((item) => item.id === userId);
-}
-
-function findPlan(planId) {
-  return state.plans.find((item) => item.id === planId);
-}
-
-function planSnapshot(plan) {
+function normalizePendingManagement(value = {}) {
   return {
-    id: plan.id,
-    name: plan.name,
-    amount: Number(plan.amount || 0),
-    unitAmount: PACKAGE_UNIT_AMOUNT,
-    unitCount: packageUnits(plan.amount),
-    points: Number(plan.points || 0),
-    slots: Number(plan.slots || 0),
-    repeatCredits: planRepeatCredits(plan),
-    repeatCooldownHours: planRepeatCooldownHours(plan),
-    validDays: Number(plan.validDays || 0),
-    firstRate: Number(plan.firstRate || 0),
-    directRepeatRate: planDirectRepeatRate(plan),
-    repeatRate: planPoolRepeatRate(plan),
+    branches: Array.isArray(value.branches) ? value.branches : [],
+    users: Array.isArray(value.users) ? value.users : [],
+    settings: value.settings && typeof value.settings === "object" ? value.settings : null
   };
 }
 
-function orderPlan(order, data = state) {
-  const currentPlan = (data.plans || []).find((item) => item.id === order.planId);
-  const snapshot = order.planSnapshot || {};
-  if (!currentPlan && !Object.keys(snapshot).length) return null;
-  return {
-    ...(currentPlan || {}),
-    ...snapshot,
-    id: order.planId,
-    name: snapshot.name || currentPlan?.name || "已删除配套",
-  };
+function savePendingManagement() {
+  save(STORAGE_KEYS.pendingManagement, pendingManagement);
 }
 
-function backfillOrderPlanSnapshots(data = state) {
-  if (!data) return 0;
-  let count = 0;
-  (data.orders || []).forEach((order) => {
-    if (order.planSnapshot) return;
-    const plan = (data.plans || []).find((item) => item.id === order.planId);
-    if (!plan) return;
-    order.planSnapshot = planSnapshot(plan);
-    count += 1;
-  });
-  return count;
+function getPendingManagementCount() {
+  return pendingManagement.branches.length
+    + pendingManagement.users.length
+    + (pendingManagement.settings ? 1 : 0);
 }
 
-function looksLikeAffiliatePlan(plan) {
-  return Boolean(plan)
-    && Number(plan.amount || 0) > 0
-    && Number(plan.points || 0) > 0
-    && Number(plan.validDays || 0) > 0
-    && plan.firstRate !== undefined;
-}
-
-function normalizeAffiliatePlans(plans = []) {
-  const normalized = (plans || []).filter(looksLikeAffiliatePlan).map((plan) => ({
-    ...plan,
-    points: Number(plan.points || 0),
-    repeatCredits: planRepeatCredits(plan),
-    repeatCooldownHours: planRepeatCooldownHours(plan),
-    firstRate: Number(plan.firstRate || 0),
-    directRepeatRate: planDirectRepeatRate(plan),
-    repeatRate: planPoolRepeatRate(plan),
-  }));
-  if (normalized.length) return normalized;
-  return defaultAffiliatePlans();
-}
-
-function prepareLoadedState(data) {
-  const originalPlans = data.plans || [];
-  data.plans = normalizeAffiliatePlans(originalPlans);
-  if (originalPlans.length && !originalPlans.some(looksLikeAffiliatePlan)) {
-    data.planRulesResetAt = new Date().toISOString();
-    data.planRulesResetReason = "检测到配套参数不完整，已恢复默认充值配套";
+function queuePendingManagement(type, value) {
+  if (type === "branch") {
+    pendingManagement.branches = [
+      value,
+      ...pendingManagement.branches.filter((item) => item.id !== value.id)
+    ];
+  } else if (type === "user") {
+    pendingManagement.users = [
+      value,
+      ...pendingManagement.users.filter((item) => normalizeEmail(item.email) !== normalizeEmail(value.email))
+    ];
+  } else if (type === "settings") {
+    pendingManagement.settings = value;
   }
-  data = filterBusinessRecordsAfterClear(data);
-  purgeLegacyDemoUsers(data);
-  cleanupAutoRepeatCreditGrants(data);
-  syncReferralPoolCredits(data);
-  capRepeatPoolCredits(data);
-  backfillOrderPlanSnapshots(data);
-  return data;
+  savePendingManagement();
+  updateCloudStatus("后台资料待同步");
 }
 
-function isLegacyDemoUser(user) {
-  return LEGACY_DEMO_INVITE_CODES.has(normalizeInviteCode(user.inviteCode))
-    || LEGACY_DEMO_ACCOUNTS.has(String(user.account || "").toLowerCase())
-    || (user.name === "李明" && normalizeInviteCode(user.inviteCode) === "LM1001")
-    || (user.name === "王芳" && normalizeInviteCode(user.inviteCode) === "WF1002")
-    || (user.name === "陈杰" && normalizeInviteCode(user.inviteCode) === "CJ1003");
+function markManagementSynced(type, id = "") {
+  if (type === "branch") {
+    pendingManagement.branches = pendingManagement.branches.filter((item) => item.id !== id);
+  } else if (type === "user") {
+    pendingManagement.users = pendingManagement.users.filter((item) => normalizeEmail(item.email) !== normalizeEmail(id));
+  } else if (type === "settings") {
+    pendingManagement.settings = null;
+  }
+  savePendingManagement();
 }
 
-function purgeLegacyDemoUsers(data) {
-  const demoIds = new Set((data.users || []).filter(isLegacyDemoUser).map((user) => user.id));
-  if (!demoIds.size) return;
-  if (demoIds.has(data.currentUserId)) data.currentUserId = "";
-  data.users = (data.users || []).filter((user) => !demoIds.has(user.id));
-  data.orders = (data.orders || []).filter((order) => !demoIds.has(order.userId));
-  data.rewards = (data.rewards || []).filter((reward) =>
-    !demoIds.has(reward.userId) && !demoIds.has(reward.sourceUserId)
-  );
-  data.withdraws = (data.withdraws || []).filter((withdraw) => !demoIds.has(withdraw.userId));
-  data.pointLogs = (data.pointLogs || []).filter((log) => !demoIds.has(log.userId));
-  data.repeatCreditLogs = (data.repeatCreditLogs || []).filter((log) => !demoIds.has(log.userId));
-  data.referrals = (data.referrals || []).filter((referral) =>
-    !demoIds.has(referral.referrerId) && !demoIds.has(referral.inviteeId)
-  );
-  data.legacyDemoUsersPurgedAt = data.legacyDemoUsersPurgedAt || new Date().toISOString();
+function getCurrentActor() {
+  return currentCloudUser || getActiveCashier() || { email: adminEmail || operatorEmail || "", name: "本机用户" };
 }
 
-function cleanupAutoRepeatCreditGrants(data) {
-  const logs = Array.isArray(data.repeatCreditLogs) ? data.repeatCreditLogs : [];
-  const obsoleteLogs = logs.filter((log) =>
-    log.reason === "earned"
-    && Number(log.change || 0) > 0
-    && String(log.note || "").toLowerCase().includes("repeat purchase")
-  );
-  if (!obsoleteLogs.length) return;
-  obsoleteLogs.forEach((log) => {
-    const user = (data.users || []).find((item) => item.id === log.userId);
-    if (!user) return;
-    user.repeatCredits = Math.max(Number(user.repeatCredits || 0) - Number(log.change || 0), 0);
-    if (user.repeatCredits <= 0) user.repeatCreditQueueAt = "";
-  });
-  const obsoleteIds = new Set(obsoleteLogs.map((log) => log.id));
-  data.repeatCreditLogs = logs.filter((log) => !obsoleteIds.has(log.id));
-  data.autoRepeatCreditCleanupAt = data.autoRepeatCreditCleanupAt || new Date().toISOString();
+function queuePendingAuditLog(log) {
+  pendingAuditLogs = [
+    log,
+    ...pendingAuditLogs.filter((item) => item.id !== log.id)
+  ];
+  savePendingAuditLogs();
 }
 
-function syncReferralPoolCredits(data) {
-  const referrals = referralDocsForState(data)
-    .filter((referral) => referral.referrerId && referral.inviteeId)
-    .sort((a, b) => new Date(a.createdAt || "9999-12-31") - new Date(b.createdAt || "9999-12-31"));
-  referrals.forEach((referral) => {
-    grantReferralPoolCredit(data, referral.referrerId, referral.inviteeId, referral.createdAt || new Date().toISOString());
-  });
+function markAuditLogSynced(logId) {
+  pendingAuditLogs = pendingAuditLogs.filter((item) => item.id !== logId);
+  savePendingAuditLogs();
 }
 
-function capRepeatPoolCredits(data) {
-  (data.users || []).forEach((user) => {
-    user.repeatCredits = Math.max(Math.min(Number(user.repeatCredits || 0), MAX_REPEAT_POOL_CREDITS), 0);
-    if (user.repeatCredits <= 0) user.repeatCreditQueueAt = "";
-  });
-}
-
-function orderPlanSummary(plan) {
-  if (!plan) return "-";
-  return [
-    `积分 ${points(plan.points)}`,
-    `单位 ${packageUnitLabel(plan.amount)}`,
-    `名额 ${Number(plan.slots || 0)}`,
-    `有效 ${Number(plan.validDays || 0)} 天`,
-    `推荐奖励 ${Number(plan.firstRate || 0)}%`,
-    `下线复购 ${planDirectRepeatRate(plan)}%`,
-    `奖励池 ${planPoolRepeatRate(plan)}%`,
-    `奖励池资格每推荐 1 人解锁，上限 ${MAX_REPEAT_POOL_CREDITS} 个`,
-    `冷却 ${planRepeatCooldownHours(plan)} 小时`,
-  ].join(" / ");
-}
-
-function guestUser() {
-  return {
-    id: "__guest__",
-    name: "未登录用户",
-    account: "",
-    phone: "",
-    withdrawMethod: "",
-    withdrawAccount: "",
-    inviteCode: "",
-    referrerId: "",
-    level: "访客",
-    points: 0,
-    slots: 0,
-    repeatCredits: 0,
-    repeatCreditQueueAt: "",
-    repeatCooldownUntil: "",
-    packageUntil: "",
-    frozen: false,
+async function writeAuditLog(action, detail = {}) {
+  const log = {
+    id: `AUD${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    action,
+    detail,
+    actor: getCurrentActor(),
+    branchId: currentBranchId,
+    branchName: getBranchName(currentBranchId),
+    createdAt: new Date().toISOString()
   };
-}
-
-function currentUser() {
-  if (!firebaseUser) return guestUser();
-  return findUser(firebaseUser.uid)
-    || state.users.find((user) => user.firebaseUid === firebaseUser.uid || user.account === firebaseUser.email)
-    || findUser(state.currentUserId)
-    || guestUser();
+  auditLogs = [
+    log,
+    ...auditLogs.filter((item) => item.id !== log.id)
+  ].slice(0, 500);
+  save(STORAGE_KEYS.auditLogs, auditLogs);
+  if (!hasCloud() || !navigator.onLine) {
+    queuePendingAuditLog(log);
+    return false;
+  }
+  try {
+    await window.cloudPOS.saveAuditLog(log);
+    markAuditLogSynced(log.id);
+    return true;
+  } catch (error) {
+    queuePendingAuditLog(log);
+    console.warn("Audit log sync failed", error);
+    return false;
+  }
 }
 
 function isAdmin() {
-  return Boolean(firebaseUser?.email && ADMIN_EMAILS.includes(firebaseUser.email));
+  return Boolean(adminEmail);
 }
 
-function directReferralCount(userId, data = state) {
-  const referralIds = new Set((data.referrals || [])
-    .filter((referral) => referral.referrerId === userId)
-    .map((referral) => referral.inviteeId));
-  data.users
-    .filter((user) => user.referrerId === userId)
-    .forEach((user) => referralIds.add(user.id));
-  return referralIds.size;
+function canUseOperations() {
+  return isAdmin() || Boolean(getOperator());
 }
 
-function referralPoolCreditSource(referrerId, inviteeId) {
-  return `referral:${referrerId}_${inviteeId}`;
+function canAccessView(view = currentView) {
+  if (view === "order") return true;
+  if (view === "inventory" || view === "transactions") return canUseOperations();
+  return isAdmin();
 }
 
-function referralPoolUnlockCount(userId, data = state) {
-  return (data.repeatCreditLogs || [])
-    .filter((log) => log.userId === userId && log.reason === "referral" && Number(log.change || 0) > 0)
-    .length;
+function getOperationalBranchId() {
+  return isAdmin() ? currentBranchId : getOperator()?.branchId || currentBranchId;
 }
 
-function grantReferralPoolCredit(data, referrerId, inviteeId, createdAt = new Date().toISOString()) {
-  const referrer = (data.users || []).find((user) => user.id === referrerId);
-  const invitee = (data.users || []).find((user) => user.id === inviteeId);
-  if (!referrer || referrer.id === inviteeId) return false;
-  const source = referralPoolCreditSource(referrerId, inviteeId);
-  const alreadyGranted = (data.repeatCreditLogs || []).some((log) =>
-    log.userId === referrerId && log.reason === "referral" && log.source === source
+function canManageBranch(branchId) {
+  if (isAdmin()) return true;
+  const operator = getOperator();
+  return Boolean(operator && operator.branchId === branchId);
+}
+
+function canVoidSale(sale) {
+  if (!sale || isSaleVoided(sale)) return false;
+  return canManageBranch(sale.branchId || "hq");
+}
+
+function normalizeEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+async function sha256Hex(value) {
+  const bytes = new TextEncoder().encode(value);
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function isConfiguredAdminEmail(email) {
+  return sha256Hex(normalizeEmail(email)).then((hash) => hash === ADMIN_EMAIL_HASH);
+}
+
+function createPasswordSalt() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+async function hashOfflinePassword(email, password, salt, iterations = OFFLINE_PASSWORD_ITERATIONS) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
   );
-  if (alreadyGranted) return false;
-  if (referralPoolUnlockCount(referrerId, data) >= MAX_REPEAT_POOL_CREDITS) return false;
-  const before = Number(referrer.repeatCredits || 0);
-  if (before >= MAX_REPEAT_POOL_CREDITS) return false;
-  referrer.repeatCredits = Math.min(before + 1, MAX_REPEAT_POOL_CREDITS);
-  if (referrer.repeatCredits > 0 && before <= 0) {
-    referrer.repeatCreditQueueAt = createdAt;
+  const bits = await crypto.subtle.deriveBits({
+    name: "PBKDF2",
+    hash: "SHA-256",
+    salt: encoder.encode(`${salt}:${normalizeEmail(email)}`),
+    iterations: Math.max(100000, Number(iterations || OFFLINE_PASSWORD_ITERATIONS))
+  }, key, 256);
+  return [...new Uint8Array(bits)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function verifyOfflinePassword(user, password) {
+  if (!user?.offlinePasswordHash || !user?.offlinePasswordSalt) return false;
+  const hash = user.offlinePasswordAlgorithm === "PBKDF2-SHA256"
+    ? await hashOfflinePassword(
+        user.email,
+        password,
+        user.offlinePasswordSalt,
+        user.offlinePasswordIterations
+      )
+    : await sha256Hex(`${user.offlinePasswordSalt}:${normalizeEmail(user.email)}:${password}`);
+  return hash === user.offlinePasswordHash;
+}
+
+function ensureAdminAuthorized(email) {
+  const normalized = normalizeEmail(email);
+  if (!authorizedUsers.some((user) => normalizeEmail(user.email) === normalized)) {
+    authorizedUsers.unshift({
+      id: "admin-user",
+      name: "管理员",
+      email: normalized,
+      branchId: "hq",
+      role: "管理员",
+      active: true
+    });
+    save(STORAGE_KEYS.authorizedUsers, authorizedUsers);
   }
-  addRepeatCreditLog(
-    data,
-    referrer.id,
-    referrer.repeatCredits - before,
-    referrer.repeatCredits,
-    "referral",
-    source,
-    `直接推荐解锁：${invitee?.name || invitee?.account || invitee?.inviteCode || inviteeId}`,
-    createdAt
+}
+
+function getBranchName(branchId) {
+  const branch = branches.find((item) => item.id === branchId || normalizeEmail(item.name) === normalizeEmail(branchId));
+  return branch?.name || "未知分行";
+}
+
+function resolveBranchId(value) {
+  const normalized = normalizeEmail(value);
+  if (!normalized) return "hq";
+  const branch = branches.find((item) => {
+    return normalizeEmail(item.id) === normalized
+      || normalizeEmail(item.name) === normalized
+      || createSlug(item.name) === normalized;
+  });
+  return branch?.id || "";
+}
+
+function normalizeBranchStock(branchStock = {}) {
+  const nextStock = Object.fromEntries(branches.map((branch) => [branch.id, 0]));
+  for (const [rawBranchId, rawStock] of Object.entries(branchStock || {})) {
+    const branchId = resolveBranchId(rawBranchId);
+    if (!branchId || !Object.hasOwn(nextStock, branchId)) continue;
+    nextStock[branchId] = Number(nextStock[branchId] || 0) + Number(rawStock || 0);
+  }
+  return nextStock;
+}
+
+function normalizeProductBranches(product) {
+  return {
+    ...product,
+    branchStock: normalizeBranchStock(product.branchStock || (product.stock ? { hq: product.stock } : {}))
+  };
+}
+
+function syncCurrentBranchFromSelect() {
+  enforceBranchAccess();
+  const selectedBranchId = resolveBranchId(els.branchSelect.value);
+  const fallbackBranchId = resolveBranchId(currentBranchId) || "hq";
+  if (!isBranchLockedToOperator()) {
+    currentBranchId = selectedBranchId || fallbackBranchId;
+  }
+  if (!branches.some((branch) => branch.id === currentBranchId)) currentBranchId = "hq";
+  localStorage.setItem(STORAGE_KEYS.branchId, currentBranchId);
+  if (els.branchSelect.value !== currentBranchId) els.branchSelect.value = currentBranchId;
+  return currentBranchId;
+}
+
+function getBranchStock(product, branchId = currentBranchId) {
+  if (product.branchStock && Number.isFinite(Number(product.branchStock[branchId]))) {
+    return Number(product.branchStock[branchId]);
+  }
+  if (branchId === "hq") return Number(product.stock || 0);
+  return 0;
+}
+
+function setBranchStock(product, branchId, stock) {
+  return {
+    ...product,
+    stock: branchId === "hq" ? stock : product.stock,
+    branchStock: {
+      ...(product.branchStock || {}),
+      [branchId]: stock
+    }
+  };
+}
+
+function createBranchStock(initialStock = 0, selectedBranchId = currentBranchId) {
+  return Object.fromEntries(
+    branches.map((branch) => [branch.id, branch.id === selectedBranchId ? Number(initialStock || 0) : 0])
   );
+}
+
+function getTotalStock() {
+  return products.reduce((sum, product) => {
+    const branchStock = product.branchStock
+      ? Object.values(product.branchStock).reduce((total, value) => total + Number(value || 0), 0)
+      : Number(product.stock || 0);
+    return sum + branchStock;
+  }, 0);
+}
+
+function migrateProductsForBranches() {
+  products = products.filter((product) => !isLegacyDemoProduct(product));
+  pendingProducts = pendingProducts.filter((product) => !isLegacyDemoProduct(product));
+  cart = cart.filter((item) => !isLegacyDemoProduct(item));
+  savePendingProducts();
+  const affiliateSample = sampleProducts.find((product) => product.id === "affiliate-plan-rm180");
+  if (affiliateSample && !products.some((product) => product.id === affiliateSample.id)) {
+    const product = normalizeProductBranches(structuredClone(affiliateSample));
+    products.push(product);
+    pendingProducts = [
+      product,
+      ...pendingProducts.filter((item) => item.id !== product.id)
+    ];
+    savePendingProducts();
+  }
+  products = products.map((product) => {
+    return normalizeProductBranches(product);
+  });
+  save(STORAGE_KEYS.products, products);
+}
+
+function isLegacyDemoProduct(product = {}) {
+  return LEGACY_DEMO_PRODUCT_BARCODES.has(String(product.barcode || "").trim().toUpperCase());
+}
+
+function cloneSampleProductsForBranches() {
+  return structuredClone(sampleProducts).map((product) => ({
+    ...product,
+    branchStock: Object.fromEntries(
+      branches.map((branch) => [branch.id, Number(product.branchStock?.[branch.id] || 0)])
+    )
+  }));
+}
+
+function migrateSaleExternalReferences() {
+  sales = sales.map(normalizeSaleExternalReferences);
+  pendingSales = pendingSales.map(normalizeSaleExternalReferences);
+  pendingSaleUpdates = pendingSaleUpdates.map(normalizeSaleExternalReferences);
+  save(STORAGE_KEYS.sales, sales);
+  savePendingSales();
+  savePendingSaleUpdates();
+}
+
+function migrateManagementData() {
+  appSettings = { ...defaultSettings, ...appSettings };
+  let settingsMigrated = false;
+  if (appSettings.businessName === "简单草本减脂计划") {
+    appSettings.businessName = "简单POS";
+    settingsMigrated = true;
+  }
+  if (appSettings.defaultServiceName === "简单草本减脂计划第一阶段") {
+    appSettings.defaultServiceName = "一般销售";
+    appSettings.serviceDays = 1;
+    settingsMigrated = true;
+  }
+  if (settingsMigrated) {
+    pendingManagement.settings = { ...appSettings };
+    savePendingManagement();
+  }
+  if (!branches.length) branches = structuredClone(defaultBranches);
+  if (!authorizedUsers.length) authorizedUsers = structuredClone(defaultAuthorizedUsers);
+  currentBranchId = resolveBranchId(currentBranchId) || currentBranchId;
+  if (!branches.some((branch) => branch.id === currentBranchId)) {
+    currentBranchId = "hq";
+    localStorage.setItem(STORAGE_KEYS.branchId, currentBranchId);
+  }
+  save(STORAGE_KEYS.branches, branches);
+  save(STORAGE_KEYS.authorizedUsers, authorizedUsers);
+  save(STORAGE_KEYS.settings, appSettings);
+  migrateSaleExternalReferences();
+}
+
+function renderBranchSelect() {
+  enforceBranchAccess();
+  if (!branches.some((branch) => branch.id === currentBranchId)) {
+    currentBranchId = resolveBranchId(currentBranchId) || "hq";
+    localStorage.setItem(STORAGE_KEYS.branchId, currentBranchId);
+    cart = [];
+  }
+  els.branchSelect.innerHTML = "";
+  for (const branch of branches) {
+    const option = document.createElement("option");
+    option.value = branch.id;
+    option.textContent = branch.name;
+    els.branchSelect.append(option);
+  }
+  els.branchSelect.value = currentBranchId;
+  els.branchStatus.textContent = getBranchName(els.branchSelect.value);
+  els.branchSelect.disabled = isBranchLockedToOperator() || hasOpenShift();
+  els.branchSelect.title = hasOpenShift()
+    ? `当前班次属于 ${getCurrentShiftLabel()}，结班后才可切换分行。`
+    : isBranchLockedToOperator()
+      ? "收银员只能使用授权分行；管理员登录后可切换全部分行。"
+      : "管理员可切换总店与所有分行。";
+}
+
+function renderAdminAccess() {
+  const adminAllowed = isAdmin();
+  const viewAllowed = canAccessView();
+  const operationalAllowed = !adminAllowed && canUseOperations() && (currentView === "inventory" || currentView === "transactions");
+  els.adminStatus.textContent = adminAllowed ? "后台管理员" : operationalAllowed ? "员工营运权限" : "后台未登录";
+  els.adminStatus.style.color = adminAllowed || operationalAllowed ? "#0f766e" : "#66756f";
+  els.adminLoginForm.classList.toggle("hidden", adminAllowed || operationalAllowed);
+  els.adminLogoutBtn.classList.toggle("hidden", !adminAllowed);
+  els.adminContent.classList.toggle("hidden", !viewAllowed);
+  if (adminAllowed) {
+    els.adminLoginMessage.classList.remove("error");
+    els.adminLoginMessage.textContent = isCloudAdmin()
+      ? "Google 管理员已授权"
+      : "本机管理员已授权";
+  } else if (operationalAllowed) {
+    els.adminLoginMessage.classList.remove("error");
+    els.adminLoginMessage.textContent = "员工可处理本分行库存和退款/作废。";
+  }
+}
+
+function getOperator() {
+  const email = normalizeEmail(operatorEmail);
+  return authorizedUsers.find((user) => normalizeEmail(user.email) === email && user.active !== false) || null;
+}
+
+function getAdminOperator() {
+  const email = normalizeEmail(adminEmail || currentCloudUser?.email);
+  if (!email || !isAdmin()) return null;
+  const savedAdmin = authorizedUsers.find((user) => normalizeEmail(user.email) === email && user.active !== false);
+  return {
+    id: savedAdmin?.id || "admin-user",
+    name: savedAdmin?.name || "管理员",
+    email,
+    branchId: currentBranchId,
+    role: "admin",
+    active: true
+  };
+}
+
+function getActiveCashier() {
+  return getAdminOperator() || getOperator();
+}
+
+function hasOpenShift() {
+  return Boolean(currentShift && !currentShift.closedAt);
+}
+
+function isShiftIdentity(email, branchId) {
+  return hasOpenShift()
+    && normalizeEmail(currentShift.operatorEmail) === normalizeEmail(email)
+    && currentShift.branchId === branchId;
+}
+
+function isCurrentShiftOwner() {
+  const operator = getActiveCashier();
+  return Boolean(operator && isShiftIdentity(operator.email, currentBranchId));
+}
+
+function canManageCurrentShift() {
+  return hasOpenShift() && (isAdmin() || isCurrentShiftOwner());
+}
+
+function getCurrentShiftLabel() {
+  if (!hasOpenShift()) return "";
+  return `${currentShift.operatorName || currentShift.operatorEmail || "原操作员"} · ${currentShift.branchName || getBranchName(currentShift.branchId)}`;
+}
+
+function isOperatorAllowedForCurrentBranch() {
+  if (isAdmin()) return true;
+  const operator = getOperator();
+  return Boolean(operator && operator.branchId === currentBranchId);
+}
+
+function isBranchLockedToOperator() {
+  return Boolean(getOperator() && !isAdmin());
+}
+
+function enforceBranchAccess() {
+  if (isAdmin()) return;
+  const operator = getOperator();
+  if (operator && currentBranchId !== operator.branchId) {
+    currentBranchId = operator.branchId;
+    localStorage.setItem(STORAGE_KEYS.branchId, currentBranchId);
+    cart = [];
+  }
+}
+
+function saveCurrentShift() {
+  return save(STORAGE_KEYS.currentShift, currentShift);
+}
+
+function saveShifts() {
+  return save(STORAGE_KEYS.shifts, shifts);
+}
+
+function ensureCurrentShift(openingCash = Number(els.shiftOpeningCashInput?.value || 0)) {
+  const operator = getActiveCashier();
+  if (!operator) return false;
+  if (hasOpenShift()) {
+    if (isShiftIdentity(operator.email, currentBranchId)) return true;
+    alert(`当前班次属于 ${getCurrentShiftLabel()}。请先由原员工恢复班次，或由管理员完成交班。`);
+    return false;
+  }
+  const nextShift = {
+    id: `SHIFT${Date.now()}`,
+    openedAt: new Date().toISOString(),
+    branchId: currentBranchId,
+    branchName: getBranchName(currentBranchId),
+    operatorName: operator.name,
+    operatorEmail: operator.email,
+    openingCash: Math.max(0, Number(openingCash || 0)),
+    cashIn: 0,
+    cashOut: 0,
+    cashMovements: []
+  };
+  if (!save(STORAGE_KEYS.currentShift, nextShift)) {
+    alert("班次尚未开始：本机无法安全保存班次资料，请处理浏览器储存空间后重试。");
+    return false;
+  }
+  currentShift = nextShift;
   return true;
 }
 
-function isActivePackage(user) {
-  return Boolean(user.packageUntil) && new Date(user.packageUntil) > new Date() && !user.frozen;
-}
-
-function packageStatus(user) {
-  if (user.frozen) return ["frozen", "已冻结"];
-  if (isActivePackage(user)) return ["active", `有效至 ${new Date(user.packageUntil).toLocaleDateString("zh-CN")}`];
-  return ["expired", "未开通/已过期"];
-}
-
-function confirmedAvailable(userId) {
-  return withdrawBreakdown(userId).available;
-}
-
-function withdrawBreakdown(userId) {
-  const totals = {
-    first: 0,
-    repeatReleased: 0,
-    pendingRelease: 0,
-    requested: 0,
-    available: 0,
-  };
-  state.rewards
-    .filter((reward) => reward.userId === userId && ["confirmed", "releasing"].includes(reward.status))
-    .forEach((reward) => {
-      if (reward.type === "first") {
-        totals.first += Number(reward.amount || 0);
-        return;
-      }
-      if (Array.isArray(reward.releasePlan)) {
-        totals.repeatReleased += Number(reward.releasedAmount || 0);
-        totals.pendingRelease += Math.max(Number(reward.amount || 0) - Number(reward.releasedAmount || 0), 0);
-        return;
-      }
-      totals.repeatReleased += Number(reward.amount || 0);
-    });
-  totals.requested = state.withdraws
-    .filter((item) => item.userId === userId && item.status !== "rejected")
-    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  totals.available = Math.max(totals.first + totals.repeatReleased - totals.requested, 0);
-  return totals;
-}
-
-function withdrawEligibility(user) {
-  const available = withdrawBreakdown(user.id).available;
-  const reasons = [];
-  const missingFields = profileMissingFields(user);
-  if (user.frozen) reasons.push("账户已冻结");
-  if (!isActivePackage(user)) reasons.push("需要有效配套");
-  if (missingFields.length) reasons.push(`请补完整资料：${missingFields.join("、")}`);
-  if (available < MIN_WITHDRAW_AMOUNT) reasons.push(`可提现余额需满 ${money(MIN_WITHDRAW_AMOUNT)}`);
-  const cooldown = withdrawCooldownRemaining(user.id);
-  if (cooldown > 0) reasons.push(`提现冷却中，还需 ${durationText(cooldown)}`);
-  return {
-    available,
-    eligible: reasons.length === 0,
-    reasons,
-  };
-}
-
-function withdrawRuleText(available) {
-  return `规则：充值积分不可提现；只有已确认/已释放的推荐奖励和复购奖励可提现。提现申请冷却 ${WITHDRAW_COOLDOWN_HOURS} 小时。当前可提现奖励 ${money(available)}。`;
-}
-
-function durationText(ms) {
-  const totalMinutes = Math.ceil(ms / 60000);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return `${hours ? `${hours} 小时` : ""}${minutes ? ` ${minutes} 分钟` : ""}`.trim() || "少于 1 分钟";
-}
-
-function withdrawCooldownRemaining(userId) {
-  const latest = (state.withdraws || [])
-    .filter((withdraw) => withdraw.userId === userId && withdraw.status !== "rejected")
-    .map((withdraw) => new Date(withdraw.createdAt).getTime())
-    .filter(Boolean)
-    .sort((a, b) => b - a)[0];
-  if (!latest) return 0;
-  return Math.max(latest + WITHDRAW_COOLDOWN_HOURS * 60 * 60 * 1000 - Date.now(), 0);
-}
-
-function duplicatePaymentRef(ref, userId = "") {
-  if (TEST_INSTANT_MODE) return null;
-  const normalized = String(ref || "").trim().toLowerCase();
-  if (!normalized) return null;
-  return (state.orders || []).find((order) =>
-    order.status !== "cancelled"
-    && recordIsAfterTestClear(order)
-    && String(order.paymentRef || "").trim().toLowerCase() === normalized
-    && (!userId || order.userId === userId)
-  );
-}
-
-function duplicateProofName(fileName, userId = "") {
-  if (TEST_INSTANT_MODE) return null;
-  const normalized = String(fileName || "").trim().toLowerCase();
-  if (!normalized) return null;
-  return (state.orders || []).find((order) =>
-    order.status !== "cancelled"
-    && recordIsAfterTestClear(order)
-    && String(order.proofName || "").trim().toLowerCase() === normalized
-    && (!userId || order.userId === userId)
-  );
-}
-
-function duplicateOrderRisks(data = state) {
-  if (TEST_INSTANT_MODE) return [];
-  const risks = [];
-  const seenRefs = new Map();
-  const seenProofs = new Map();
-  (data.orders || [])
-    .filter((order) => order.status !== "cancelled" && recordIsAfterTestClear(order, data))
-    .forEach((order) => {
-      const refKey = `${order.userId}:${String(order.paymentRef || "").trim().toLowerCase()}`;
-      if (order.paymentRef && seenRefs.has(refKey)) {
-        risks.push(`重复付款参考号：${order.paymentRef}（${seenRefs.get(refKey)} / ${order.id}）`);
-      } else if (order.paymentRef) {
-        seenRefs.set(refKey, order.id);
-      }
-
-      const proofKey = `${order.userId}:${String(order.proofName || "").trim().toLowerCase()}`;
-      if (order.proofName && seenProofs.has(proofKey)) {
-        risks.push(`重复付款凭证文件名：${order.proofName}（${seenProofs.get(proofKey)} / ${order.id}）`);
-      } else if (order.proofName) {
-        seenProofs.set(proofKey, order.id);
-      }
-    });
-  return risks;
-}
-
-function orderRiskIssues(data = state) {
-  return (data.orders || []).flatMap((order) =>
-    orderRiskLabels(order, data).map((issue) => `订单 ${order.id}：${issue}`)
-  );
-}
-
-function orderRiskLabels(order, data = state) {
-  const labels = [];
-  const paymentRef = String(order.paymentRef || "").trim().toLowerCase();
-  const proofName = String(order.proofName || "").trim().toLowerCase();
-  const currentPlan = (data.plans || []).find((item) => item.id === order.planId);
-  const lockedPlan = orderPlan(order, data);
-  if (!currentPlan && lockedPlan) {
-    labels.push("当前配套已删除，将按订单快照处理");
-  }
-  if (!isValidPackageAmount(order.amount)) {
-    labels.push(`订单金额必须是 RM${PACKAGE_UNIT_AMOUNT} 的整数倍`);
-  }
-  if (currentPlan && !isValidPackageAmount(currentPlan.amount)) {
-    labels.push(`当前配套金额不符合 RM${PACKAGE_UNIT_AMOUNT} 单位规则`);
-  }
-  if (lockedPlan && !isValidPackageAmount(lockedPlan.amount)) {
-    labels.push(`订单配套快照金额不符合 RM${PACKAGE_UNIT_AMOUNT} 单位规则`);
-  }
-  if (currentPlan && Number(order.amount || 0) !== Number(currentPlan.amount || 0)) {
-    labels.push(`订单金额 ${money(order.amount)} 与当前配套金额 ${money(currentPlan.amount)} 不一致`);
-  }
-  if (lockedPlan && Number(order.amount || 0) !== Number(lockedPlan.amount || 0)) {
-    labels.push(`订单金额 ${money(order.amount)} 与订单配套快照 ${money(lockedPlan.amount)} 不一致`);
-  }
-  if (!TEST_INSTANT_MODE && paymentRef) {
-      const duplicateRef = (data.orders || []).find((item) =>
-        item.id !== order.id
-        && item.userId === order.userId
-        && item.status !== "cancelled"
-        && recordIsAfterTestClear(item, data)
-        && String(item.paymentRef || "").trim().toLowerCase() === paymentRef
-    );
-    if (duplicateRef) labels.push(`重复付款参考号：${duplicateRef.id}`);
-  }
-  if (!TEST_INSTANT_MODE && proofName) {
-      const duplicateProof = (data.orders || []).find((item) =>
-        item.id !== order.id
-        && item.userId === order.userId
-        && item.status !== "cancelled"
-        && recordIsAfterTestClear(item, data)
-        && String(item.proofName || "").trim().toLowerCase() === proofName
-    );
-    if (duplicateProof) labels.push(`重复凭证名：${duplicateProof.id}`);
-  }
-  return labels;
-}
-
-function withdrawRiskLabels(withdraw, data = state) {
-  const labels = [];
-  const account = String(withdraw.account || "").trim().toLowerCase();
-  if (!account) return labels;
-  const otherUsers = new Set((data.withdraws || [])
-    .filter((item) =>
-      item.id !== withdraw.id
-      && item.userId !== withdraw.userId
-      && item.status !== "rejected"
-      && String(item.account || "").trim().toLowerCase() === account
-    )
-    .map((item) => item.userId));
-  if (otherUsers.size) labels.push(`收款账号被 ${otherUsers.size} 个其他用户使用`);
-  return labels;
-}
-
-function withdrawRiskIssues(data = state) {
-  return (data.withdraws || []).flatMap((withdraw) =>
-    withdrawRiskLabels(withdraw, data).map((issue) => `提现 ${withdraw.id}：${issue}`)
-  );
-}
-
-function sharedWithdrawAccountUsers(account, currentUserId = "", data = state) {
-  const normalized = String(account || "").trim().toLowerCase();
-  if (!normalized) return [];
-  const userIds = new Set();
-  (data.withdraws || []).forEach((withdraw) => {
-    if (withdraw.status === "rejected") return;
-    if (String(withdraw.account || "").trim().toLowerCase() === normalized) userIds.add(withdraw.userId);
+function getShiftAllSales(shift) {
+  if (!shift) return [];
+  const openedAt = new Date(shift.openedAt);
+  const closedAt = shift.closedAt ? new Date(shift.closedAt) : new Date();
+  return sales.filter((sale) => {
+    if (sale.shiftId) return sale.shiftId === shift.id;
+    const createdAt = new Date(sale.createdAt);
+    return (sale.branchId || "hq") === shift.branchId && createdAt >= openedAt && createdAt <= closedAt;
   });
-  (data.users || []).forEach((user) => {
-    if (String(user.withdrawAccount || "").trim().toLowerCase() === normalized) userIds.add(user.id);
-  });
-  return [...userIds]
-    .filter((userId) => userId && userId !== currentUserId)
-    .map((userId) => data.users.find((user) => user.id === userId))
-    .filter(Boolean);
 }
 
-function payoutRiskUsers(data = state) {
-  return (data.users || []).filter((user) => sharedWithdrawAccountUsers(user.withdrawAccount, user.id, data).length > 0);
+function getShiftSales(shift) {
+  return getActiveSales(getShiftAllSales(shift));
 }
 
-function incompleteProfileUsers(data = state) {
-  return (data.users || []).filter((user) => !profileComplete(user));
-}
-
-function rewardIntegrityIssues(data = state) {
-  return (data.rewards || []).flatMap((reward) => rewardRiskLabels(reward, data));
-}
-
-function rewardRiskLabels(reward, data = state) {
-  const issues = [];
-  const users = data.users || [];
-  const orders = data.orders || [];
-  const usersById = new Map(users.map((user) => [user.id, user]));
-  const ordersById = new Map(orders.map((order) => [order.id, order]));
-  const label = reward.id || reward.orderId;
-  const order = ordersById.get(reward.orderId);
-  if (!usersById.has(reward.userId)) issues.push(`奖励 ${label} 的收款用户不存在`);
-  if (!order) {
-    issues.push(`奖励 ${label} 对应订单不存在`);
-    return issues;
-  }
-  const buyer = usersById.get(order.userId);
-  const expectedAmount = Number((Number(order.amount || 0) * (Number(reward.rate || 0) / 100)).toFixed(2));
-  if (Math.abs(Number(reward.amount || 0) - expectedAmount) > 0.01) {
-    issues.push(`奖励 ${label} 金额异常：记录 ${money(reward.amount)}，应为 ${money(expectedAmount)}`);
-  }
-  if (reward.type === "first") {
-    if (order.type !== "first") issues.push(`推荐奖励 ${label} 对应订单不是首充`);
-    if (buyer?.referrerId && reward.userId !== buyer.referrerId) issues.push(`推荐奖励 ${label} 没有发给订单买家的推荐人`);
-    if (!buyer?.referrerId) issues.push(`推荐奖励 ${label} 对应买家没有推荐人`);
-  }
-  if (reward.type === "repeat") {
-    if (order.type !== "repeat") issues.push(`复购奖励 ${label} 对应订单不是复购`);
-    if (reward.userId === order.userId) issues.push(`复购奖励 ${label} 发给了买家本人`);
-    if (!["direct", "pool"].includes(reward.rewardMode)) issues.push(`复购奖励 ${label} 缺少复购模式标记`);
-    if (reward.rewardMode === "direct" && buyer?.referrerId && reward.userId !== buyer.referrerId) issues.push(`下线复购奖励 ${label} 没有发给买家的推荐人`);
-    if (reward.rewardMode === "direct" && !buyer?.referrerId) issues.push(`下线复购奖励 ${label} 对应买家没有推荐人`);
-    if (Array.isArray(reward.releasePlan)) {
-      const released = reward.releasePlan.reduce((sum, part) => sum + (part.released ? Number(part.amount || 0) : 0), 0);
-      const planned = reward.releasePlan.reduce((sum, part) => sum + Number(part.amount || 0), 0);
-      if (Math.abs(planned - Number(reward.amount || 0)) > 0.01) issues.push(`复购奖励 ${label} 分期总额与奖励金额不一致`);
-      if (Number(reward.releasedAmount || 0) !== released) issues.push(`复购奖励 ${label} 已释放金额与分期不一致`);
-    }
-  }
-  return issues;
-}
-
-function dataIntegrityIssues(data = state, options = {}) {
-  const includeProfileIssues = options.includeProfileIssues !== false;
-  const includeOrderIssues = options.includeOrderIssues !== false;
-  const includeRewardIssues = options.includeRewardIssues !== false;
-  const includeWithdrawIssues = options.includeWithdrawIssues !== false;
-  const issues = [];
-  const users = data.users || [];
-  const orders = data.orders || [];
-  const rewards = data.rewards || [];
-  const withdraws = data.withdraws || [];
-  const usersById = new Map(users.map((user) => [user.id, user]));
-  const ordersById = new Map(orders.map((order) => [order.id, order]));
-  const inviteCodes = new Map();
-  if (includeOrderIssues) issues.push(...duplicateOrderRisks(data));
-
-  users.forEach((user) => {
-    const code = normalizeInviteCode(user.inviteCode);
-    if (!code) issues.push(`用户 ${user.name || user.id} 缺少推荐码`);
-    if (code && inviteCodes.has(code)) issues.push(`推荐码重复：${code}`);
-    if (code) inviteCodes.set(code, user.id);
-    if (user.referrerId) {
-      if (user.referrerId === user.id) issues.push(`用户 ${user.name || user.id} 绑定了自己为推荐人`);
-      if (!usersById.has(user.referrerId)) issues.push(`用户 ${user.name || user.id} 的推荐人不存在`);
-    }
-  });
-
-  orders.forEach((order) => {
-    if (!usersById.has(order.userId)) issues.push(`订单 ${order.id} 的用户不存在`);
-    if (!(data.plans || []).some((plan) => plan.id === order.planId) && !order.planSnapshot && order.status !== "cancelled") issues.push(`订单 ${order.id} 的配套不存在或已删除`);
-    if (order.status === "paid" && Number(order.points || 0) <= 0) issues.push(`已付款订单 ${order.id} 积分为 0`);
-    if (includeOrderIssues) {
-      orderRiskLabels(order, data).forEach((risk) => {
-        if (risk.includes("金额") || risk.includes("配套")) issues.push(`订单 ${order.id}：${risk}`);
-      });
-    }
-  });
-
-  if (includeRewardIssues) issues.push(...rewardIntegrityIssues(data));
-
-  withdraws.forEach((withdraw) => {
-    if (!usersById.has(withdraw.userId)) issues.push(`提现 ${withdraw.id} 的用户不存在`);
-    if (withdraw.source !== "reward") issues.push(`提现 ${withdraw.id} 不是奖励提现来源`);
-    if (includeWithdrawIssues) withdrawRiskLabels(withdraw, data).forEach((risk) => issues.push(`提现 ${withdraw.id}：${risk}`));
-  });
-
-  users.forEach((user) => {
-    const missingFields = profileMissingFields(user);
-    if (includeProfileIssues && missingFields.length) issues.push(`用户 ${user.name || user.id} 资料不完整：${missingFields.join("、")}`);
-    const breakdown = withdrawBreakdown(user.id);
-    const earned = Number(breakdown.first || 0) + Number(breakdown.repeatReleased || 0);
-    if (breakdown.requested > earned) issues.push(`用户 ${user.name || user.id} 提现金额超过已释放奖励`);
-  });
-
-  return issues;
-}
-
-function hasPaidOrder(data, userId, excludeOrderId = "") {
-  return (data.orders || []).some((order) =>
-    order.userId === userId
-    && order.status === "paid"
-    && order.id !== excludeOrderId
-    && recordIsAfterTestClear(order, data)
-  );
-}
-
-function actualOrderType(data, userId, excludeOrderId = "") {
-  return hasPaidOrder(data, userId, excludeOrderId) ? "repeat" : "first";
-}
-
-function createOrder(data, userId, planId, type, status = "paid", createdAt = new Date().toISOString(), paymentInfo = {}) {
-  const user = data.users.find((item) => item.id === userId);
-  const plan = data.plans.find((item) => item.id === planId);
-  if (!user || !plan) return null;
-  if (!isValidPackageAmount(plan.amount)) return null;
-  const orderType = type || actualOrderType(data, userId);
-  const order = {
-    id: orderNo(data, userId),
-    userId,
-    planId,
-    planSnapshot: planSnapshot(plan),
-    type: orderType,
-    status,
-    amount: plan.amount,
-    points: 0,
-    paymentMethod: paymentInfo.method || "",
-    paymentRef: paymentInfo.ref || "",
-    paymentNote: paymentInfo.note || "",
-    proofName: paymentInfo.proofName || "",
-    proofPath: paymentInfo.proofPath || "",
-    proofUrl: paymentInfo.proofUrl || "",
-    proofInlineData: paymentInfo.proofInlineData || "",
-    proofInlineType: paymentInfo.proofInlineType || "",
-    proofStatus: paymentInfo.proofStatus || "none",
-    proofError: paymentInfo.proofError || "",
-    createdAt,
-  };
-  data.orders.push(order);
-  if (status === "paid") {
-    applyPaidOrder(data, order, createdAt);
-  }
-  return order;
-}
-
-function applyPaidOrder(data, order, paidAt = new Date().toISOString()) {
-  const user = data.users.find((item) => item.id === order.userId);
-  const plan = orderPlan(order, data);
-  if (!user || !plan || order.points > 0) return;
-  const summary = [];
-  order.type = actualOrderType(data, order.userId, order.id);
-  order.status = "paid";
-  order.points = plan.points;
-  order.paidAt = paidAt;
-  user.points += plan.points;
-  user.slots = Math.max(user.slots || 0, plan.slots);
-  user.packageUntil = addDays(paidAt, plan.validDays);
-  user.level = plan.amount >= 720 ? "高级推广用户" : "推广用户";
-  data.pointLogs.push({ id: id("log"), userId: user.id, change: plan.points, balance: user.points, source: order.id, note: `${plan.name} 积分发放`, createdAt: paidAt });
-  summary.push(`判定：${order.type === "first" ? "首充" : "复购"}`);
-  summary.push(`买家积分 +${points(plan.points)}`);
-  summary.push(`配套有效至 ${new Date(user.packageUntil).toLocaleDateString("zh-CN")}`);
-  if (order.type === "repeat") {
-    user.repeatCooldownUntil = addHours(paidAt, planRepeatCooldownHours(plan));
-    const directReward = createRepeatDirectReward(data, order, user, plan, paidAt);
-    const poolReward = createRepeatPoolReward(data, order, user, plan, paidAt);
-    summary.push(`买家奖励池资格不变，当前 ${user.repeatCredits || 0}`);
-    summary.push(`复购冷却至 ${new Date(user.repeatCooldownUntil).toLocaleString("zh-CN")}`);
-    summary.push(directReward
-      ? `下线复购奖励：${directReward.receiverName} 获得 ${money(directReward.amount)}`
-      : "下线复购奖励：无推荐人、推荐人未开通有效配套、冻结或比例为 0，未生成奖励");
-    summary.push(poolReward
-      ? `奖励池奖励：${poolReward.receiverName} 获得 ${money(poolReward.amount)}，扣 1 个资格`
-      : "奖励池奖励：暂无接收人或比例为 0，未生成奖励");
-  } else {
-    const firstReward = createFirstReward(data, order, user, plan, paidAt);
-    summary.push(firstReward
-      ? `推荐奖励：${firstReward.receiverName} 获得 ${money(firstReward.amount)}`
-      : "推荐奖励：无推荐人、推荐人冻结或比例为 0，未生成奖励");
-  }
-  order.confirmSummary = summary.join(" / ");
-}
-
-function planRepeatCredits(plan) {
-  return Number(plan.repeatCredits ?? 10);
-}
-
-function createReleasePlan(totalAmount, paidAt) {
-  const amount = Number(totalAmount || 0);
-  let remaining = amount;
-  return REPEAT_RELEASE_DAYS.map((days, index) => {
-    const isLast = index === REPEAT_RELEASE_DAYS.length - 1;
-    const partAmount = isLast
-      ? remaining
-      : Number((amount / REPEAT_RELEASE_DAYS.length).toFixed(2));
-    remaining = Number((remaining - partAmount).toFixed(2));
+function getShiftCashMovementTotals(shift) {
+  const movements = Array.isArray(shift?.cashMovements) ? shift.cashMovements : [];
+  if (!movements.length) {
     return {
-      amount: partAmount,
-      releaseAt: addDays(paidAt, days),
-      released: TEST_INSTANT_MODE,
-      releasedAt: TEST_INSTANT_MODE ? paidAt : "",
+      cashIn: Math.max(0, Number(shift?.cashIn || 0)),
+      cashOut: Math.max(0, Number(shift?.cashOut || 0))
     };
-  });
-}
-
-function releaseDueRewardParts(reward, now = new Date()) {
-  if (!Array.isArray(reward.releasePlan) || !reward.releasePlan.length) return false;
-  let changed = false;
-  reward.releasePlan.forEach((part) => {
-    if (!part.released && new Date(part.releaseAt) <= now) {
-      part.released = true;
-      part.releasedAt = now.toISOString();
-      changed = true;
-    }
-  });
-  if (!changed) return false;
-  reward.releasedAmount = reward.releasePlan
-    .filter((part) => part.released)
-    .reduce((sum, part) => sum + Number(part.amount || 0), 0);
-  const fullyReleased = reward.releasePlan.every((part) => part.released);
-  reward.status = fullyReleased ? "confirmed" : "releasing";
-  reward.confirmAfter = fullyReleased
-    ? reward.releasePlan[reward.releasePlan.length - 1].releaseAt
-    : reward.releasePlan.find((part) => !part.released)?.releaseAt || reward.confirmAfter;
-  return true;
-}
-
-function settleRewardNow(reward, now = new Date()) {
-  if (!reward || !["pending", "releasing"].includes(reward.status)) return false;
-  if (Array.isArray(reward.releasePlan)) {
-    reward.releasePlan = reward.releasePlan.map((part) => ({
-      ...part,
-      released: true,
-      releasedAt: part.releasedAt || now.toISOString(),
-    }));
-    reward.releasedAmount = Number(reward.amount || 0);
   }
-  reward.status = "confirmed";
-  reward.confirmAfter = now.toISOString();
-  reward.reviewedAt = now.toISOString();
-  reward.reviewNote = [reward.reviewNote, TEST_INSTANT_MODE ? "测试即时模式手动结算" : "手动确认到期奖励"].filter(Boolean).join(" / ");
-  return true;
+  return movements.reduce((totals, movement) => {
+    const amount = Math.max(0, Number(movement.amount || 0));
+    if (movement.type === "out") totals.cashOut += amount;
+    else totals.cashIn += amount;
+    return totals;
+  }, { cashIn: 0, cashOut: 0 });
 }
 
-function createFirstReward(data, order, buyer, plan, paidAt = order.createdAt) {
-  if (!buyer.referrerId) return null;
-  const referrer = data.users.find((item) => item.id === buyer.referrerId);
-  if (!referrer || referrer.frozen) return null;
-  const rate = Number(plan.firstRate || 0);
-  if (rate <= 0) return null;
-  const amount = +(order.amount * (rate / 100)).toFixed(2);
-  const reward = {
-    id: id("rew"),
-    userId: referrer.id,
-    sourceUserId: buyer.id,
-    sourceUserName: buyer.name || "",
-    sourceUserAccount: buyer.account || "",
-    sourceUserInviteCode: buyer.inviteCode || "",
-    orderId: order.id,
-    type: "first",
-    rate,
-    amount,
-    status: TEST_INSTANT_MODE ? "confirmed" : "pending",
-    confirmAfter: addDays(paidAt, CONFIRM_DAYS),
-    createdAt: paidAt,
-    reviewedAt: TEST_INSTANT_MODE ? paidAt : "",
-    reviewNote: TEST_INSTANT_MODE ? "测试即时模式自动确认" : "",
-  };
-  data.rewards.push(reward);
-  return { reward, receiverName: referrer.name || referrer.account || referrer.id, amount };
-}
-
-function createRepeatDirectReward(data, order, buyer, plan, paidAt = order.createdAt) {
-  if (!buyer.referrerId) return null;
-  const referrer = data.users.find((item) => item.id === buyer.referrerId);
-  if (!referrer || referrer.frozen || !isActivePackage(referrer)) return null;
-  const rate = planDirectRepeatRate(plan);
-  if (rate <= 0) return null;
-  const amount = +(order.amount * (rate / 100)).toFixed(2);
-  const reward = {
-    id: id("rew"),
-    userId: referrer.id,
-    sourceUserId: buyer.id,
-    sourceUserName: buyer.name || "",
-    sourceUserAccount: buyer.account || "",
-    sourceUserInviteCode: buyer.inviteCode || "",
-    orderId: order.id,
-    type: "repeat",
-    rewardMode: "direct",
-    rate,
-    amount,
-    status: TEST_INSTANT_MODE ? "confirmed" : "pending",
-    releasedAmount: TEST_INSTANT_MODE ? amount : 0,
-    releasePlan: createReleasePlan(amount, paidAt),
-    confirmAfter: addDays(paidAt, CONFIRM_DAYS),
-    createdAt: paidAt,
-    reviewedAt: TEST_INSTANT_MODE ? paidAt : "",
-    reviewNote: TEST_INSTANT_MODE ? "测试即时模式自动释放" : "",
-  };
-  data.rewards.push(reward);
-  return { reward, receiverName: referrer.name || referrer.account || referrer.id, amount };
-}
-
-function createRepeatPoolReward(data, order, buyer, plan, paidAt = order.createdAt) {
-  const receiver = nextRepeatReceiver(data, buyer.id);
-  const rate = planPoolRepeatRate(plan);
-  if (!receiver || rate <= 0) return null;
-  receiver.repeatCredits = Math.max(Number(receiver.repeatCredits || 0) - 1, 0);
-  if (receiver.repeatCredits <= 0) receiver.repeatCreditQueueAt = "";
-  addRepeatCreditLog(data, receiver.id, -1, receiver.repeatCredits, "used", order.id, `Repeat pool reward from ${buyer.name || buyer.account}`, paidAt);
-  const amount = +(order.amount * (rate / 100)).toFixed(2);
-  const reward = {
-    id: id("rew"),
-    userId: receiver.id,
-    sourceUserId: buyer.id,
-    sourceUserName: buyer.name || "",
-    sourceUserAccount: buyer.account || "",
-    sourceUserInviteCode: buyer.inviteCode || "",
-    orderId: order.id,
-    type: "repeat",
-    rewardMode: "pool",
-    rate,
-    amount,
-    status: TEST_INSTANT_MODE ? "confirmed" : "pending",
-    releasedAmount: TEST_INSTANT_MODE ? amount : 0,
-    releasePlan: createReleasePlan(amount, paidAt),
-    confirmAfter: addDays(paidAt, CONFIRM_DAYS),
-    createdAt: paidAt,
-    reviewedAt: TEST_INSTANT_MODE ? paidAt : "",
-    reviewNote: TEST_INSTANT_MODE ? "测试即时模式自动释放" : "",
-  };
-  data.rewards.push(reward);
-  return { reward, receiverName: receiver.name || receiver.account || receiver.id, amount };
-}
-
-function nextRepeatReceiver(data, buyerId) {
-  return data.users
-    .filter((user) => user.id !== buyerId && !user.frozen && Number(user.repeatCredits || 0) > 0)
-    .sort((a, b) => new Date(a.repeatCreditQueueAt || "9999-12-31") - new Date(b.repeatCreditQueueAt || "9999-12-31"))[0];
-}
-
-function canRecalculateOrderRewards(order) {
-  const rewards = (state.rewards || []).filter((reward) => reward.orderId === order.id);
-  const risks = orderRiskLabels(order);
-  return rewards.every((reward) => reward.status === "pending");
-}
-
-function reverseRepeatCreditLogsForOrder(data, orderId) {
-  const logs = (data.repeatCreditLogs || []).filter((log) => log.source === orderId);
-  logs.forEach((log) => {
-    const user = data.users.find((item) => item.id === log.userId);
-    if (!user) return;
-    user.repeatCredits = Math.max(Number(user.repeatCredits || 0) - Number(log.change || 0), 0);
-    if (user.repeatCredits <= 0) user.repeatCreditQueueAt = "";
-  });
-  data.repeatCreditLogs = (data.repeatCreditLogs || []).filter((log) => log.source !== orderId);
-  return logs.length;
-}
-
-function recalculateOrderRewards(data, order) {
-  if (!order || order.status !== "paid") return { ok: false, message: "只有已支付订单可以重算奖励" };
-  if (!canRecalculateOrderRewards(order)) return { ok: false, message: "已有非待确认奖励，不能自动重算" };
-  const buyer = data.users.find((item) => item.id === order.userId);
-  const plan = orderPlan(order, data);
-  if (!buyer || !plan) return { ok: false, message: "订单用户或配套不存在" };
-
-  const removedRewards = (data.rewards || []).filter((reward) => reward.orderId === order.id).length;
-  data.rewards = (data.rewards || []).filter((reward) => reward.orderId !== order.id);
-  const reversedLogs = reverseRepeatCreditLogsForOrder(data, order.id);
-  order.type = actualOrderType(data, order.userId, order.id);
-  const paidAt = order.paidAt || order.createdAt || new Date().toISOString();
-  if (order.type === "repeat") {
-    createRepeatDirectReward(data, order, buyer, plan, paidAt);
-    createRepeatPoolReward(data, order, buyer, plan, paidAt);
-  } else {
-    createFirstReward(data, order, buyer, plan, paidAt);
-  }
-  return {
-    ok: true,
-    message: `已重算为${order.type === "first" ? "首充" : "复购"}，移除 ${removedRewards} 笔旧奖励、${reversedLogs} 条奖励池资格流水`,
-  };
-}
-
-function orderConfirmPreview(order) {
-  const user = findUser(order.userId);
-  const plan = orderPlan(order);
-  if (!user || !plan) return "订单资料不完整，仍要继续确认吗？";
-  const previewType = actualOrderType(state, order.userId, order.id);
-  const risks = orderRiskLabels(order);
-  const lines = [
-    `确认订单：${order.id}`,
-    `用户：${user.name} / ${user.account}`,
-    `配套：${plan.name}，金额 ${money(order.amount)}`,
-    `处理类型：${previewType === "first" ? "首充" : "复购"}`,
-    `积分：+${points(plan.points)}`,
-  ];
-  if (risks.length) {
-    lines.push("");
-    lines.push("风控提醒：");
-    risks.forEach((risk) => lines.push(`- ${risk}`));
-    lines.push("请先确认不是重复付款或重复凭证。");
-    lines.push("");
-  }
-  if (previewType === "repeat") {
-    const receiver = nextRepeatReceiver(state, user.id);
-    const referrer = findUser(user.referrerId);
-    const directReward = +(order.amount * (planDirectRepeatRate(plan) / 100)).toFixed(2);
-    const poolReward = +(order.amount * (planPoolRepeatRate(plan) / 100)).toFixed(2);
-    lines.push("奖励池资格：买家不自动增加资格");
-    lines.push(`复购冷却：${planRepeatCooldownHours(plan)} 小时`);
-    lines.push(referrer && isActivePackage(referrer)
-      ? `下线复购奖励：${referrer.name} 预计获得 ${money(directReward)}，分 ${REPEAT_RELEASE_DAYS.length} 期释放`
-      : "下线复购奖励：没有有效推荐人，不产生下线复购奖励");
-    lines.push(receiver
-      ? `奖励池接收人：${receiver.name} / 当前资格 ${receiver.repeatCredits} 个，将扣 1 个，奖励 ${money(poolReward)} 分 ${REPEAT_RELEASE_DAYS.length} 期释放`
-      : "奖励池接收人：暂无，当前复购只给买家增加资格，不产生奖励池奖励");
-  } else {
-    const referrer = findUser(user.referrerId);
-    const reward = +(order.amount * (Number(plan.firstRate || 0) / 100)).toFixed(2);
-    lines.push(referrer ? `推荐奖励：${referrer.name} 预计获得 ${money(reward)}` : "推荐奖励：没有绑定推荐人");
-  }
-  lines.push("确定要确认付款吗？");
-  return lines.join("\n");
-}
-
-function orderDetailText(order) {
-  const user = findUser(order.userId);
-  const plan = orderPlan(order);
-  if (!order || !user || !plan) return "订单资料不完整";
-  const resolvedType = order.status === "pending" ? actualOrderType(state, order.userId, order.id) : order.type;
-  const risks = orderRiskLabels(order);
-  const rewards = (state.rewards || []).filter((reward) => reward.orderId === order.id);
-  const rewardLines = rewards.length
-    ? rewards.map((reward) => {
-      const owner = findUser(reward.userId);
-      return `- ${rewardTypeText(reward)}：${owner?.name || reward.userId} / ${rewardAmountText(reward)} / ${labelStatus(reward.status)} / 备注：${reward.reviewNote || "-"}`;
-    })
-    : ["- 暂无奖励记录"];
-  const receiver = resolvedType === "repeat" ? nextRepeatReceiver(state, order.userId) : null;
-  const referrer = resolvedType === "repeat" ? findUser(user.referrerId) : null;
-  return [
-    `订单：${order.id}`,
-    `用户：${user.name} / ${user.account}`,
-    `配套：${plan.name}`,
-    `金额：${money(order.amount)}`,
-    `锁定规则：${orderPlanSummary(plan)}`,
-    `状态：${labelStatus(order.status)}`,
-    `当前判定：${resolvedType === "first" ? "首充" : "复购"}`,
-    `付款：${paymentMethodText(order.paymentMethod)} / ${order.paymentRef || "-"}`,
-    `凭证：${proofStatusText(order)}`,
-    `风控风险：${risks.length ? risks.join("；") : "无"}`,
-    `处理备注：${order.reviewNote || "-"}`,
-    `处理结果：${order.confirmSummary || "-"}`,
-    `积分：${points(order.points || 0)} / 确认后应发 ${points(plan.points)}`,
-    `确认时间：${order.reviewedAt ? new Date(order.reviewedAt).toLocaleString("zh-CN") : "-"}`,
-    `取消时间：${order.cancelledAt ? new Date(order.cancelledAt).toLocaleString("zh-CN") : "-"}`,
-    resolvedType === "first"
-      ? `推荐奖励对象：${user.referrerId ? (findUser(user.referrerId)?.name || user.referrerId) : "无推荐人"}`
-      : `下线复购对象：${referrer ? `${referrer.name}（${isActivePackage(referrer) ? "配套有效" : "配套无效"}）` : "无推荐人"}`,
-    resolvedType === "repeat"
-      ? `奖励池接收人：${receiver ? `${receiver.name}（资格 ${receiver.repeatCredits}）` : "暂无"}`
-      : "",
-    "现有奖励记录：",
-    ...rewardLines,
-  ].join("\n");
-}
-
-function rewardDetailText(reward) {
-  const user = findUser(reward.userId);
-  const sourceUser = findUser(reward.sourceUserId);
-  const order = (state.orders || []).find((item) => item.id === reward.orderId);
-  const plan = order ? orderPlan(order) : null;
-  const risks = rewardRiskLabels(reward);
-  const expectedAmount = order ? +(Number(order.amount || 0) * (Number(reward.rate || 0) / 100)).toFixed(2) : 0;
-  const amountGap = order ? Number((Number(reward.amount || 0) - expectedAmount).toFixed(2)) : 0;
-  return [
-    `奖励：${reward.id}`,
-    `奖励人：${user ? `${user.name} / ${user.account}` : reward.userId}`,
-    `来源用户：${sourceUser ? `${sourceUser.name} / ${sourceUser.account}` : rewardSourceText(reward)}`,
-    `订单：${reward.orderId}`,
-    `订单金额：${order ? money(order.amount) : "-"}`,
-    `配套快照：${plan ? `${plan.name} / ${orderPlanSummary(plan)}` : "-"}`,
-    `类型：${rewardTypeText(reward)}`,
-    `比例：${Number(reward.rate || 0)}%`,
-    `奖励金额：${rewardAmountText(reward)}`,
-    `按订单金额应得：${order ? money(expectedAmount) : "-"}`,
-    `计算差额：${order ? money(amountGap) : "-"}`,
-    `状态：${labelStatus(reward.status)}`,
-    `风控风险：${risks.length ? risks.join("；") : "无"}`,
-    `可处理日：${rewardNextDateText(reward)}`,
-    `审核备注：${reward.reviewNote || "-"}`,
-    `创建时间：${reward.createdAt ? new Date(reward.createdAt).toLocaleString("zh-CN") : "-"}`,
-    `审核时间：${reward.reviewedAt ? new Date(reward.reviewedAt).toLocaleString("zh-CN") : "-"}`,
-  ].join("\n");
-}
-
-function withdrawDetailText(withdraw) {
-  const user = findUser(withdraw.userId);
-  if (!withdraw || !user) return "提现资料不完整";
-  const breakdown = withdrawBreakdown(user.id);
-  const risks = withdrawRiskLabels(withdraw);
-  const sharedUsers = sharedWithdrawAccountUsers(withdraw.account, withdraw.userId);
-  return [
-    `提现申请：${withdraw.id}`,
-    `用户：${user.name} / ${user.account}`,
-    `申请金额：${money(withdraw.amount)}`,
-    `来源：${withdraw.source === "reward" ? "奖励提现" : withdraw.source || "-"}`,
-    `状态：${labelStatus(withdraw.status)}`,
-    `收款方式：${withdraw.method || "-"}`,
-    `收款账号：${withdraw.account || "-"}`,
-    `风控风险：${risks.length ? risks.join("；") : "无"}`,
-    `共享账号用户：${sharedUsers.length ? sharedUsers.map((item) => `${item.name} / ${item.account}`).join("；") : "无"}`,
-    `审核备注：${withdraw.reviewNote || "-"}`,
-    `提交时间：${new Date(withdraw.createdAt).toLocaleString("zh-CN")}`,
-    `审核时间：${withdraw.reviewedAt ? new Date(withdraw.reviewedAt).toLocaleString("zh-CN") : "-"}`,
-    `打款时间：${withdraw.paidAt ? new Date(withdraw.paidAt).toLocaleString("zh-CN") : "-"}`,
-    "",
-    "当前奖励提现组成：",
-    `推荐奖励可提现：${money(breakdown.first)}`,
-    `复购奖励已释放：${money(breakdown.repeatReleased)}`,
-    `复购奖励待释放：${money(breakdown.pendingRelease)}`,
-    `已申请/处理中：${money(breakdown.requested)}`,
-    `当前可提现余额：${money(breakdown.available)}`,
-  ].join("\n");
-}
-
-function userDetailText(user) {
-  if (!user) return "找不到用户";
-  const referrer = findUser(user.referrerId);
-  const [statusClass, statusLabel] = packageStatus(user);
-  const orders = state.orders.filter((order) => order.userId === user.id);
-  const paidOrders = orders.filter((order) => order.status === "paid");
-  const rewards = state.rewards.filter((reward) => reward.userId === user.id);
-  const withdraws = state.withdraws.filter((withdraw) => withdraw.userId === user.id);
-  const referrals = directReferralCount(user.id);
-  const breakdown = withdrawBreakdown(user.id);
-  const sharedAccountUsers = sharedWithdrawAccountUsers(user.withdrawAccount, user.id);
-  const missingFields = profileMissingFields(user);
-  return [
-    `用户：${user.name}`,
-    `账号：${user.account}`,
-    `手机：${user.phone || "-"}`,
-    `邀请码：${user.inviteCode}`,
-    `推荐人：${referrer ? `${referrer.name} / ${referrer.inviteCode}` : "无"}`,
-    `配套状态：${statusLabel}`,
-    `账号状态：${user.frozen ? "已冻结" : "正常"}`,
-    `资料状态：${missingFields.length ? "资料不完整" : "资料完整"}`,
-    `缺失资料：${missingFields.length ? missingFields.join("、") : "无"}`,
-    `默认收款：${[user.withdrawMethod, user.withdrawAccount].filter(Boolean).join(" / ") || "-"}`,
-    `共享收款账号：${sharedAccountUsers.length ? sharedAccountUsers.map((item) => `${item.name} / ${item.account}`).join("；") : "无"}`,
-    "",
-    "余额与资格：",
-    `充值积分：${points(user.points)}`,
-    `可提现奖励：${money(breakdown.available)}`,
-    `奖励池资格：${points(user.repeatCredits || 0)}`,
-    `直接推荐：${referrals} / 开放`,
-    "",
-    "业务统计：",
-    `订单：${orders.length} 笔，其中已支付 ${paidOrders.length} 笔，累计 ${money(paidOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0))}`,
-    `奖励：${rewards.length} 笔`,
-    `提现：${withdraws.length} 笔`,
-    "",
-    "提现组成：",
-    `推荐奖励可提现：${money(breakdown.first)}`,
-    `复购奖励已释放：${money(breakdown.repeatReleased)}`,
-    `复购奖励待释放：${money(breakdown.pendingRelease)}`,
-    `已申请/处理中：${money(breakdown.requested)}`,
-  ].join("\n");
-}
-
-function labelStatus(status) {
-  if (status === "releasing") return "分期释放中";
-  return {
-    paid: "已支付",
-    pending: "待处理",
-    refunded: "已退款",
-    confirmed: "已确认",
-    cancelled: "已取消",
-    frozen: "已冻结",
-    approved: "已通过",
-    rejected: "已拒绝",
-    paidout: "已打款",
-  }[status] || status;
-}
-
-function rewardTypeText(reward) {
-  if (reward.type === "first") return "推荐奖励";
-  if (reward.rewardMode === "direct") return "下线复购奖励";
-  if (reward.rewardMode === "pool") return "奖励池奖励";
-  return "复购奖励";
-}
-
-function rewardAmountText(reward) {
-  if (Array.isArray(reward.releasePlan)) {
-    const releasedParts = reward.releasePlan.filter((part) => part.released).length;
-    return `${money(reward.releasedAmount || 0)} / ${money(reward.amount)} (${releasedParts}/${reward.releasePlan.length})`;
-  }
-  return money(reward.amount);
-}
-
-function rewardNextDateText(reward) {
-  if (Array.isArray(reward.releasePlan)) {
-    const next = reward.releasePlan.find((part) => !part.released);
-    return next ? new Date(next.releaseAt).toLocaleDateString("zh-CN") : new Date(reward.confirmAfter).toLocaleDateString("zh-CN");
-  }
-  return new Date(reward.confirmAfter).toLocaleDateString("zh-CN");
-}
-
-function proofStatusText(order) {
-  if (order.proofUrl) return "凭证已上传";
-  if (order.proofInlineData) return "凭证已暂存订单内";
-  if (order.proofStatus === "uploaded") return "凭证已上传";
-  if (order.proofStatus === "failed") return `凭证上传失败${order.proofError ? `：${order.proofError}` : ""}`;
-  if (order.proofName) return `凭证待补传：${order.proofName}`;
-  return "未上传凭证";
-}
-
-function paymentMethodText(method) {
-  return {
-    bank: "银行转账",
-    tng: "Touch n Go",
-    usdt: "USDT",
-    cash: "现金",
-  }[method] || method || "";
-}
-
-async function uploadPaymentProof(file, orderId) {
-  if (!file) return {};
-  const maxSize = 5 * 1024 * 1024;
-  if (file.size > maxSize) {
-    throw new Error("付款证明不能超过 5MB");
-  }
-  const safeName = file.name.replace(/[^\w.\-]+/g, "_");
-  const path = `paymentProofs/${firebaseUser.uid}/${orderId}-${Date.now()}-${safeName}`;
-  const proofRef = storageRef(storage, path);
-  await uploadBytes(proofRef, file, { contentType: file.type || "application/octet-stream" });
-  const url = await getDownloadURL(proofRef);
-  return { proofName: file.name, proofPath: path, proofUrl: url, proofStatus: "uploaded", proofError: "" };
-}
-
-function fileToDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(reader.error || new Error("read file failed"));
-    reader.readAsDataURL(file);
-  });
-}
-
-async function inlinePaymentProof(file, sourceError = null) {
-  if (!file) return {};
-  if (file.size > INLINE_PROOF_MAX_BYTES) {
-    throw sourceError || new Error("付款证明上传失败，且文件超过本地内嵌上限 750KB，请先压缩后补传");
-  }
-  const dataUrl = await fileToDataUrl(file);
-  return {
-    proofName: file.name,
-    proofPath: "",
-    proofUrl: "",
-    proofInlineData: dataUrl,
-    proofInlineType: file.type || "application/octet-stream",
-    proofStatus: "uploaded",
-    proofError: "Storage 超时，已暂存订单内",
-  };
-}
-
-async function uploadPaymentProofForOrder(file, orderId) {
-  if (!file) return {};
-  try {
-    return await withTimeout(
-      uploadPaymentProof(file, orderId),
-      PROOF_STORAGE_ATTEMPT_MS,
-      "Storage 上传超时，已改用订单内暂存"
-    );
-  } catch (error) {
-    console.warn("Storage proof upload failed, using inline proof fallback.", error);
-    return inlinePaymentProof(file, error);
-  }
-}
-
-async function callConfirmOrderFunction(orderId) {
-  const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js");
-  const functions = getFunctions(app);
-  const confirmOrderFunction = httpsCallable(functions, "confirmOrder");
-  return confirmOrderFunction({ orderId });
-}
-
-function withTimeout(promise, ms, message) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      setTimeout(() => reject(new Error(message)), ms);
-    }),
-  ]);
-}
-
-function uploadErrorMessage(error) {
-  const code = error?.code || "";
-  const message = error?.message || "upload failed";
-  if (code === "storage/unauthorized") return "付款证明上传权限不足，请发布 storage.rules";
-  if (message.includes("超时")) return message;
-  return message;
-}
-
-function toast(message) {
-  const toastEl = document.querySelector("#toast");
-  toastEl.textContent = message;
-  toastEl.classList.add("show");
-  setTimeout(() => toastEl.classList.remove("show"), 1800);
-}
-
-function upsertFirebaseUser(userCredential) {
-  const googleUser = userCredential;
-  const account = googleUser.email || googleUser.uid;
-  let user = state.users.find((item) => item.firebaseUid === googleUser.uid || item.account === account);
-  if (!user) {
-    user = {
-      id: googleUser.uid,
-      firebaseUid: googleUser.uid,
-      name: googleUser.displayName || account,
-      account,
-      phone: "",
-      photoURL: googleUser.photoURL || "",
-      withdrawMethod: "",
-      withdrawAccount: "",
-      inviteCode: normalizeInviteCode(`${(googleUser.displayName || "G").slice(0, 1).toUpperCase()}${Math.floor(1000 + Math.random() * 9000)}`),
-      referrerId: "",
-      level: "普通用户",
-      points: 0,
-      slots: 0,
-      repeatCredits: 0,
-      repeatCreditQueueAt: "",
-      repeatCooldownUntil: "",
-      packageUntil: "",
-      frozen: false,
-    };
-    state.users.push(user);
-  } else {
-    const oldId = user.id;
-    if (oldId !== googleUser.uid) {
-      migrateUserId(oldId, googleUser.uid);
-      user.id = googleUser.uid;
-    }
-    user.firebaseUid = googleUser.uid;
-    user.name = googleUser.displayName || user.name;
-    user.account = account;
-    user.phone = user.phone || "";
-    user.photoURL = googleUser.photoURL || user.photoURL || "";
-    user.withdrawMethod = user.withdrawMethod || "";
-    user.withdrawAccount = user.withdrawAccount || "";
-    user.inviteCode = normalizeInviteCode(user.inviteCode);
-  }
-  state.users = state.users.filter((item, index, users) =>
-    index === users.findIndex((other) =>
-      other.id === item.id
-      || (item.account && other.account === item.account)
-      || (item.firebaseUid && other.firebaseUid === item.firebaseUid)
-    )
+function getShiftSummary(shift) {
+  const shiftSales = getShiftSales(shift);
+  const allShiftSales = getShiftAllSales(shift);
+  const voidedSales = allShiftSales.filter(isSaleVoided);
+  const pendingPaymentSales = allShiftSales.filter(isSalePaymentPending);
+  const shiftSaleIds = new Set(allShiftSales.map((sale) => sale.id));
+  const pendingOrderIds = new Set(
+    [...pendingSales, ...pendingSaleUpdates]
+      .filter((sale) => shiftSaleIds.has(sale.id))
+      .map((sale) => sale.id)
   );
-  state.currentUserId = user.id;
-}
-
-function updateAuthStatus() {
-  const status = document.querySelector("#authStatus");
-  if (!status) return;
-  if (firebaseUser) {
-    status.textContent = `已登录：${firebaseUser.email || firebaseUser.displayName}`;
-  } else if (firebaseReady) {
-    status.textContent = "请使用 Google 登录。";
-  } else {
-    status.textContent = "正在连接 Firebase...";
-  }
-  const syncStatus = document.querySelector("#syncStatus");
-  if (syncStatus) syncStatus.textContent = readableSyncMessage(syncMessage);
-}
-
-function renderMember() {
-  const user = currentUser();
-  const [statusClass, statusLabel] = packageStatus(user);
-  const used = directReferralCount(user.id);
-  const inviteLink = firebaseUser && user.inviteCode ? `${location.origin}${location.pathname}?ref=${user.inviteCode}` : "-";
-  document.querySelector("#memberName").textContent = user.inviteCode ? `${user.name}（${user.inviteCode}）` : user.name;
-  renderMemberProfileStatus(user);
-  document.querySelector("#memberPoints").textContent = points(user.points);
-  document.querySelector("#memberConfirmed").textContent = money(confirmedAvailable(user.id));
-  document.querySelector("#memberPoints").closest("span").title = "充值积分不可提现";
-  document.querySelector("#memberConfirmed").closest("span").title = "推荐奖励和复购奖励可提现";
-  document.querySelector("#memberSlots").textContent = `${used} / 开放`;
-  document.querySelector("#memberRepeatCredits").textContent = points(user.repeatCredits || 0);
-  document.querySelector("#memberPlanStatus").textContent = statusLabel;
-  document.querySelector("#memberPlanStatus").className = `tag ${statusClass}`;
-  renderMemberAlerts(user);
-  renderMemberTabBadges(user);
-  document.querySelector("#inviteLink").textContent = inviteLink;
-  renderInviteCodeBox(user);
-  const refInput = document.querySelector("#registerForm [name='inviteCode']");
-  const refButton = document.querySelector("#registerForm button[type='submit']");
-  const urlRef = currentUrlInviteCode();
-  if (refInput && urlRef && !refInput.value && urlRef !== user.inviteCode) refInput.value = urlRef;
-  if (refInput && user.referrerId) {
-    const referrer = findUser(user.referrerId);
-    refInput.value = referrer ? `已绑定：${referrer.name}` : "已绑定推荐人";
-    refInput.disabled = true;
-    if (refButton) refButton.disabled = true;
-  } else if (refInput) {
-    refInput.disabled = false;
-    if (refButton) refButton.disabled = false;
-  }
-  renderLocalSyncHint(user);
-  renderMemberProfile(user);
-  ensureStorageTestButton();
-  renderMemberPlans(user);
-  renderMemberOrders(user);
-  renderMemberOrderProofStatuses(user);
-  renderMemberReferrals(user);
-  renderRewardRules();
-  renderMemberRewards(user);
-  renderMemberRepeatCreditLogs(user);
-  renderMemberWithdraws(user);
-}
-
-function profileComplete(user) {
-  return Boolean(user.phone && user.withdrawMethod && user.withdrawAccount);
-}
-
-function profileMissingFields(user) {
-  return [
-    user.phone ? "" : "手机号码",
-    user.withdrawMethod ? "" : "默认收款方式",
-    user.withdrawAccount ? "" : "默认收款账号",
-  ].filter(Boolean);
-}
-
-function renderMemberProfileStatus(user) {
-  let status = document.querySelector("#memberProfileStatus");
-  const name = document.querySelector("#memberName");
-  if (!status && name) {
-    status = document.createElement("span");
-    status.id = "memberProfileStatus";
-    name.insertAdjacentElement("afterend", status);
-  }
-  if (!status) return;
-  const complete = profileComplete(user);
-  status.className = `profile-status ${complete ? "complete" : "incomplete"}`;
-  status.textContent = complete ? "资料完整" : "资料待完善";
-  if (complete) {
-    status.removeAttribute("data-member-action");
-    status.removeAttribute("role");
-  } else {
-    status.dataset.memberAction = "profile";
-    status.setAttribute("role", "button");
-  }
-}
-
-function memberAlertStats(user) {
-  const orders = state.orders || [];
-  const rewards = state.rewards || [];
-  const withdraws = state.withdraws || [];
+  const normalizedReferences = getNonVoidedSales(allShiftSales)
+    .map((sale) => normalizeSaleExternalReferences(sale).externalReferences);
+  const payments = getPaymentSummaryRows(shiftSales);
+  const cashSales = Number(payments.find((item) => item.method === "现金")?.total || 0);
+  const openingCash = Math.max(0, Number(shift.openingCash || 0));
+  const { cashIn, cashOut } = getShiftCashMovementTotals(shift);
   return {
-    pendingOrders: orders.filter((order) => order.userId === user.id && order.status === "pending").length,
-    failedProofs: orders.filter((order) => order.userId === user.id && order.status === "pending" && order.proofStatus === "failed").length,
-    pendingRewards: rewards.filter((reward) => reward.userId === user.id && ["pending", "releasing"].includes(reward.status)).length,
-    pendingWithdraws: withdraws.filter((withdraw) => withdraw.userId === user.id && ["pending", "approved"].includes(withdraw.status)).length,
-    missingProfile: !profileComplete(user),
+    orders: shiftSales.length,
+    total: shiftSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0),
+    payments,
+    cashSales,
+    openingCash,
+    cashIn,
+    cashOut,
+    expectedCash: openingCash + cashSales + cashIn - cashOut,
+    voidedOrders: voidedSales.length,
+    voidedTotal: voidedSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0),
+    pendingPaymentOrders: pendingPaymentSales.length,
+    pendingPaymentTotal: pendingPaymentSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0),
+    pendingOrderSync: pendingOrderIds.size,
+    pendingSyncTotal: pendingSales.length
+      + pendingSaleUpdates.length
+      + pendingProducts.length
+      + pendingStockAdjustments.length
+      + pendingAuditLogs.length
+      + getPendingManagementCount(),
+    inventoryReviewPending: allShiftSales.filter(requiresInventoryReview).length,
+    simplePayPending: normalizedReferences.filter((item) => item.simplePayStatus === "pending").length,
+    affiliatePending: normalizedReferences.filter((item) => item.affiliateStatus === "pending").length
   };
 }
 
-function memberAlertItems(user) {
-  const stats = memberAlertStats(user);
-  return [
-    stats.pendingOrders ? { text: `${stats.pendingOrders} 笔充值订单等待后台确认`, tab: "memberPlans" } : null,
-    stats.failedProofs ? { text: `${stats.failedProofs} 个付款凭证需要补传`, tab: "memberPlans" } : null,
-    stats.pendingRewards ? { text: `${stats.pendingRewards} 笔奖励等待确认或释放`, tab: "memberRewards" } : null,
-    stats.pendingWithdraws ? { text: `${stats.pendingWithdraws} 笔提现正在处理中`, tab: "memberWithdraw" } : null,
-    stats.missingProfile ? { text: "联系或默认收款资料还不完整", action: "profile" } : null,
-  ].filter(Boolean);
-}
-
-function renderMemberAlerts(user) {
-  let box = document.querySelector("#memberAlertBox");
-  const accountCard = document.querySelector(".account-card");
-  if (!box && accountCard) {
-    box = document.createElement("div");
-    box.id = "memberAlertBox";
-    box.className = "member-alert-box";
-    accountCard.appendChild(box);
-  }
-  if (!box) return;
-  const items = memberAlertItems(user);
-  box.innerHTML = items.length
-    ? `<strong>待处理提醒</strong>${items.map((item) => `<button class="member-alert-item" type="button" ${item.tab ? `data-open-member-tab="${item.tab}"` : `data-member-action="${item.action}"`}>${item.text}</button>`).join("")}`
-    : `<strong>待处理提醒</strong><span>目前没有需要处理的事项。</span>`;
-  box.classList.toggle("empty", items.length === 0);
-}
-
-function memberAlertCounts(user) {
-  const stats = memberAlertStats(user);
-  return {
-    plans: stats.pendingOrders + stats.failedProofs,
-    rewards: stats.pendingRewards,
-    withdraws: stats.pendingWithdraws,
-  };
-}
-
-function renderMemberTabBadges(user) {
-  const counts = memberAlertCounts(user);
-  setTabBadge("memberPlans", counts.plans, counts.plans ? "warn" : "ok");
-  setTabBadge("memberRewards", counts.rewards, counts.rewards ? "warn" : "ok");
-  setTabBadge("memberWithdraw", counts.withdraws, counts.withdraws ? "warn" : "ok");
-  setTabBadge("memberReferral", 0);
-}
-
-function renderMemberProfile(user) {
-  const form = document.querySelector("#profileForm");
-  if (!form) return;
-  form.querySelector("[name='name']").value = user.name || "";
-  form.querySelector("[name='phone']").value = user.phone || "";
-  form.querySelector("[name='withdrawMethod']").value = user.withdrawMethod || "";
-  form.querySelector("[name='withdrawAccount']").value = user.withdrawAccount || "";
-
-  const withdrawForm = document.querySelector("#withdrawForm");
-  if (!withdrawForm) return;
-  const methodInput = withdrawForm.querySelector("[name='method']");
-  const accountInput = withdrawForm.querySelector("[name='account']");
-  if (methodInput && !methodInput.value) methodInput.value = user.withdrawMethod || "";
-  if (accountInput && !accountInput.value) accountInput.value = user.withdrawAccount || "";
-  const eligibility = withdrawEligibility(user);
-  const eligibilityText = document.querySelector("#withdrawEligibilityText");
-  if (eligibilityText) {
-    eligibilityText.textContent = eligibility.eligible
-      ? `提现条件已满足。${withdrawRuleText(eligibility.available)}`
-      : `提现条件未满足：${eligibility.reasons.join("、")}。${withdrawRuleText(eligibility.available)}`;
-  }
-  const submitButton = withdrawForm.querySelector("button[type='submit']");
-  if (submitButton) submitButton.disabled = !eligibility.eligible;
-  renderWithdrawBreakdown(user);
-}
-
-function renderInviteCodeBox(user) {
-  const inviteLinkBox = document.querySelector("#inviteLink");
-  if (!inviteLinkBox?.parentNode) return;
-  let codeBox = document.querySelector("#inviteCodeBox");
-  if (!firebaseUser || !user.inviteCode) {
-    codeBox?.remove();
+function closeCurrentShift() {
+  if (!currentShift || currentShift.closedAt) {
+    alert("当前没有进行中的班次。");
     return;
   }
-  if (!codeBox) {
-    codeBox = document.createElement("div");
-    codeBox.id = "inviteCodeBox";
-    codeBox.className = "referral-code-box";
-    inviteLinkBox.insertAdjacentElement("beforebegin", codeBox);
-  }
-  codeBox.innerHTML = `
-    <span>我的推荐码</span>
-    <strong>${user.inviteCode}</strong>
-    <small>朋友也可以直接输入这个推荐码绑定。</small>
-    <button class="button ghost compact-button" type="button" data-copy-invite-code="${user.inviteCode}">复制推荐码</button>
-  `;
-}
-
-function ensureWithdrawBreakdownBox() {
-  let box = document.querySelector("#withdrawBreakdownBox");
-  if (box) return box;
-  const withdrawForm = document.querySelector("#withdrawForm");
-  if (!withdrawForm?.parentNode) return null;
-  box = document.createElement("div");
-  box.id = "withdrawBreakdownBox";
-  box.className = "breakdown-box";
-  withdrawForm.insertAdjacentElement("beforebegin", box);
-  return box;
-}
-
-function renderWithdrawBreakdown(user) {
-  const box = ensureWithdrawBreakdownBox();
-  if (!box) return;
-  const breakdown = withdrawBreakdown(user.id);
-  box.innerHTML = `
-    <span>推荐奖励可提现 <strong>${money(breakdown.first)}</strong></span>
-    <span>复购奖励已释放 <strong>${money(breakdown.repeatReleased)}</strong></span>
-    <span>复购奖励待释放 <strong>${money(breakdown.pendingRelease)}</strong></span>
-    <span>已申请/处理中 <strong>${money(breakdown.requested)}</strong></span>
-  `;
-}
-
-function ensureStorageTestButton() {
-  if (document.querySelector("#testStorageBtn")) return;
-  const proofInput = document.querySelector("#paymentInfoForm [name='paymentProof']");
-  const proofField = proofInput?.closest("label");
-  if (!proofField) return;
-  const button = document.createElement("button");
-  button.id = "testStorageBtn";
-  button.className = "button ghost";
-  button.type = "button";
-  button.textContent = "测试凭证上传";
-  proofField.insertAdjacentElement("afterend", button);
-}
-
-function renderMemberPlans(user) {
-  const nextType = actualOrderType(state, user.id);
-  document.querySelector("#memberPlanCards").innerHTML = state.plans.map((plan) => {
-    const validAmount = isValidPackageAmount(plan.amount);
-    return `
-      <article class="plan-card">
-        <strong>${plan.name} · ${money(plan.amount)}</strong>
-        <span>配套单位：${packageUnitLabel(plan.amount)} / 发放积分：${points(plan.points)}</span>
-        <span>直接推荐：开放 / 有效期：${plan.validDays} 天</span>
-        <span>奖励池资格：每直接推荐 1 人解锁 1 个，最多 ${MAX_REPEAT_POOL_CREDITS} 个 / 冷却：${planRepeatCooldownHours(plan)} 小时</span>
-        <span>奖励：推荐 ${plan.firstRate}% / 下线复购 ${planDirectRepeatRate(plan)}% / 奖励池 ${planPoolRepeatRate(plan)}%</span>
-        ${validAmount
-          ? `<button class="button primary" data-buy-plan="${plan.id}" data-buy-type="${nextType}">申请充值配套</button>`
-          : `<button class="button ghost" type="button" disabled>金额需为 RM${PACKAGE_UNIT_AMOUNT} 整数倍</button>`}
-      </article>
-    `;
-  }).join("");
-}
-
-function renderMemberOrders(user) {
-  const rows = state.orders.filter((order) => order.userId === user.id).slice().reverse().map((order) => {
-    const plan = orderPlan(order);
-    const noteText = order.reviewNote ? `<span class="muted-line">处理备注：${order.reviewNote}</span>` : "";
-    const summaryText = order.confirmSummary ? `<span class="muted-line">处理结果：${order.confirmSummary}</span>` : "";
-    return `<tr><td>${order.id}</td><td>${plan?.name || "-"}</td><td>${order.type === "first" ? "首充" : "复购"}</td><td>${money(order.amount)}</td><td>${points(order.points)}</td><td><span class="tag ${order.status}">${labelStatus(order.status)}</span>${noteText}${summaryText}</td><td>${new Date(order.createdAt).toLocaleString("zh-CN")}</td><td><button class="link" type="button" data-member-order-detail="${order.id}">详情</button></td></tr>`;
-  }).join("");
-  document.querySelector("#memberOrderTable").innerHTML = rows || `<tr><td colspan="8">暂无订单</td></tr>`;
-}
-
-function renderMemberOrderProofStatuses(user) {
-  const table = document.querySelector("#memberOrderTable");
-  if (!table) return;
-  const orders = state.orders.filter((order) => order.userId === user.id).slice().reverse();
-  [...table.querySelectorAll("tr")].forEach((row, index) => {
-    const order = orders[index];
-    const statusCell = row.children[5];
-    if (!order || !statusCell || statusCell.querySelector(".proof-status")) return;
-    const proofLine = document.createElement("span");
-    proofLine.className = "muted-line proof-status";
-    proofLine.textContent = proofStatusText(order);
-    statusCell.appendChild(proofLine);
-    if (order.status === "pending" && !order.proofUrl) {
-      const retryButton = document.createElement("button");
-      retryButton.className = "link proof-retry";
-      retryButton.type = "button";
-      retryButton.dataset.retryProof = order.id;
-      retryButton.textContent = "补传凭证";
-      statusCell.appendChild(retryButton);
-    }
-  });
-}
-
-function renderMemberReferrals(user) {
-  const usersById = new Map(state.users.map((item) => [item.id, item]));
-  const referrals = new Map();
-  state.users.filter((item) => item.referrerId === user.id).forEach((item) => {
-    referrals.set(item.id, referralDocForUser(item));
-  });
-  (state.referrals || []).filter((item) => item.referrerId === user.id).forEach((item) => {
-    referrals.set(item.inviteeId, item);
-  });
-  const rows = [...referrals.values()].map((referral) => {
-    const invitee = usersById.get(referral.inviteeId);
-    const [statusClass, statusLabel] = invitee ? packageStatus(invitee) : ["neutral", "已绑定"];
-    const sales = state.orders.filter((order) => order.userId === referral.inviteeId && order.status === "paid").reduce((sum, order) => sum + order.amount, 0);
-    return `<tr><td>${invitee?.name || referral.inviteeName || "-"}</td><td>${invitee?.account || referral.inviteeAccount || "-"}</td><td><span class="tag ${statusClass}">${statusLabel}</span></td><td>${money(sales)}</td><td>是</td></tr>`;
-  }).join("");
-  document.querySelector("#memberReferralTable").innerHTML = rows || `<tr><td colspan="5">暂无直接推荐用户</td></tr>`;
-}
-
-function rewardSourceText(reward) {
-  const sourceUser = findUser(reward.sourceUserId);
-  if (sourceUser) return sourceUser.name || sourceUser.account || sourceUser.inviteCode || sourceUser.id;
-  const referral = (state.referrals || []).find((item) => item.inviteeId === reward.sourceUserId);
-  return reward.sourceUserName
-    || referral?.inviteeName
-    || reward.sourceUserAccount
-    || referral?.inviteeAccount
-    || reward.sourceUserId
-    || "-";
-}
-
-function renderRewardRules() {
-  document.querySelector("#rewardRules").innerHTML = state.plans.map((plan) => `
-    <article class="rule-card">
-      <strong>${plan.name}</strong>
-      <span>配套单位：${packageUnitLabel(plan.amount)}，奖励按 RM${PACKAGE_UNIT_AMOUNT} 单位统一计算。</span>
-      <span>推荐奖励：下线首次购买 ${money(plan.amount)}，推荐人获得 ${money(plan.amount * plan.firstRate / 100)}。</span>
-      <span>下线复购奖励：下线复购时，原推荐人获得 ${money(plan.amount * planDirectRepeatRate(plan) / 100)}，需推荐人配套有效。</span>
-      <span>奖励池资格：每直接推荐 1 人解锁 1 个，最多 ${MAX_REPEAT_POOL_CREDITS} 个；派发成功扣 1 个资格。</span>
-      <span>奖励池奖励：后续复购订单会自动派发给奖励池用户，每次约 ${money(plan.amount * planPoolRepeatRate(plan) / 100)}，并扣 1 个资格。</span>
-      <span>${TEST_INSTANT_MODE ? "测试期奖励即时确认/释放，方便连续测试。" : `奖励先待确认，${CONFIRM_DAYS} 天后由后台确认。`}</span>
-    </article>
-  `).join("");
-}
-
-function renderMemberRewards(user) {
-  const rows = state.rewards.filter((reward) => reward.userId === user.id).slice().reverse().map((reward) => {
-    const noteText = reward.reviewNote ? `<span class="muted-line">审核备注：${reward.reviewNote}</span>` : "";
-    return `<tr><td>${rewardSourceText(reward)}</td><td>${reward.orderId}</td><td>${rewardTypeText(reward)}</td><td>${reward.rate}%</td><td>${rewardAmountText(reward)}</td><td><span class="tag ${reward.status}">${labelStatus(reward.status)}</span>${noteText}</td><td>${rewardNextDateText(reward)}</td><td><button class="link" type="button" data-member-reward-detail="${reward.id}">详情</button></td></tr>`;
-  }).join("");
-  document.querySelector("#memberRewardTable").innerHTML = rows || `<tr><td colspan="8">暂无奖励</td></tr>`;
-}
-
-function renderMemberRepeatCreditLogs(user) {
-  const table = document.querySelector("#memberRepeatCreditLogTable");
-  if (!table) return;
-  const rows = (state.repeatCreditLogs || [])
-    .filter((log) => log.userId === user.id)
-    .slice()
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(0, 20)
-    .map((log) => {
-      const change = Number(log.change || 0);
-      const changeText = `${change > 0 ? "+" : ""}${change}`;
-      return `<tr><td>${new Date(log.createdAt).toLocaleString("zh-CN")}</td><td>${changeText}</td><td>${points(log.balance || 0)}</td><td>${repeatCreditReasonText(log.reason)}</td><td>${[log.source, log.note].filter(Boolean).join(" / ") || "-"}</td></tr>`;
-    }).join("");
-  table.innerHTML = rows || `<tr><td colspan="5">暂无奖励池资格流水</td></tr>`;
-}
-
-function renderMemberWithdraws(user) {
-  const rows = state.withdraws.filter((item) => item.userId === user.id).slice().reverse().map((item) => {
-    const paidText = item.paidAt ? new Date(item.paidAt).toLocaleString("zh-CN") : "-";
-    const noteText = item.reviewNote ? `<span class="muted-line">备注：${item.reviewNote}</span>` : "";
-    return `<tr><td>${item.id}</td><td>${money(item.amount)}</td><td>${item.source === "reward" ? "奖励提现" : item.source || "-"}</td><td>${item.method}</td><td>${item.account}</td><td><span class="tag ${item.status}">${labelStatus(item.status)}</span>${noteText}</td><td>${new Date(item.createdAt).toLocaleString("zh-CN")}</td><td>${paidText}</td><td><button class="link" type="button" data-member-withdraw-detail="${item.id}">详情</button></td></tr>`;
-  }).join("");
-  document.querySelector("#memberWithdrawTable").innerHTML = rows || `<tr><td colspan="9">暂无提现记录</td></tr>`;
-}
-
-function renderAdmin() {
-  document.querySelector("#metricUsers").textContent = state.users.length;
-  document.querySelector("#metricSales").textContent = money(state.orders.filter((order) => order.status === "paid").reduce((sum, order) => sum + order.amount, 0));
-  document.querySelector("#metricPendingOrders").textContent = state.orders.filter((order) => order.status === "pending").length;
-  document.querySelector("#metricPendingRewards").textContent = money(state.rewards.filter((reward) => ["pending", "releasing"].includes(reward.status)).reduce((sum, reward) => sum + (Number(reward.amount || 0) - Number(reward.releasedAmount || 0)), 0));
-  document.querySelector("#metricWithdraws").textContent = money(state.withdraws.filter((item) => item.status === "pending").reduce((sum, item) => sum + item.amount, 0));
-  const summary = readinessSummary();
-  const readinessMetric = document.querySelector("#metricReadiness");
-  readinessMetric.textContent = summary.label;
-  readinessMetric.className = summary.status === "ready" ? "metric-ok" : "metric-warn";
-  ensurePlanCooldownField();
-  ensurePlanCancelButton();
-  ensureRewardStatusOptions();
-  renderAdminTodos();
-  renderAdminTabBadges();
-  renderAdminPlans();
-  renderAdminUsers();
-  renderRepeatCreditLogs();
-  renderAdminOrders();
-  renderAdminRewards();
-  renderAdminWithdraws();
-  renderAdminRiskRules();
-  renderAdminLogs();
-}
-
-function adminTodoItems() {
-  const now = new Date();
-  const pendingOrders = (state.orders || []).filter((order) => order.status === "pending");
-  const failedProofOrders = (state.orders || []).filter((order) => order.status === "pending" && order.proofStatus === "failed");
-  const dueRewards = (state.rewards || []).filter((reward) =>
-    ["pending", "releasing"].includes(reward.status) && new Date(reward.confirmAfter) <= now
-  );
-  const pendingRewards = (state.rewards || []).filter((reward) => ["pending", "releasing"].includes(reward.status));
-  const pendingWithdraws = (state.withdraws || []).filter((withdraw) => withdraw.status === "pending");
-  const orderRisks = orderRiskIssues(state);
-  const withdrawRisks = withdrawRiskIssues(state);
-  const duplicateRisks = duplicateOrderRisks(state);
-  const rewardIssues = rewardIntegrityIssues(state);
-  const integrityIssues = dataIntegrityIssues(state, { includeProfileIssues: false, includeOrderIssues: false, includeRewardIssues: false, includeWithdrawIssues: false });
-
-  return [
-    {
-      title: "充值订单待审核",
-      count: pendingOrders.length,
-      level: pendingOrders.length ? "warn" : "ok",
-      detail: pendingOrders.length ? `有 ${pendingOrders.length} 笔订单等待确认付款。` : "没有待审核充值订单。",
-      action: "到订单管理处理",
-      tab: "adminOrders",
-      focus: "pendingOrders",
-    },
-    {
-      title: "付款凭证异常",
-      count: failedProofOrders.length,
-      level: failedProofOrders.length ? "danger" : "ok",
-      detail: failedProofOrders.length ? `${failedProofOrders.length} 笔订单凭证上传失败，需要用户补传或后台核对。` : "没有上传失败的付款凭证。",
-      action: "到订单管理查看",
-      tab: "adminOrders",
-      focus: "failedProofs",
-    },
-    {
-      title: "重复提交风险",
-      count: duplicateRisks.length,
-      level: duplicateRisks.length ? "danger" : "ok",
-      detail: duplicateRisks.length ? duplicateRisks.slice(0, 2).join("；") : "没有发现重复付款参考号或重复凭证名。",
-      action: "到风控规则查看",
-      tab: "adminRisk",
-      focus: "duplicateOrders",
-    },
-    {
-      title: "订单风控风险",
-      count: orderRisks.length,
-      level: orderRisks.length ? "danger" : "ok",
-      detail: orderRisks.length ? orderRisks.slice(0, 2).join("；") : "没有发现订单风控风险。",
-      action: "到订单管理查看",
-      tab: "adminOrders",
-      focus: "orderRisks",
-    },
-    {
-      title: "奖励待处理",
-      count: pendingRewards.length,
-      level: dueRewards.length ? "warn" : pendingRewards.length ? "neutral" : "ok",
-      detail: dueRewards.length ? `${dueRewards.length} 笔奖励已到期可确认/释放。` : pendingRewards.length ? `${pendingRewards.length} 笔奖励仍在等待或分期中。` : "没有待处理奖励。",
-      action: "到奖励审核处理",
-      tab: "adminRewards",
-      focus: dueRewards.length ? "dueRewards" : "pendingRewards",
-    },
-    {
-      title: "奖励发放异常",
-      count: rewardIssues.length,
-      level: rewardIssues.length ? "danger" : "ok",
-      detail: rewardIssues.length ? rewardIssues.slice(0, 2).join("；") : "奖励发放规则正常。",
-      action: "到奖励审核查看",
-      tab: "adminRewards",
-      focus: "rewardIssues",
-    },
-    {
-      title: "提现待审核",
-      count: pendingWithdraws.length,
-      level: pendingWithdraws.length ? "warn" : "ok",
-      detail: pendingWithdraws.length ? `${pendingWithdraws.length} 笔提现申请等待审核。` : "没有待审核提现。",
-      action: "到提现审核处理",
-      tab: "adminWithdraws",
-      focus: "pendingWithdraws",
-    },
-    {
-      title: "提现风控风险",
-      count: withdrawRisks.length,
-      level: withdrawRisks.length ? "danger" : "ok",
-      detail: withdrawRisks.length ? `${withdrawRisks.length} 项提现风控风险。` : "没有发现提现风控风险。",
-      action: "到提现审核查看",
-      tab: "adminWithdraws",
-      focus: "withdrawRisks",
-    },
-    {
-      title: "数据异常",
-      count: integrityIssues.length,
-      level: integrityIssues.length ? "danger" : "ok",
-      detail: integrityIssues.length ? integrityIssues.slice(0, 2).join("；") : "数据一致性正常。",
-      action: "到风控规则查看",
-      tab: "adminRisk",
-      focus: "integrityIssues",
-    },
-  ];
-}
-
-function renderAdminTodos() {
-  const target = document.querySelector("#adminTodoList");
-  if (!target) return;
-  const items = adminTodoItems();
-  const activeItems = items.filter((item) => Number(item.count || 0) > 0);
-  if (!activeItems.length) {
-    target.innerHTML = `
-      <article class="todo-card ok">
-        <span>业务待办</span>
-        <strong>0</strong>
-        <p>没有待审核订单、奖励、提现或业务风控风险。用户资料和上线自检请到风控规则页查看。</p>
-        <button class="link" type="button" data-open-admin-tab="adminRisk" data-todo-focus="readiness">到风控规则查看</button>
-      </article>
-    `;
+  if (!canManageCurrentShift()) {
+    alert(`当前班次属于 ${getCurrentShiftLabel()}，只有原员工或管理员可以交班。`);
     return;
   }
-  target.innerHTML = activeItems.map((item) => `
-    <article class="todo-card ${item.level}">
-      <span>${item.title}</span>
-      <strong>${item.count}</strong>
-      <p>${item.detail}</p>
-      <button class="link" type="button" data-open-admin-tab="${item.tab}" data-todo-focus="${item.focus}">${item.action}</button>
-    </article>
-  `).join("");
+  openShiftSettlement();
 }
 
-function setTabBadge(tabId, count, tone = "warn") {
-  const button = document.querySelector(`.tab[data-tab="${tabId}"]`);
-  if (!button) return;
-  button.querySelector(".tab-badge")?.remove();
-  if (!count) return;
-  const badge = document.createElement("span");
-  badge.className = `tab-badge ${tone}`;
-  badge.textContent = count > 99 ? "99+" : String(count);
-  button.appendChild(badge);
-}
-
-function renderAdminTabBadges() {
-  const items = adminTodoItems();
-  const byTab = items.reduce((map, item) => {
-    map[item.tab] = (map[item.tab] || 0) + Number(item.count || 0);
-    return map;
-  }, {});
-  const total = items.reduce((sum, item) => sum + Number(item.count || 0), 0);
-  setTabBadge("adminTodos", total, "warn");
-  setTabBadge("adminOrders", byTab.adminOrders || 0, byTab.adminOrders ? "danger" : "warn");
-  setTabBadge("adminRewards", byTab.adminRewards || 0, "warn");
-  setTabBadge("adminWithdraws", byTab.adminWithdraws || 0, "warn");
-  setTabBadge("adminRisk", byTab.adminRisk || 0, byTab.adminRisk ? "danger" : "warn");
-  setTabBadge("adminUsers", 0);
-  setTabBadge("adminLogs", 0);
-}
-
-function ensureRewardStatusOptions() {
-  const select = document.querySelector("#rewardStatusFilter");
-  if (!select) return;
-  if (!select.querySelector("option[value='due']")) {
-    const dueOption = document.createElement("option");
-    dueOption.value = "due";
-    dueOption.textContent = "到期可处理";
-    select.querySelector("option[value='pending']")?.insertAdjacentElement("beforebegin", dueOption);
+function seedLegacyCashMovements(shift) {
+  if (!shift || (Array.isArray(shift.cashMovements) && shift.cashMovements.length)) return;
+  const movements = [];
+  if (Number(shift.cashIn || 0) > 0) {
+    movements.push({
+      id: `CASH-LEGACY-IN-${shift.id}`,
+      type: "in",
+      amount: Number(shift.cashIn),
+      reason: "旧版现金存入汇总",
+      createdAt: shift.openedAt,
+      actor: { name: shift.operatorName || "", email: shift.operatorEmail || "" },
+      legacy: true
+    });
   }
-  if (select.querySelector("option[value='releasing']")) return;
-  const option = document.createElement("option");
-  option.value = "releasing";
-  option.textContent = "分期释放中";
-  const confirmedOption = select.querySelector("option[value='confirmed']");
-  if (confirmedOption) {
-    confirmedOption.insertAdjacentElement("beforebegin", option);
-  } else {
-    select.appendChild(option);
+  if (Number(shift.cashOut || 0) > 0) {
+    movements.push({
+      id: `CASH-LEGACY-OUT-${shift.id}`,
+      type: "out",
+      amount: Number(shift.cashOut),
+      reason: "旧版现金取出汇总",
+      createdAt: shift.openedAt,
+      actor: { name: shift.operatorName || "", email: shift.operatorEmail || "" },
+      legacy: true
+    });
   }
+  shift.cashMovements = movements;
 }
 
-function ensurePlanCooldownField() {
-  const form = document.querySelector("#planForm");
-  if (!form || form.querySelector("[name='repeatCooldownHours']")) return;
-  const repeatField = form.querySelector("[name='repeatCredits']")?.closest("label");
-  if (!repeatField) return;
-  const field = document.createElement("label");
-  field.innerHTML = `复购冷却小时<input name="repeatCooldownHours" type="number" min="0" step="1" value="0" required />`;
-  repeatField.insertAdjacentElement("afterend", field);
+function refreshCurrentShiftCashTotals() {
+  if (!currentShift) return;
+  const totals = getShiftCashMovementTotals(currentShift);
+  currentShift.cashIn = Number(totals.cashIn.toFixed(2));
+  currentShift.cashOut = Number(totals.cashOut.toFixed(2));
+  saveCurrentShift();
 }
 
-function ensurePlanCancelButton() {
-  const form = document.querySelector("#planForm");
-  if (!form || form.querySelector("#cancelPlanEditBtn")) return;
-  const submitButton = form.querySelector("button[type='submit']");
-  if (!submitButton) return;
-  const button = document.createElement("button");
-  button.id = "cancelPlanEditBtn";
-  button.className = "button ghost";
-  button.type = "button";
-  button.textContent = "取消编辑";
-  button.hidden = true;
-  submitButton.insertAdjacentElement("afterend", button);
-}
-
-function syncPlanUnitFields() {
-  const form = document.querySelector("#planForm");
-  if (!form) return;
-  const amountInput = form.querySelector("[name='amount']");
-  const pointsInput = form.querySelector("[name='points']");
-  if (!amountInput || !pointsInput) return;
-  const amount = Number(amountInput.value || 0);
-  if (isValidPackageAmount(amount)) {
-    pointsInput.value = packageUnits(amount) * PACKAGE_UNIT_POINTS;
-    amountInput.setCustomValidity("");
-  } else {
-    if (amount > 0) amountInput.setCustomValidity(`充值金额必须是 RM${PACKAGE_UNIT_AMOUNT} 的整数倍`);
-    if (!pointsInput.value) pointsInput.value = "";
+function openCashMovementDialog(returnToSettlement = false) {
+  if (!requireOperator()) return;
+  if (!currentShift || currentShift.closedAt) {
+    alert("请先开始班次，再登记现金流水。");
+    return;
   }
+  if (!canManageCurrentShift()) {
+    alert(`当前班次属于 ${getCurrentShiftLabel()}，只有原员工或管理员可以登记现金流水。`);
+    return;
+  }
+  returnToSettlementAfterCashMovement = returnToSettlement;
+  if (returnToSettlement) closeShiftSettlementDialog();
+  renderCashMovementDialog();
+  els.cashMovementDialog.showModal();
 }
 
-function planUsed(planId) {
-  return (state.orders || []).some((order) =>
-    order.planId === planId
-    && ["pending", "paid"].includes(order.status)
-    && recordIsAfterTestClear(order)
-  );
+function closeCashMovementDialog() {
+  if (els.cashMovementDialog.open) els.cashMovementDialog.close();
 }
 
-function planFromForm(form) {
-  const amount = Number(form.get("amount"));
-  const units = isValidPackageAmount(amount) ? packageUnits(amount) : 0;
-  return {
-    name: form.get("name").trim(),
-    amount,
-    unitAmount: PACKAGE_UNIT_AMOUNT,
-    unitCount: units,
-    points: units ? units * PACKAGE_UNIT_POINTS : Number(form.get("points")),
-    slots: Number(form.get("slots")),
-    repeatCredits: Math.min(Number(form.get("repeatCredits")), MAX_REPEAT_POOL_CREDITS),
-    repeatCooldownHours: Number(form.get("repeatCooldownHours") || 0),
-    validDays: Number(form.get("validDays")),
-    firstRate: Number(form.get("firstRate")),
-    directRepeatRate: Number(form.get("directRepeatRate") || 10),
-    repeatRate: Number(form.get("repeatRate")),
-  };
+function handleCashMovementDialogClosed() {
+  const shouldReturn = returnToSettlementAfterCashMovement;
+  returnToSettlementAfterCashMovement = false;
+  if (shouldReturn && currentShift && !currentShift.closedAt) openShiftSettlement();
 }
 
-function fillPlanForm(plan) {
-  const form = document.querySelector("#planForm");
-  if (!form || !plan) return;
-  ensurePlanCooldownField();
-  form.querySelector("[name='name']").value = plan.name || "";
-  form.querySelector("[name='amount']").value = plan.amount || "";
-  form.querySelector("[name='points']").value = plan.points || "";
-  form.querySelector("[name='slots']").value = plan.slots || "";
-  form.querySelector("[name='repeatCredits']").value = planRepeatCredits(plan);
-  form.querySelector("[name='repeatCooldownHours']").value = planRepeatCooldownHours(plan);
-  form.querySelector("[name='validDays']").value = plan.validDays || "";
-  form.querySelector("[name='firstRate']").value = plan.firstRate || 0;
-  form.querySelector("[name='directRepeatRate']").value = planDirectRepeatRate(plan);
-  form.querySelector("[name='repeatRate']").value = planPoolRepeatRate(plan);
-  const button = form.querySelector("button[type='submit']");
-  if (button) button.textContent = "保存配套";
-  const cancelButton = form.querySelector("#cancelPlanEditBtn");
-  if (cancelButton) cancelButton.hidden = false;
-  syncPlanUnitFields();
-}
-
-function resetPlanForm() {
-  const form = document.querySelector("#planForm");
-  if (!form) return;
-  form.reset();
-  editingPlanId = "";
-  syncPlanUnitFields();
-  const button = form.querySelector("button[type='submit']");
-  if (button) button.textContent = "新增配套";
-  const cancelButton = form.querySelector("#cancelPlanEditBtn");
-  if (cancelButton) cancelButton.hidden = true;
-}
-
-function renderAdminPlans() {
-  document.querySelector("#adminPlanList").innerHTML = state.plans.map((plan) => `
-    <article class="plan-card">
-      <strong>${plan.name} · ${money(plan.amount)}</strong>
-      <span>单位 ${packageUnitLabel(plan.amount)} / 积分 ${points(plan.points)} / 直接推荐开放 / 奖励池资格上限 ${MAX_REPEAT_POOL_CREDITS} 个</span>
-      <span>冷却 ${planRepeatCooldownHours(plan)} 小时 / 有效期 ${plan.validDays} 天 / 推荐 ${plan.firstRate}% / 下线复购 ${planDirectRepeatRate(plan)}% / 奖励池 ${planPoolRepeatRate(plan)}%</span>
-      <div class="actions">
-        <button class="link" type="button" data-edit-plan="${plan.id}">编辑</button>
-        ${planUsed(plan.id) ? `<span class="muted-line">已有待处理或已付款订单，不能删除</span>` : `<button class="link danger-link" type="button" data-delete-plan="${plan.id}">删除</button>`}
+function renderCashMovementDialog() {
+  if (!currentShift) return;
+  seedLegacyCashMovements(currentShift);
+  refreshCurrentShiftCashTotals();
+  els.cashMovementShiftInfo.textContent = `${currentShift.operatorName || "-"} · ${currentShift.branchName || getBranchName(currentShift.branchId)} · ${new Date(currentShift.openedAt).toLocaleString()} 开始`;
+  els.cashMovementInTotal.textContent = money(currentShift.cashIn || 0);
+  els.cashMovementOutTotal.textContent = money(currentShift.cashOut || 0);
+  els.cashMovementList.innerHTML = "";
+  const movements = [...(currentShift.cashMovements || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  if (!movements.length) {
+    els.cashMovementList.innerHTML = '<div class="empty compact-empty">本班尚无现金存入或取出</div>';
+    return;
+  }
+  const reversedIds = new Set(movements.map((item) => item.reversalOf).filter(Boolean));
+  for (const movement of movements) {
+    const row = document.createElement("div");
+    row.className = "management-row";
+    const reversed = reversedIds.has(movement.id);
+    row.innerHTML = `
+      <div>
+        <strong>${movement.type === "out" ? "现金取出" : "现金存入"} · ${money(movement.amount)}</strong>
+        <small>${escapeHtml(movement.reason || "-")} · ${new Date(movement.createdAt).toLocaleString()} · ${escapeHtml(movement.actor?.name || "-")}</small>
       </div>
-    </article>
-  `).join("");
+      <button class="ghost danger" type="button" data-reverse-cash ${reversed || movement.reversalOf ? "disabled" : ""}>${reversed ? "已冲正" : (movement.reversalOf ? "冲正记录" : "冲正")}</button>
+    `;
+    const reverseButton = row.querySelector("[data-reverse-cash]");
+    reverseButton.addEventListener("click", () => reverseCashMovement(movement.id));
+    els.cashMovementList.append(row);
+  }
 }
 
-function renderAdminUsers() {
-  const userOptions = state.users.map((user) => `<option value="${user.id}">${user.name}（${user.inviteCode}）</option>`).join("");
-  document.querySelector("#pointsForm [name='userId']").innerHTML = userOptions;
-  document.querySelector("#repeatCreditsForm [name='userId']").innerHTML = userOptions;
-  const users = filteredUsers();
-  document.querySelector("#adminUserTable").innerHTML = users.map((user) => {
-    const referrer = findUser(user.referrerId);
-    const [statusClass, statusLabel] = packageStatus(user);
-    const sharedUsers = sharedWithdrawAccountUsers(user.withdrawAccount, user.id);
-    const payoutRisk = sharedUsers.length ? `<span class="risk-line">共享账号 ${sharedUsers.length}</span>` : "-";
-    const missingFields = profileMissingFields(user);
-    const profileRisk = missingFields.length ? `<span class="profile-line">缺：${missingFields.join("、")}</span>` : "";
-    return `<tr><td>${user.name}${profileRisk}</td><td>${user.account}</td><td>${user.phone || "-"}</td><td>${user.inviteCode}</td><td>${referrer?.name || "无"}</td><td>${points(user.points)}</td><td><span class="tag ${statusClass}">${statusLabel}</span></td><td>${directReferralCount(user.id)} / 开放</td><td>${points(user.repeatCredits || 0)}</td><td>${payoutRisk}</td><td><span class="tag ${user.frozen ? "frozen" : "active"}">${user.frozen ? "已冻结" : "正常"}</span></td><td><button class="link" data-user-detail="${user.id}">详情</button><button class="link" data-export-user-records="${user.id}">导出</button><button class="link" data-freeze-user="${user.id}">${user.frozen ? "解冻" : "冻结"}</button></td></tr>`;
-  }).join("") || `<tr><td colspan="12">没有符合条件的用户</td></tr>`;
+function recordCashMovement(event) {
+  event.preventDefault();
+  if (cashMovementInProgress) return;
+  if (!currentShift || currentShift.closedAt) return;
+  if (!canManageCurrentShift()) {
+    alert("当前账号无权修改这个班次的现金流水。");
+    return;
+  }
+  const type = els.cashMovementType.value === "out" ? "out" : "in";
+  const amount = Number(els.cashMovementAmount.value || 0);
+  const reason = els.cashMovementReason.value.trim();
+  if (!Number.isFinite(amount) || amount <= 0 || !reason) {
+    alert("请填写有效金额和原因。");
+    return;
+  }
+  cashMovementInProgress = true;
+  els.cashMovementSubmitBtn.disabled = true;
+  els.cashMovementSubmitBtn.textContent = "正在保存...";
+  try {
+    const nextShift = structuredClone(currentShift);
+    seedLegacyCashMovements(nextShift);
+    const movement = {
+      id: `CASH-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      type,
+      amount: Number(amount.toFixed(2)),
+      reason,
+      createdAt: new Date().toISOString(),
+      actor: getCurrentActor()
+    };
+    nextShift.cashMovements.push(movement);
+    const totals = getShiftCashMovementTotals(nextShift);
+    nextShift.cashIn = Number(totals.cashIn.toFixed(2));
+    nextShift.cashOut = Number(totals.cashOut.toFixed(2));
+    if (!save(STORAGE_KEYS.currentShift, nextShift)) {
+      alert("现金流水尚未保存，原有班次资料没有改变，请处理浏览器储存空间后重试。");
+      return;
+    }
+    currentShift = nextShift;
+    writeAuditLog("shift.cash-movement", {
+      shiftId: currentShift.id,
+      movementId: movement.id,
+      type,
+      amount: movement.amount,
+      reason
+    });
+    els.cashMovementForm.reset();
+    renderCashMovementDialog();
+    renderOperatorAccess();
+  } finally {
+    cashMovementInProgress = false;
+    els.cashMovementSubmitBtn.disabled = false;
+    els.cashMovementSubmitBtn.textContent = "登记现金流水";
+  }
 }
 
-function repeatCreditReasonText(reason) {
+function reverseCashMovement(movementId) {
+  if (!currentShift || currentShift.closedAt) return;
+  if (!canManageCurrentShift()) {
+    alert("当前账号无权冲正这个班次的现金流水。");
+    return;
+  }
+  const movements = currentShift.cashMovements || [];
+  const movement = movements.find((item) => item.id === movementId);
+  if (!movement || movements.some((item) => item.reversalOf === movementId)) return;
+  if (!confirm(`确定冲正这笔${movement.type === "out" ? "现金取出" : "现金存入"} ${money(movement.amount)} 吗？`)) return;
+  const nextShift = structuredClone(currentShift);
+  seedLegacyCashMovements(nextShift);
+  const reversal = {
+    id: `CASH-REV-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    type: movement.type === "out" ? "in" : "out",
+    amount: Number(movement.amount),
+    reason: `冲正 ${movement.id}：${movement.reason || ""}`,
+    createdAt: new Date().toISOString(),
+    actor: getCurrentActor(),
+    reversalOf: movement.id
+  };
+  nextShift.cashMovements.push(reversal);
+  const totals = getShiftCashMovementTotals(nextShift);
+  nextShift.cashIn = Number(totals.cashIn.toFixed(2));
+  nextShift.cashOut = Number(totals.cashOut.toFixed(2));
+  if (!save(STORAGE_KEYS.currentShift, nextShift)) {
+    alert("冲正尚未保存，原有现金流水没有改变，请处理浏览器储存空间后重试。");
+    return;
+  }
+  currentShift = nextShift;
+  writeAuditLog("shift.cash-movement.reverse", {
+    shiftId: currentShift.id,
+    movementId,
+    reversalId: reversal.id,
+    amount: reversal.amount
+  });
+  renderCashMovementDialog();
+}
+
+function updateSettlementDifference() {
+  const summary = getShiftSummary(currentShift);
+  const openingCash = Math.max(0, Number(els.settlementOpeningCash.value || 0));
+  const cashIn = Math.max(0, Number(els.settlementCashIn.value || 0));
+  const cashOut = Math.max(0, Number(els.settlementCashOut.value || 0));
+  const expectedCash = openingCash + Number(summary.cashSales || 0) + cashIn - cashOut;
+  els.settlementExpectedCash.textContent = money(expectedCash);
+  const rawValue = els.settlementCountedCash.value;
+  if (rawValue === "") {
+    els.settlementCashDifference.textContent = "待输入";
+    els.settlementCashDifference.parentElement.classList.remove("negative");
+    els.settlementCashDifference.parentElement.classList.remove("mismatch");
+    return;
+  }
+  const difference = Number(rawValue || 0) - expectedCash;
+  els.settlementCashDifference.textContent = money(difference);
+  els.settlementCashDifference.parentElement.classList.toggle("negative", difference < 0);
+  els.settlementCashDifference.parentElement.classList.toggle("mismatch", difference !== 0);
+}
+
+function openShiftSettlement() {
+  if (!currentShift || currentShift.closedAt) return;
+  if (!canManageCurrentShift()) {
+    alert(`当前班次属于 ${getCurrentShiftLabel()}，只有原员工或管理员可以交班。`);
+    return;
+  }
+  const summary = getShiftSummary(currentShift);
+  els.settlementShiftInfo.textContent = `${currentShift.operatorName || "-"} · ${currentShift.branchName || getBranchName(currentShift.branchId)} · ${new Date(currentShift.openedAt).toLocaleString()} 开始`;
+  els.settlementOrders.textContent = String(summary.orders);
+  els.settlementTotal.textContent = money(summary.total);
+  els.settlementVoids.textContent = `${summary.voidedOrders} 单`;
+  els.settlementPaymentList.innerHTML = "";
+  if (!summary.payments.length) {
+    els.settlementPaymentList.innerHTML = '<div class="empty compact-empty">本班暂无有效订单</div>';
+  } else {
+    for (const payment of summary.payments) {
+      const row = document.createElement("div");
+      row.className = "management-row";
+      row.innerHTML = `
+        <div>
+          <strong>${escapeHtml(payment.method)}</strong>
+          <small>${payment.orders} 单</small>
+        </div>
+        <span>${money(payment.total)}</span>
+      `;
+      els.settlementPaymentList.append(row);
+    }
+  }
+  const warnings = [];
+  if (!navigator.onLine) warnings.push("当前离线，交班资料会保存在本机并等待同步。");
+  if (summary.pendingOrderSync) warnings.push(`本班有 ${summary.pendingOrderSync} 笔订单或更新等待同步。`);
+  if (summary.pendingSyncTotal > summary.pendingOrderSync) warnings.push(`本机另有 ${summary.pendingSyncTotal - summary.pendingOrderSync} 项库存或审计资料等待同步。`);
+  if (summary.inventoryReviewPending) warnings.push(`${summary.inventoryReviewPending} 笔订单库存待复核。`);
+  if (summary.pendingPaymentOrders) warnings.push(`${summary.pendingPaymentOrders} 笔订单等待顾客付款，金额 ${money(summary.pendingPaymentTotal)} 不计入本班收入。`);
+  if (summary.simplePayPending) warnings.push(`${summary.simplePayPending} 笔 SimplePay 付款待确认。`);
+  if (summary.affiliatePending) warnings.push(`${summary.affiliatePending} 笔联盟订单待关联。`);
+  if (summary.voidedOrders) warnings.push(`${summary.voidedOrders} 笔作废订单，原金额 ${money(summary.voidedTotal)}。`);
+  els.settlementWarnings.innerHTML = warnings.length
+    ? warnings.map((warning) => `<div class="settlement-warning">${escapeHtml(warning)}</div>`).join("")
+    : '<div class="helper-text">未发现待同步、待关联或作废提醒。</div>';
+  els.settlementOpeningCash.value = Number(currentShift.openingCash || 0).toFixed(2);
+  els.settlementCashIn.value = Number(currentShift.cashIn || 0).toFixed(2);
+  els.settlementCashOut.value = Number(currentShift.cashOut || 0).toFixed(2);
+  els.settlementCountedCash.value = summary.expectedCash === 0 ? "0.00" : "";
+  els.settlementCountedCash.placeholder = summary.expectedCash.toFixed(2);
+  els.settlementNote.value = "";
+  updateSettlementDifference();
+  els.shiftSettlementDialog.showModal();
+}
+
+function closeShiftSettlementDialog() {
+  if (els.shiftSettlementDialog.open) els.shiftSettlementDialog.close();
+}
+
+function getSettlementReconciliation(shift = currentShift) {
+  const summary = getShiftSummary(shift);
+  const openingCash = Math.max(0, Number(els.settlementOpeningCash.value || 0));
+  const cashIn = Math.max(0, Number(els.settlementCashIn.value || 0));
+  const cashOut = Math.max(0, Number(els.settlementCashOut.value || 0));
+  const expectedCash = openingCash + Number(summary.cashSales || 0) + cashIn - cashOut;
+  const countedCash = Number(els.settlementCountedCash.value || 0);
   return {
-    earned: "资格获得",
-    referral: "推荐解锁",
-    used: "资格扣除",
-    admin: "后台调整",
-  }[reason] || reason || "-";
+    cashSales: summary.cashSales,
+    openingCash,
+    cashIn,
+    cashOut,
+    expectedCash,
+    countedCash,
+    cashDifference: Number((countedCash - expectedCash).toFixed(2)),
+    voidedOrders: summary.voidedOrders,
+    voidedTotal: summary.voidedTotal,
+    pendingOrderSync: summary.pendingOrderSync,
+    pendingSyncTotal: summary.pendingSyncTotal,
+    inventoryReviewPending: summary.inventoryReviewPending,
+    pendingPaymentOrders: summary.pendingPaymentOrders,
+    pendingPaymentTotal: summary.pendingPaymentTotal,
+    simplePayPending: summary.simplePayPending,
+    affiliatePending: summary.affiliatePending,
+    note: els.settlementNote.value.trim(),
+    reconciledAt: new Date().toISOString(),
+    reconciledBy: getCurrentActor()
+  };
 }
 
-function ensureRepeatCreditLogActions() {
-  if (document.querySelector("#exportRepeatCreditLogsBtn")) return;
-  const table = document.querySelector("#repeatCreditLogTable");
-  const wrap = table?.closest(".table-wrap");
-  if (!wrap?.parentNode) return;
-  const actions = document.createElement("div");
-  actions.className = "repeat-log-actions";
-  actions.innerHTML = `<button id="exportRepeatCreditLogsBtn" class="button ghost" type="button">导出资格流水</button>`;
-  wrap.parentNode.insertBefore(actions, wrap);
+function confirmShiftSettlement(event) {
+  event.preventDefault();
+  if (!currentShift || currentShift.closedAt) {
+    closeShiftSettlementDialog();
+    return;
+  }
+  if (!canManageCurrentShift()) {
+    closeShiftSettlementDialog();
+    alert("当前账号无权结束这个班次。");
+    return;
+  }
+  if (els.settlementCountedCash.value === "") {
+    alert("请填写现金实点金额。");
+    els.settlementCountedCash.focus();
+    return;
+  }
+  const summary = getShiftSummary(currentShift);
+  const reconciliation = getSettlementReconciliation(currentShift);
+  if (reconciliation.expectedCash < 0) {
+    alert("现金取出不能大于备用金、现金销售和现金存入的合计。");
+    els.settlementCashOut.focus();
+    return;
+  }
+  if (reconciliation.cashDifference !== 0 && !reconciliation.note) {
+    alert("现金有差额时必须填写交班备注。");
+    els.settlementNote.focus();
+    return;
+  }
+  const hasWarnings = reconciliation.cashDifference !== 0
+    || reconciliation.pendingSyncTotal > 0
+    || reconciliation.inventoryReviewPending > 0
+    || reconciliation.simplePayPending > 0
+    || reconciliation.affiliatePending > 0;
+  if (hasWarnings && !confirm("当前结算仍有差额或待处理项目，确定保存并结束班次吗？")) return;
+  const closedShift = {
+    ...currentShift,
+    openingCash: reconciliation.openingCash,
+    cashIn: reconciliation.cashIn,
+    cashOut: reconciliation.cashOut,
+    closedAt: new Date().toISOString(),
+    closedBy: getCurrentActor(),
+    summary: {
+      ...summary,
+      openingCash: reconciliation.openingCash,
+      cashIn: reconciliation.cashIn,
+      cashOut: reconciliation.cashOut,
+      expectedCash: reconciliation.expectedCash
+    },
+    reconciliation
+  };
+  const nextShifts = [closedShift, ...shifts].slice(0, 100);
+  const settlementSaved = saveStorageBatch([
+    [STORAGE_KEYS.shifts, nextShifts],
+    [STORAGE_KEYS.currentShift, null]
+  ]);
+  if (!settlementSaved) {
+    alert("班次尚未结束：本机无法安全保存交班记录，当前班次保持进行中。");
+    return;
+  }
+  shifts = nextShifts;
+  currentShift = null;
+  els.shiftOpeningCashInput.value = "0.00";
+  closeShiftSettlementDialog();
+  writeAuditLog("shift.close", {
+    shiftId: closedShift.id,
+    orders: summary.orders,
+    total: summary.total,
+    cashDifference: reconciliation.cashDifference,
+    pendingSyncTotal: reconciliation.pendingSyncTotal,
+    closedBy: closedShift.closedBy?.email || ""
+  });
+  alert("班次已结束，交班记录已保存。");
+  renderAll();
 }
 
-function ensureRepeatCreditLogFilters() {
-  if (document.querySelector("#repeatLogSearchInput")) return;
-  const table = document.querySelector("#repeatCreditLogTable");
-  const wrap = table?.closest(".table-wrap");
-  if (!wrap?.parentNode) return;
-  const filters = document.createElement("div");
-  filters.className = "filter-bar repeat-log-filters";
-  filters.innerHTML = `
-    <label>搜索流水<input id="repeatLogSearchInput" placeholder="用户 / 账号 / 来源 / 备注" /></label>
-    <label>用户<select id="repeatLogUserFilter"><option value="all">全部用户</option></select></label>
-    <label>原因
-      <select id="repeatLogReasonFilter">
-        <option value="all">全部原因</option>
-        <option value="earned">资格获得</option>
-        <option value="referral">推荐解锁</option>
-        <option value="used">资格扣除</option>
-        <option value="admin">后台调整</option>
-      </select>
-    </label>
-    <button id="clearRepeatLogFiltersBtn" class="button ghost" type="button">清除筛选</button>
-  `;
-  wrap.parentNode.insertBefore(filters, wrap);
+function buildShiftSettlementRows(shift, reconciliation = shift?.reconciliation) {
+  const calculatedSummary = getShiftSummary(shift);
+  const summary = { ...calculatedSummary, ...(shift?.summary || {}) };
+  const rows = [
+    ["班次结算"],
+    ["班次号", shift?.id || ""],
+    ["分行", shift?.branchName || getBranchName(shift?.branchId || "hq")],
+    ["操作员", shift?.operatorName || ""],
+    ["核对 / 结班人", reconciliation?.reconciledBy?.name || shift?.closedBy?.name || "", reconciliation?.reconciledBy?.email || shift?.closedBy?.email || ""],
+    ["开始时间", shift?.openedAt ? new Date(shift.openedAt).toLocaleString() : ""],
+    ["结束时间", shift?.closedAt ? new Date(shift.closedAt).toLocaleString() : "尚未结束"],
+    ["有效订单", summary.orders || 0],
+    ["销售总额", summary.total || 0],
+    ["作废订单", summary.voidedOrders || 0],
+    ["作废原金额", summary.voidedTotal || 0],
+    [],
+    ["付款方式", "订单数", "金额"]
+  ];
+  for (const payment of summary.payments || []) {
+    rows.push([payment.method, payment.orders, payment.total]);
+  }
+  rows.push(
+    [],
+    ["现金核对"],
+    ["开班备用金", reconciliation?.openingCash ?? summary.openingCash ?? 0],
+    ["现金销售", reconciliation?.cashSales ?? summary.cashSales ?? 0],
+    ["其他现金存入", reconciliation?.cashIn ?? summary.cashIn ?? 0],
+    ["现金取出 / 支出", reconciliation?.cashOut ?? summary.cashOut ?? 0],
+    ["应有现金", reconciliation?.expectedCash ?? summary.expectedCash ?? 0],
+    ["实点现金", reconciliation?.countedCash ?? els.settlementCountedCash.value ?? ""],
+    ["现金差额", reconciliation?.cashDifference ?? ""],
+    ["交班备注", reconciliation?.note || els.settlementNote.value.trim() || ""]
+  );
+  const cashMovements = Array.isArray(shift?.cashMovements) ? shift.cashMovements : [];
+  rows.push([], ["现金流水", "时间", "金额", "原因", "操作员", "流水号", "冲正原流水"]);
+  if (!cashMovements.length) {
+    rows.push(["无逐笔现金流水"]);
+  } else {
+    for (const movement of cashMovements) {
+      rows.push([
+        movement.type === "out" ? "现金取出" : "现金存入",
+        movement.createdAt ? new Date(movement.createdAt).toLocaleString() : "",
+        movement.amount || 0,
+        movement.reason || "",
+        movement.actor?.name || movement.actor?.email || "",
+        movement.id || "",
+        movement.reversalOf || ""
+      ]);
+    }
+  }
+  rows.push(
+    [],
+    ["风险提醒"],
+    ["本班待同步订单", reconciliation?.pendingOrderSync ?? summary.pendingOrderSync ?? 0],
+    ["本机全部待同步", reconciliation?.pendingSyncTotal ?? summary.pendingSyncTotal ?? 0],
+    ["库存待复核", reconciliation?.inventoryReviewPending ?? summary.inventoryReviewPending ?? 0],
+    ["待付款订单", reconciliation?.pendingPaymentOrders ?? summary.pendingPaymentOrders ?? 0],
+    ["待付款金额（不计收入）", reconciliation?.pendingPaymentTotal ?? summary.pendingPaymentTotal ?? 0],
+    ["SimplePay 待确认", reconciliation?.simplePayPending ?? summary.simplePayPending ?? 0],
+    ["联盟待关联", reconciliation?.affiliatePending ?? summary.affiliatePending ?? 0]
+  );
+  return rows;
 }
 
-function renderRepeatCreditLogFilters() {
-  const select = document.querySelector("#repeatLogUserFilter");
-  if (!select) return;
-  const currentValue = select.value || "all";
-  const usersWithLogs = new Set((state.repeatCreditLogs || []).map((log) => log.userId).filter(Boolean));
-  const options = state.users
-    .filter((user) => usersWithLogs.has(user.id))
-    .map((user) => `<option value="${user.id}">${user.name} / ${user.inviteCode}</option>`);
-  select.innerHTML = [`<option value="all">全部用户</option>`, ...options].join("");
-  select.value = usersWithLogs.has(currentValue) ? currentValue : "all";
+function exportCurrentShiftSettlement(shift = currentShift) {
+  if (!shift) {
+    alert("没有可导出的班次。");
+    return;
+  }
+  const calculatedSummary = getShiftSummary(shift);
+  const summary = { ...calculatedSummary, ...(shift.summary || {}) };
+  let reconciliation = shift.reconciliation;
+  if (!reconciliation && shift === currentShift) {
+    const hasCountedCash = els.settlementCountedCash.value !== "";
+    const countedCash = hasCountedCash ? Number(els.settlementCountedCash.value || 0) : "";
+    const openingCash = Math.max(0, Number(els.settlementOpeningCash.value || 0));
+    const cashIn = Math.max(0, Number(els.settlementCashIn.value || 0));
+    const cashOut = Math.max(0, Number(els.settlementCashOut.value || 0));
+    const expectedCash = openingCash + Number(summary.cashSales || 0) + cashIn - cashOut;
+    reconciliation = {
+      cashSales: summary.cashSales || 0,
+      openingCash,
+      cashIn,
+      cashOut,
+      expectedCash,
+      countedCash,
+      cashDifference: hasCountedCash ? Number((countedCash - expectedCash).toFixed(2)) : "",
+      voidedOrders: summary.voidedOrders || 0,
+      voidedTotal: summary.voidedTotal || 0,
+      pendingOrderSync: summary.pendingOrderSync || 0,
+      pendingSyncTotal: summary.pendingSyncTotal || 0,
+      inventoryReviewPending: summary.inventoryReviewPending || 0,
+      pendingPaymentOrders: summary.pendingPaymentOrders || 0,
+      pendingPaymentTotal: summary.pendingPaymentTotal || 0,
+      simplePayPending: summary.simplePayPending || 0,
+      affiliatePending: summary.affiliatePending || 0,
+      note: els.settlementNote.value.trim()
+    };
+  }
+  if (!reconciliation) {
+    reconciliation = {
+      cashSales: summary.cashSales || 0,
+      openingCash: summary.openingCash || 0,
+      cashIn: summary.cashIn || 0,
+      cashOut: summary.cashOut || 0,
+      expectedCash: summary.expectedCash || 0,
+      countedCash: "",
+      cashDifference: "",
+      voidedOrders: summary.voidedOrders || 0,
+      voidedTotal: summary.voidedTotal || 0,
+      pendingOrderSync: summary.pendingOrderSync || 0,
+      pendingSyncTotal: summary.pendingSyncTotal || 0,
+      inventoryReviewPending: summary.inventoryReviewPending || 0,
+      pendingPaymentOrders: summary.pendingPaymentOrders || 0,
+      pendingPaymentTotal: summary.pendingPaymentTotal || 0,
+      simplePayPending: summary.simplePayPending || 0,
+      affiliatePending: summary.affiliatePending || 0,
+      note: "旧版交班记录，未保存现金实点"
+    };
+  }
+  downloadCsv(`shift-settlement-${shift.id}.csv`, buildShiftSettlementRows(shift, reconciliation));
 }
 
-function filteredRepeatCreditLogs() {
-  const keyword = getInputValue("#repeatLogSearchInput").toLowerCase();
-  const userFilter = getSelectValue("#repeatLogUserFilter", "all");
-  const reasonFilter = getSelectValue("#repeatLogReasonFilter", "all");
-  return (state.repeatCreditLogs || [])
-    .filter((log) => {
-      const user = findUser(log.userId);
-      const searchable = [
-        log.id,
-        log.userId,
-        user?.name,
-        user?.account,
-        user?.inviteCode,
-        log.source,
-        log.note,
-        repeatCreditReasonText(log.reason),
-      ].join(" ").toLowerCase();
-      const matchesKeyword = !keyword || searchable.includes(keyword);
-      const matchesUser = userFilter === "all" || log.userId === userFilter;
-      const matchesReason = reasonFilter === "all" || log.reason === reasonFilter;
-      return matchesKeyword && matchesUser && matchesReason;
-    })
+function renderOperatorAccess() {
+  const operator = getActiveCashier();
+  const posOperator = getOperator();
+  const allowed = isOperatorAllowedForCurrentBranch();
+  const shiftLocked = hasOpenShift() && !isCurrentShiftOwner();
+  els.operatorStatus.textContent = shiftLocked
+    ? "班次待交接"
+    : allowed
+    ? `收银：${operator.name}`
+    : posOperator
+      ? "收银分行不匹配"
+      : "POS未登录";
+  els.operatorStatus.style.color = allowed && !shiftLocked ? "#0f766e" : "#66756f";
+  els.cashierOperatorText.textContent = shiftLocked
+    ? getCurrentShiftLabel()
+    : allowed
+    ? `${operator.name} · ${getBranchName(operator.branchId)}`
+    : posOperator
+      ? `${posOperator.name} · 分行不匹配`
+      : "未登录";
+  els.quickCheckoutBtn.textContent = shiftLocked
+    ? "先完成交班"
+    : allowed
+    ? (cart.length ? "结算当前订单" : (currentShift && !currentShift.closedAt ? "继续收银" : "开始收银"))
+    : "员工登录";
+  els.shiftStatusText.textContent = currentShift && !currentShift.closedAt
+    ? `班次：${getCurrentShiftLabel()} · ${new Date(currentShift.openedAt).toLocaleString()} 开始 · 备用金 ${money(currentShift.openingCash || 0)}`
+    : "未开班";
+  els.shiftOpeningCashPanel.classList.toggle("hidden", Boolean(currentShift && !currentShift.closedAt));
+  els.closeShiftBtn.disabled = !canManageCurrentShift();
+  els.cashMovementBtn.disabled = !canManageCurrentShift();
+  els.operatorLogoutBtn.classList.toggle("hidden", !posOperator);
+  els.operatorMessage.classList.toggle("error", shiftLocked || Boolean(posOperator && !allowed));
+  if (shiftLocked && isAdmin()) {
+    els.operatorMessage.textContent = `当前班次属于 ${getCurrentShiftLabel()}。管理员可查看并完成交班，结班前不能切换分行或开始新销售。`;
+  } else if (shiftLocked) {
+    els.operatorMessage.textContent = `当前班次属于 ${getCurrentShiftLabel()}。请由原员工重新登录恢复，或请管理员完成交班。`;
+  } else if (isAdmin()) {
+    els.operatorMessage.textContent = `${operator.name} 拥有全局权限，可切换总店与所有分行。`;
+  } else if (allowed) {
+    els.operatorMessage.textContent = hasOpenShift()
+      ? `${operator.name} 已恢复 ${getBranchName(operator.branchId)} 的进行中班次。`
+      : `${operator.name} 已授权使用 ${getBranchName(operator.branchId)} POS，分行已锁定。`;
+  } else if (posOperator) {
+    els.operatorMessage.textContent = `${posOperator.name} 只被授权使用 ${getBranchName(posOperator.branchId)}，系统已锁定该分行。`;
+  } else {
+    els.operatorMessage.textContent = navigator.onLine
+      ? "联网时请使用 Google 登录；离线密码由管理员在「设置 > 授权 POS 用户」设置。"
+      : "当前离线：请输入授权邮箱和离线密码。密码由管理员在「设置 > 授权 POS 用户」设置。";
+  }
+  if (currentCloudUser && lastAuthorizationCheckAt) {
+    els.operatorMessage.textContent += ` 云端授权已于 ${new Date(lastAuthorizationCheckAt).toLocaleTimeString()} 核对。`;
+  }
+}
+
+function requireOperator() {
+  if (isOperatorAllowedForCurrentBranch()) return true;
+  alert("请先使用当前分行已授权的邮箱登录 POS。");
+  els.operatorEmailInput.focus();
+  return false;
+}
+
+async function loginOperator(event) {
+  event.preventDefault();
+  if (navigator.onLine) {
+    els.operatorMessage.textContent = "联网时请使用 Google 登录验证身份。";
+    els.operatorMessage.classList.remove("error");
+    await signInWithGoogle();
+    return;
+  }
+
+  const email = normalizeEmail(els.operatorEmailInput.value);
+  const password = els.operatorPasswordInput.value;
+  const user = authorizedUsers.find((item) => normalizeEmail(item.email) === email);
+  if (!user) {
+    els.operatorMessage.textContent = "此邮箱还没有被管理员授权使用 POS。";
+    els.operatorMessage.classList.add("error");
+    return;
+  }
+  if (!password || !(await verifyOfflinePassword(user, password))) {
+    els.operatorMessage.textContent = user.offlinePasswordHash
+      ? "离线密码不正确。"
+      : "这个账号还没有设置离线密码，请联网后由管理员重新授权或更新。";
+    els.operatorMessage.classList.add("error");
+    els.operatorPasswordInput.focus();
+    return;
+  }
+  if (hasOpenShift() && !isShiftIdentity(user.email, user.branchId)) {
+    els.operatorMessage.textContent = `当前班次属于 ${getCurrentShiftLabel()}，不能改由其他员工接手。请原员工登录，或请管理员交班。`;
+    els.operatorMessage.classList.add("error");
+    return;
+  }
+  operatorEmail = user.email;
+  currentBranchId = user.branchId;
+  persistSessionEmail(STORAGE_KEYS.operatorEmail, operatorEmail);
+  localStorage.setItem(STORAGE_KEYS.branchId, currentBranchId);
+  els.operatorEmailInput.value = "";
+  els.operatorPasswordInput.value = "";
+  cart = [];
+  if (!ensureCurrentShift()) return;
+  renderAll();
+}
+
+function logoutCloudIfReady() {
+  if (hasCloud()) {
+    window.cloudPOS.signOutGoogle().catch((error) => console.warn("Cloud sign out failed", error));
+  }
+}
+
+function isCloudAuthorizationValid(appUser) {
+  return Boolean(appUser && appUser.active !== false);
+}
+
+function shouldRefreshCloudAuthorization(force = false, now = Date.now()) {
+  if (force) return true;
+  return !lastAuthorizationCheckAt
+    || now - lastAuthorizationCheckAt >= AUTHORIZATION_REFRESH_INTERVAL_MS;
+}
+
+function cacheCloudAuthorizedUser(appUser) {
+  const email = normalizeEmail(appUser?.email);
+  if (!email) return null;
+  const existing = authorizedUsers.find((user) => normalizeEmail(user.email) === email);
+  const cachedUser = {
+    ...(existing || {}),
+    ...appUser,
+    id: appUser.id || existing?.id || email,
+    email,
+    active: appUser.active !== false
+  };
+  authorizedUsers = existing
+    ? authorizedUsers.map((user) => normalizeEmail(user.email) === email ? cachedUser : user)
+    : [...authorizedUsers, cachedUser];
+  save(STORAGE_KEYS.authorizedUsers, authorizedUsers);
+  return cachedUser;
+}
+
+function lockCloudSession(email, reason, markInactive = false) {
+  const normalizedEmail = normalizeEmail(email || currentCloudUser?.email || operatorEmail || adminEmail);
+  if (markInactive && normalizedEmail) {
+    authorizedUsers = authorizedUsers.map((user) =>
+      normalizeEmail(user.email) === normalizedEmail ? { ...user, active: false } : user
+    );
+    save(STORAGE_KEYS.authorizedUsers, authorizedUsers);
+  }
+  writeAuditLog("authorization.session-locked", {
+    email: normalizedEmail,
+    reason,
+    openShiftId: hasOpenShift() ? currentShift.id : ""
+  });
+  adminEmail = "";
+  operatorEmail = "";
+  currentCloudUser = null;
+  cloudSessionActive = false;
+  lastAuthorizationCheckAt = 0;
+  cart = [];
+  clearSessionEmail(STORAGE_KEYS.adminEmail);
+  clearSessionEmail(STORAGE_KEYS.operatorEmail);
+  updateCloudStatus(reason);
+  logoutCloudIfReady();
+  renderAll();
+  alert(`${reason}${hasOpenShift() ? "\n\n当前班次和销售资料已保留，请由管理员完成交班。" : ""}`);
+}
+
+function lockOfflineSessionForOnlineVerification() {
+  if (currentCloudUser || (!operatorEmail && !adminEmail)) return false;
+  operatorEmail = "";
+  adminEmail = "";
+  cloudSessionActive = false;
+  lastAuthorizationCheckAt = 0;
+  cart = [];
+  clearSessionEmail(STORAGE_KEYS.operatorEmail);
+  clearSessionEmail(STORAGE_KEYS.adminEmail);
+  updateCloudStatus("网络已恢复，等待 Google 重新验证");
+  renderAll();
+  alert(`网络已恢复，请使用 Google 登录重新验证身份。${hasOpenShift() ? "\n\n当前班次已保留，原员工验证后可继续。" : ""}`);
+  return true;
+}
+
+function applyRefreshedAuthorization(appUser) {
+  if (!isCloudAuthorizationValid(appUser)) {
+    lockCloudSession(currentCloudUser?.email, "账号已被停用或取消授权，POS 已自动退出。", true);
+    return false;
+  }
+  const cachedUser = cacheCloudAuthorizedUser(appUser);
+  if (cachedUser.role !== "admin" && hasOpenShift() && !isShiftIdentity(cachedUser.email, cachedUser.branchId || "hq")) {
+    lockCloudSession(cachedUser.email, "员工授权分行已经变更，当前班次已锁定。");
+    return false;
+  }
+  const previousBranchId = currentBranchId;
+  currentCloudUser = cachedUser;
+  cloudSessionActive = true;
+  operatorEmail = cachedUser.email;
+  persistSessionEmail(STORAGE_KEYS.operatorEmail, operatorEmail);
+  if (cachedUser.role === "admin") {
+    adminEmail = cachedUser.email;
+    persistSessionEmail(STORAGE_KEYS.adminEmail, adminEmail);
+  } else {
+    adminEmail = "";
+    clearSessionEmail(STORAGE_KEYS.adminEmail);
+    currentBranchId = cachedUser.branchId || "hq";
+    localStorage.setItem(STORAGE_KEYS.branchId, currentBranchId);
+    if (currentBranchId !== previousBranchId) cart = [];
+  }
+  updateCloudStatus(`授权已核对：${cachedUser.email}`, true);
+  renderAll();
+  return true;
+}
+
+async function refreshCloudAuthorization({ force = false } = {}) {
+  if (!navigator.onLine || !hasCloud() || !currentCloudUser || !window.cloudPOS.refreshAuthorization) return true;
+  if (authorizationRefreshInFlight || !shouldRefreshCloudAuthorization(force)) return true;
+  authorizationRefreshInFlight = true;
+  try {
+    const result = await window.cloudPOS.refreshAuthorization();
+    lastAuthorizationCheckAt = Date.now();
+    if (!isCloudAuthorizationValid(result?.appUser)) {
+      lockCloudSession(result?.firebaseUser?.email || currentCloudUser?.email, "账号已被停用或取消授权，POS 已自动退出。", true);
+      return false;
+    }
+    return applyRefreshedAuthorization(result.appUser);
+  } catch (error) {
+    updateCloudStatus(`授权核对暂时失败：${getErrorMessage(error)}`);
+    console.warn("Authorization refresh failed", error);
+    return true;
+  } finally {
+    authorizationRefreshInFlight = false;
+  }
+}
+
+function logoutOperator() {
+  if (currentShift && !currentShift.closedAt && !confirm("当前班次尚未结束。退出后班次会保留，只有原员工重新登录或管理员交班后才能继续。确定退出吗？")) return;
+  operatorEmail = "";
+  clearSessionEmail(STORAGE_KEYS.operatorEmail);
+  logoutCloudIfReady();
+  cart = [];
+  renderAll();
+}
+
+async function signInWithGoogle() {
+  if (!hasCloud()) {
+    alert("Firebase 尚未连接。请确认已联网，并通过 http://localhost 或 HTTPS 打开系统。");
+    return;
+  }
+  try {
+    updateCloudStatus("正在打开 Google 登录");
+    await window.cloudPOS.signInWithGoogle();
+  } catch (error) {
+    updateCloudStatus("Google 登录失败");
+    alert(`Google 登录失败：${error.message}`);
+  }
+}
+
+async function syncSaleToCloud(sale) {
+  queuePendingSale(sale);
+  if (!hasCloud() || !navigator.onLine) {
+    return { ok: false, queued: true };
+  }
+  try {
+    let result;
+    if (isSaleVoided(sale)) {
+      if (!window.cloudPOS.saveVoid) throw new Error("退款事务模块尚未加载");
+      result = await window.cloudPOS.saveVoid(sale);
+    } else if (window.cloudPOS.saveCheckout) {
+      result = await window.cloudPOS.saveCheckout(sale);
+    } else {
+      await window.cloudPOS.saveSale(sale);
+    }
+    if (isSaleVoided(sale) && window.cloudPOS.saveVoid) {
+      pendingSales = pendingSales.filter((item) => item.id !== sale.id);
+      savePendingSales();
+      applyVoidSyncResult(sale.id, result);
+      return { ok: true, queued: false, inventoryReview: result?.stockStatus === "review-required" };
+    }
+    const inventoryReview = applyCheckoutSyncResult(sale.id, result);
+    if (!inventoryReview) updateCloudStatus("云端已同步", true);
+    return { ok: true, queued: false, inventoryReview };
+  } catch (error) {
+    updateCloudStatus("云端同步失败");
+    console.warn("Cloud sync failed", error);
+    return { ok: false, queued: true, error };
+  }
+}
+
+async function syncPendingSales() {
+  if (!pendingSales.length || !hasCloud() || !navigator.onLine) {
+    updateCloudStatus(hasCloud() ? "云端已连接" : "云端未连接", hasCloud());
+    return;
+  }
+
+  updateCloudStatus(`正在补传 ${pendingSales.length} 单`);
+  for (const sale of [...pendingSales].reverse()) {
+    try {
+      let result;
+      if (isSaleVoided(sale)) {
+        if (!window.cloudPOS.saveVoid) throw new Error("退款事务模块尚未加载");
+        result = await window.cloudPOS.saveVoid(sale);
+      } else if (window.cloudPOS.saveCheckout) {
+        result = await window.cloudPOS.saveCheckout(sale);
+      } else {
+        await window.cloudPOS.saveSale(sale);
+      }
+      if (isSaleVoided(sale) && window.cloudPOS.saveVoid) {
+        pendingSales = pendingSales.filter((item) => item.id !== sale.id);
+        savePendingSales();
+        applyVoidSyncResult(sale.id, result);
+      } else {
+        applyCheckoutSyncResult(sale.id, result);
+      }
+    } catch (error) {
+      updateCloudStatus("部分订单待同步");
+      console.warn("Pending sale sync failed", error);
+      return;
+    }
+  }
+  const reviewCount = sales.filter(requiresInventoryReview).length;
+  updateCloudStatus(reviewCount ? `离线订单已同步 · ${reviewCount} 单库存待复核` : "离线订单已同步", true);
+}
+
+async function syncPendingSaleUpdates() {
+  if (!pendingSaleUpdates.length || !hasCloud() || !navigator.onLine) return;
+  updateCloudStatus(`正在补传 ${pendingSaleUpdates.length} 个订单更新`);
+  for (const sale of [...pendingSaleUpdates].reverse()) {
+    try {
+      if (isSaleVoided(sale)) {
+        if (!window.cloudPOS.saveVoid) throw new Error("退款事务模块尚未加载");
+        const result = await window.cloudPOS.saveVoid(sale);
+        applyVoidSyncResult(sale.id, result);
+      } else {
+        await window.cloudPOS.saveSale(sale);
+        markSaleUpdateSynced(sale.id);
+      }
+    } catch (error) {
+      updateCloudStatus("部分订单更新待同步");
+      console.warn("Pending sale update sync failed", error);
+      return;
+    }
+  }
+  updateCloudStatus("订单更新已同步", true);
+}
+
+async function syncProductToCloud(product) {
+  if (!hasCloud() || !navigator.onLine) {
+    queuePendingProduct(product);
+    return false;
+  }
+  try {
+    await window.cloudPOS.saveProduct(product);
+    markProductSynced(product.id);
+    updateCloudStatus("商品已同步", true);
+    return true;
+  } catch (error) {
+    queuePendingProduct(product);
+    updateCloudStatus("商品同步失败");
+    console.warn("Product cloud sync failed", error);
+    return false;
+  }
+}
+
+async function syncPendingProducts() {
+  if (!pendingProducts.length || !hasCloud() || !navigator.onLine) return;
+  updateCloudStatus(`正在补传 ${pendingProducts.length} 个库存`);
+  for (const product of [...pendingProducts].reverse()) {
+    try {
+      await window.cloudPOS.saveProduct(product);
+      markProductSynced(product.id);
+    } catch (error) {
+      updateCloudStatus("部分库存待同步");
+      console.warn("Pending product sync failed", error);
+      return;
+    }
+  }
+  updateCloudStatus("库存已同步", true);
+}
+
+async function syncStockAdjustmentToCloud(adjustment) {
+  if (!hasCloud() || !navigator.onLine) {
+    queuePendingStockAdjustment(adjustment);
+    return false;
+  }
+  try {
+    await window.cloudPOS.saveStockAdjustment(adjustment);
+    markStockAdjustmentSynced(adjustment.id);
+    updateCloudStatus("库存调整已同步", true);
+    return true;
+  } catch (error) {
+    queuePendingStockAdjustment(adjustment);
+    updateCloudStatus("库存调整同步失败");
+    console.warn("Stock adjustment sync failed", error);
+    return false;
+  }
+}
+
+async function syncPendingStockAdjustments() {
+  if (!pendingStockAdjustments.length || !hasCloud() || !navigator.onLine) return;
+  updateCloudStatus(`正在补传 ${pendingStockAdjustments.length} 条库存调整`);
+  for (const adjustment of [...pendingStockAdjustments].reverse()) {
+    try {
+      await window.cloudPOS.saveStockAdjustment(adjustment);
+      markStockAdjustmentSynced(adjustment.id);
+    } catch (error) {
+      updateCloudStatus("部分库存调整待同步");
+      console.warn("Pending stock adjustment sync failed", error);
+      return;
+    }
+  }
+  updateCloudStatus("库存调整已同步", true);
+}
+
+async function syncPendingAuditLogs() {
+  if (!pendingAuditLogs.length || !hasCloud() || !navigator.onLine) return;
+  updateCloudStatus(`正在补传 ${pendingAuditLogs.length} 条审计记录`);
+  for (const log of [...pendingAuditLogs].reverse()) {
+    try {
+      await window.cloudPOS.saveAuditLog(log);
+      markAuditLogSynced(log.id);
+    } catch (error) {
+      updateCloudStatus("部分审计记录待同步");
+      console.warn("Pending audit log sync failed", error);
+      return;
+    }
+  }
+  updateCloudStatus("审计记录已同步", true);
+}
+
+async function syncManagementToCloud(type, value) {
+  queuePendingManagement(type, value);
+  if (!hasCloud() || !navigator.onLine || !isCloudAdmin()) return false;
+  try {
+    if (type === "branch") await window.cloudPOS.saveBranch(value);
+    if (type === "user") await window.cloudPOS.saveAuthorizedUser(value);
+    if (type === "settings") await window.cloudPOS.saveSettings(value);
+    markManagementSynced(type, type === "branch" ? value.id : value.email);
+    updateCloudStatus("后台资料已同步", true);
+    return true;
+  } catch (error) {
+    updateCloudStatus("后台资料待同步");
+    console.warn(`Management ${type} sync failed`, error);
+    return false;
+  }
+}
+
+async function syncPendingManagementChanges() {
+  if (!getPendingManagementCount() || !hasCloud() || !navigator.onLine || !isCloudAdmin()) return;
+  updateCloudStatus(`正在补传 ${getPendingManagementCount()} 项后台资料`);
+  for (const branch of [...pendingManagement.branches].reverse()) {
+    try {
+      await window.cloudPOS.saveBranch(branch);
+      markManagementSynced("branch", branch.id);
+    } catch (error) {
+      console.warn("Pending branch sync failed", error);
+      updateCloudStatus("部分后台资料待同步");
+      return;
+    }
+  }
+  for (const user of [...pendingManagement.users].reverse()) {
+    try {
+      await window.cloudPOS.saveAuthorizedUser(user);
+      markManagementSynced("user", user.email);
+    } catch (error) {
+      console.warn("Pending user sync failed", error);
+      updateCloudStatus("部分后台资料待同步");
+      return;
+    }
+  }
+  if (pendingManagement.settings) {
+    try {
+      await window.cloudPOS.saveSettings(pendingManagement.settings);
+      markManagementSynced("settings");
+    } catch (error) {
+      console.warn("Pending settings sync failed", error);
+      updateCloudStatus("部分后台资料待同步");
+      return;
+    }
+  }
+  updateCloudStatus("后台资料已同步", true);
+}
+
+async function syncPendingChanges() {
+  if (pendingSyncPromise) return pendingSyncPromise;
+  pendingSyncPromise = (async () => {
+    await syncPendingManagementChanges();
+    await syncPendingProducts();
+    await syncPendingStockAdjustments();
+    await syncPendingAuditLogs();
+    await syncPendingSales();
+    await syncPendingSaleUpdates();
+  })();
+  try {
+    return await pendingSyncPromise;
+  } finally {
+    pendingSyncPromise = null;
+  }
+}
+
+async function initializeCloudData() {
+  if (!requireAdmin()) return;
+  if (!requireCloudAdmin()) return;
+  if (!hasCloud()) {
+    alert("云端还没连接。请先用 Google 管理员登录。");
+    return;
+  }
+
+  try {
+    updateCloudStatus("正在初始化云端");
+    for (const branch of branches) {
+      await window.cloudPOS.saveBranch(branch);
+    }
+    for (const user of authorizedUsers) {
+      await window.cloudPOS.saveAuthorizedUser(user);
+    }
+    for (const product of products) {
+      await window.cloudPOS.saveProduct(product);
+    }
+    await window.cloudPOS.saveSettings(appSettings);
+    await writeAuditLog("cloud.initialize", {
+      branches: branches.length,
+      users: authorizedUsers.length,
+      products: products.length
+    });
+    pendingManagement = normalizePendingManagement();
+    savePendingManagement();
+    updateCloudStatus("云端初始化完成", true);
+    alert("云端数据初始化完成。");
+  } catch (error) {
+    updateCloudStatus("云端初始化失败");
+    alert(`云端初始化失败：${error.message}`);
+  }
+}
+
+function normalizeCloudSales(cloudSales) {
+  return cloudSales
+    .map((sale) => normalizeSaleExternalReferences({
+      ...sale,
+      createdAt: sale.createdAt?.toDate ? sale.createdAt.toDate().toISOString() : sale.createdAt
+    }))
+    .filter((sale) => sale.id && sale.createdAt);
+}
+
+function normalizeCloudTimelineItems(items) {
+  return items
+    .map((item) => ({
+      ...item,
+      createdAt: item.createdAt?.toDate ? item.createdAt.toDate().toISOString() : item.createdAt
+    }))
+    .filter((item) => item.id && item.createdAt)
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
-function renderRepeatCreditLogs() {
-  const table = document.querySelector("#repeatCreditLogTable");
-  if (!table) return;
-  ensureRepeatCreditLogActions();
-  ensureRepeatCreditLogFilters();
-  renderRepeatCreditLogFilters();
-  const rows = filteredRepeatCreditLogs()
-    .slice(0, 20)
-    .map((log) => {
-      const user = findUser(log.userId);
-      const change = Number(log.change || 0);
-      const changeText = `${change > 0 ? "+" : ""}${change}`;
-      return `<tr><td>${new Date(log.createdAt).toLocaleString("zh-CN")}</td><td>${user?.name || log.userId || "-"}</td><td>${changeText}</td><td>${points(log.balance || 0)}</td><td>${repeatCreditReasonText(log.reason)}</td><td>${[log.source, log.note].filter(Boolean).join(" / ") || "-"}</td></tr>`;
-    }).join("");
-  table.innerHTML = rows || `<tr><td colspan="6">暂无奖励池资格流水</td></tr>`;
+function mergeCloudBranchesWithPending(cloudBranches) {
+  const pendingById = new Map(pendingManagement.branches.map((branch) => [branch.id, branch]));
+  const merged = cloudBranches.map((branch) => pendingById.get(branch.id) || branch);
+  for (const branch of pendingManagement.branches) {
+    if (!merged.some((item) => item.id === branch.id)) merged.push(branch);
+  }
+  return merged;
 }
 
-function renderAdminOrders() {
-  const orders = filteredOrders();
-  const rows = orders.slice().reverse().map((order) => {
-    const user = findUser(order.userId);
-    const plan = orderPlan(order);
-    const resolvedType = order.status === "pending" ? actualOrderType(state, order.userId, order.id) : order.type;
-    const typeWarning = order.status === "pending" && order.type !== resolvedType
-      ? ` <span class="tag warning">将按${resolvedType === "first" ? "首充" : "复购"}确认</span>`
-      : "";
-    const detailAction = `<button class="link" data-order-detail="${order.id}">详情</button>`;
-    const actions = order.status === "pending"
-      ? `<button class="link" data-confirm-order="${order.id}">确认付款</button><button class="link" data-cancel-order="${order.id}">取消订单</button>`
-      : order.status === "paid"
-        ? `<button class="link" data-recalc-order="${order.id}">重算奖励</button>`
-        : "";
-    const proofHref = order.proofUrl || order.proofInlineData || "";
-    const proofLink = proofHref ? ` / <a class="link" href="${proofHref}" target="_blank" rel="noopener">查看凭证</a>` : "";
-    const proofText = ` / ${proofStatusText(order)}`;
-    const riskText = orderRiskLabels(order).map((label) => `<span class="risk-line">${label}</span>`).join("");
-    const summaryText = order.confirmSummary ? `<span class="muted-line">处理结果：${order.confirmSummary}</span>` : "";
-    const paymentText = `${paymentMethodText(order.paymentMethod)} ${order.paymentRef || ""}${order.paymentNote ? ` / ${order.paymentNote}` : ""}${proofText}${proofLink}${riskText}${summaryText}`.trim() || "-";
-    return `<tr><td>${order.id}</td><td>${user?.name || "-"}</td><td>${plan?.name || "-"}</td><td>${resolvedType === "first" ? "首充" : "复购"}${typeWarning}</td><td>${money(order.amount)}</td><td>${paymentText}</td><td>${points(order.points)}</td><td><span class="tag ${order.status}">${labelStatus(order.status)}</span></td><td>${new Date(order.createdAt).toLocaleString("zh-CN")}</td><td class="actions">${detailAction}${actions}</td></tr>`;
-  }).join("");
-  document.querySelector("#adminOrderTable").innerHTML = rows || `<tr><td colspan="10">没有符合条件的订单</td></tr>`;
-}
-
-function renderAdminRewards() {
-  const rewards = filteredRewards();
-  const rows = rewards.slice().reverse().map((reward) => {
-    const user = findUser(reward.userId);
-    const sourceUser = findUser(reward.sourceUserId);
-    const canConfirm = ["pending", "releasing"].includes(reward.status) && new Date(reward.confirmAfter) <= new Date();
-    const detailAction = `<button class="link" data-reward-detail="${reward.id}">详情</button>`;
-    const riskText = rewardRiskLabels(reward).map((label) => `<span class="risk-line">${label}</span>`).join("");
-    return `<tr><td>${user?.name || "-"}</td><td>${sourceUser?.name || "-"}</td><td>${reward.orderId}</td><td>${rewardTypeText(reward)}</td><td>${rewardAmountText(reward)}${reward.reviewNote ? `<span class="muted-line">备注：${reward.reviewNote}</span>` : ""}${riskText}</td><td><span class="tag ${reward.status}">${labelStatus(reward.status)}</span></td><td>${rewardNextDateText(reward)}</td><td class="actions">${detailAction}${canConfirm ? `<button class="link" data-confirm-reward="${reward.id}">确认</button>` : ""}${["pending", "releasing"].includes(reward.status) ? `<button class="link" data-cancel-reward="${reward.id}">取消</button><button class="link" data-freeze-reward="${reward.id}">冻结</button>` : ""}</td></tr>`;
-  }).join("");
-  document.querySelector("#adminRewardTable").innerHTML = rows || `<tr><td colspan="8">没有符合条件的奖励</td></tr>`;
-}
-
-function renderAdminWithdraws() {
-  const withdraws = filteredWithdraws();
-  const rows = withdraws.slice().reverse().map((item) => {
-    const user = findUser(item.userId);
-    const detailAction = `<button class="link" data-withdraw-detail="${item.id}">详情</button>`;
-    const riskText = withdrawRiskLabels(item).map((label) => `<span class="risk-line">${label}</span>`).join("");
-    return `<tr><td>${item.id}</td><td>${user?.name || "-"}</td><td>${money(item.amount)}</td><td>${item.source === "reward" ? "奖励提现" : item.source || "-"}</td><td>${item.method}</td><td>${item.account}${riskText}</td><td><span class="tag ${item.status}">${labelStatus(item.status)}</span></td><td>${new Date(item.createdAt).toLocaleString("zh-CN")}</td><td class="actions">${detailAction}${item.status === "pending" ? `<button class="link" data-approve-withdraw="${item.id}">通过</button><button class="link" data-reject-withdraw="${item.id}">拒绝</button>` : ""}${item.status === "approved" ? `<button class="link" data-pay-withdraw="${item.id}">标记打款</button>` : ""}</td></tr>`;
-  }).join("");
-  document.querySelector("#adminWithdrawTable").innerHTML = rows || `<tr><td colspan="9">没有符合条件的提现申请</td></tr>`;
-}
-
-function readinessChecks() {
-  const usablePlans = (state.plans || []).filter((plan) =>
-    Number(plan.amount || 0) > 0
-    && isValidPackageAmount(plan.amount)
-    && Number(plan.points || 0) > 0
-    && Number(plan.validDays || 0) > 0
-    && Number(plan.firstRate || 0) >= 0
-    && planDirectRepeatRate(plan) >= 0
-    && planPoolRepeatRate(plan) >= 0
+function mergeCloudUsersWithPending(cloudUsers) {
+  const pendingByEmail = new Map(
+    pendingManagement.users.map((user) => [normalizeEmail(user.email), user])
   );
-  const users = state.users || [];
-  const paidOrders = (state.orders || []).filter((order) => order.status === "paid");
-  const adminUsers = users.filter((user) => ADMIN_EMAILS.includes(user.email));
-  const incompleteProfiles = incompleteProfileUsers(state);
-  const pendingOrders = (state.orders || []).filter((order) => order.status === "pending");
-  const orderRisks = orderRiskIssues(state);
-  const pendingWithdraws = (state.withdraws || []).filter((withdraw) => withdraw.status === "pending");
-  const withdrawRisks = withdrawRiskIssues(state);
-  const pendingRewards = (state.rewards || []).filter((reward) => reward.status === "pending" || reward.status === "releasing");
-  const rewardIssues = rewardIntegrityIssues(state);
-  const integrityIssues = dataIntegrityIssues(state, { includeProfileIssues: false, includeOrderIssues: false, includeRewardIssues: false, includeWithdrawIssues: false });
-  const testChecklist = testChecklistReport();
-
-  return [
-    {
-      ok: usablePlans.length > 0,
-      label: "至少 1 个可用配套",
-      detail: usablePlans.length ? `当前可用 ${usablePlans.length} 个配套` : "请先在左侧新增完整配套规则",
-    },
-    {
-      ok: adminUsers.length > 0 || isAdmin(),
-      label: "管理员账号可识别",
-      detail: adminUsers.length ? `已识别 ${adminUsers.length} 个管理员用户` : `当前管理员邮箱：${ADMIN_EMAILS.join(" / ")}`,
-    },
-    {
-      ok: users.length === 0 || incompleteProfiles.length === 0,
-      label: "用户联系与收款资料",
-      detail: incompleteProfiles.length ? `${incompleteProfiles.length} 个用户还未填写完整手机或默认收款资料` : "用户联系与收款资料完整",
-    },
-    {
-      ok: pendingOrders.length === 0,
-      label: "待处理充值订单",
-      detail: pendingOrders.length ? `${pendingOrders.length} 笔订单等待审核` : "没有待处理充值订单",
-    },
-    {
-      ok: orderRisks.length === 0,
-      label: "订单风控风险",
-      detail: orderRisks.length ? `${orderRisks.length} 项订单风控风险` : "没有订单风控风险",
-    },
-    {
-      ok: pendingRewards.length === 0,
-      label: "待确认/释放奖励",
-      detail: pendingRewards.length ? `${pendingRewards.length} 笔奖励需要后续处理` : "没有待处理奖励",
-    },
-    {
-      ok: pendingWithdraws.length === 0,
-      label: "待审核提现",
-      detail: pendingWithdraws.length ? `${pendingWithdraws.length} 笔提现等待审核` : "没有待审核提现",
-    },
-    {
-      ok: withdrawRisks.length === 0,
-      label: "提现风控风险",
-      detail: withdrawRisks.length ? `${withdrawRisks.length} 项提现风控风险` : "没有提现风控风险",
-    },
-    {
-      ok: paidOrders.every((order) => Number(order.points || 0) > 0),
-      label: "已付款订单积分",
-      detail: paidOrders.some((order) => Number(order.points || 0) <= 0)
-        ? "存在已付款但积分为 0 的订单，请查看订单详情"
-        : "已付款订单积分正常",
-    },
-    {
-      ok: paidOrders.every((order) => order.confirmSummary),
-      label: "订单处理结果摘要",
-      detail: paidOrders.some((order) => !order.confirmSummary)
-        ? "存在已付款订单缺少处理结果摘要，请保存一次数据或查看订单详情"
-        : "已付款订单处理结果可追踪",
-    },
-    {
-      ok: rewardIssues.length === 0,
-      label: "奖励发放规则",
-      detail: rewardIssues.length
-        ? `${rewardIssues.length} 项奖励异常：${rewardIssues.slice(0, 2).join("；")}${rewardIssues.length > 2 ? "；..." : ""}`
-        : "推荐奖励、下线复购奖励、奖励池奖励、金额和分期释放正常",
-    },
-    {
-      ok: integrityIssues.length === 0,
-      label: "数据一致性",
-      detail: integrityIssues.length
-        ? `${integrityIssues.length} 项异常：${integrityIssues.slice(0, 3).join("；")}${integrityIssues.length > 3 ? "；..." : ""}`
-        : "推荐、订单、奖励、提现关系正常",
-    },
-    {
-      ok: testChecklist.done === testChecklist.total,
-      label: "实机测试清单",
-      detail: testChecklist.done === testChecklist.total
-        ? `已完成 ${testChecklist.done}/${testChecklist.total} 项实机测试`
-        : `还有 ${testChecklist.total - testChecklist.done} 项未完成，建议上线前逐项勾选`,
-    },
-  ];
-}
-
-function readinessSummary() {
-  const checks = readinessChecks();
-  const failedChecks = checks.filter((check) => !check.ok);
-  const testCheck = checks.find((check) => check.label === "实机测试清单");
-  const deployChecklist = deployChecklistReport();
-  const pendingDeployCount = deployChecklist.total - deployChecklist.done;
-  const nonTestFailures = failedChecks.filter((check) => check.label !== "实机测试清单");
-  if (nonTestFailures.length) {
-    return {
-      status: "blocked",
-      label: `待处理 ${failedChecks.length}`,
-      detail: `${nonTestFailures.length} 项基础自检未通过`,
-      failedChecks,
-    };
+  const merged = cloudUsers
+    .filter((user) => user.active !== false || pendingByEmail.has(normalizeEmail(user.email)))
+    .map((user) => pendingByEmail.get(normalizeEmail(user.email)) || user);
+  for (const user of pendingManagement.users) {
+    if (!merged.some((item) => normalizeEmail(item.email) === normalizeEmail(user.email))) merged.push(user);
   }
-  if (testCheck && !testCheck.ok) {
-    return {
-      status: "testing",
-      label: "待测试",
-      detail: testCheck.detail,
-      failedChecks,
-    };
+  return merged;
+}
+
+function mergeCloudProductsWithPending(cloudProducts) {
+  const localById = new Map(products.map((product) => [product.id, product]));
+  const pendingProductById = new Map(pendingProducts.map((product) => [product.id, product]));
+  const protectedBranchesByProduct = new Map();
+  for (const sale of pendingSales) {
+    for (const item of sale.items || []) {
+      const branchIds = protectedBranchesByProduct.get(item.id) || new Set();
+      branchIds.add(sale.branchId || "hq");
+      protectedBranchesByProduct.set(item.id, branchIds);
+    }
   }
-  if (pendingDeployCount > 0) {
-    return {
-      status: "deploying",
-      label: "待部署检查",
-      detail: `还有 ${pendingDeployCount} 项部署检查未完成`,
-      failedChecks,
-    };
-  }
-  return {
-    status: "ready",
-    label: "可准备上线",
-    detail: "基础自检、实机测试和部署检查已完成",
-    failedChecks,
-  };
-}
-
-function cloudFunctionStatusReport() {
-  return {
-    status: "deferred",
-    label: "后置阶段",
-    requiredForMvp: false,
-    callable: "confirmOrder",
-    detail: "Cloud Functions 代码已准备，但当前仍允许管理员前端确认作为 MVP 回退；正式扩大使用前建议启用服务端确认。",
-  };
-}
-
-function rulesStatusReport() {
-  return {
-    status: "manual-check",
-    label: "需手动确认",
-    firestoreRules: "firestore.rules",
-    storageRules: "storage.rules",
-    detail: "上线前请在 Firebase Console 发布最新 firestore.rules 与 storage.rules，然后用普通用户账号提交订单、上传凭证、申请提现做实测。",
-  };
-}
-
-function deploymentStatusReport() {
-  return {
-    status: "manual-check",
-    label: "需手动确认",
-    projectId: firebaseConfig.projectId,
-    authDomain: firebaseConfig.authDomain,
-    publicSiteUrl: PUBLIC_SITE_URL,
-    hostingPublic: ".",
-    detail: `部署网址：${PUBLIC_SITE_URL}。请确认 Firebase Authentication 已授权当前域名，并确认 app.js 版本参数已更新。`,
-  };
-}
-
-function renderAdminRiskRules() {
-  const target = document.querySelector("#adminRiskList");
-  if (!target) return;
-  const planCooldowns = state.plans.map((plan) => `${plan.name}: ${planRepeatCooldownHours(plan)} 小时`).join(" / ");
-  const orderIssues = orderRiskIssues(state);
-  const rewardIssues = rewardIntegrityIssues(state);
-  const withdrawIssues = withdrawRiskIssues(state);
-  const checks = readinessChecks();
-  const summary = readinessSummary();
-  const cloudFunctions = cloudFunctionStatusReport();
-  const rulesStatus = rulesStatusReport();
-  const deploymentStatus = deploymentStatusReport();
-  target.innerHTML = [
-    {
-      title: "上线前自检",
-      rows: [
-        summary.status === "ready" ? "基础自检、实机测试和部署检查已完成，可准备上线。" : `${summary.label}：${summary.detail}`,
-        `页面前端版本：${APP_VERSION}。`,
-        ...checks.map((check) => `<b class="${check.ok ? "check-ok" : "check-warn"}">${check.ok ? "通过" : "待处理"}</b> ${check.label}：${check.detail}`),
-      ],
-    },
-    {
-      title: "复购冷却",
-      rows: [
-        TEST_INSTANT_MODE ? "测试即时模式已开启：复购付款确认后冷却为 0 小时。" : "复购付款确认后，用户进入冷却期。",
-        `当前配套冷却：${planCooldowns || "暂无配套"}`,
-        "冷却期内不能再次提交复购订单；已有待确认复购订单也不能重复提交。",
-      ],
-    },
-    {
-      title: "复购奖励分期",
-      rows: [
-        TEST_INSTANT_MODE ? "测试即时模式已开启：下线复购奖励和奖励池奖励会即时释放。" : `下线复购奖励和奖励池奖励分 ${REPEAT_RELEASE_DAYS.length} 期释放。`,
-        `释放日：第 ${REPEAT_RELEASE_DAYS.join(" / 第 ")} 天。`,
-        "只有已释放金额会计入用户可提现余额。",
-      ],
-    },
-    {
-      title: "奖励池派发规则",
-      rows: [
-        `用户每直接推荐 1 人解锁 1 个奖励池资格，最多 ${MAX_REPEAT_POOL_CREDITS} 个；买家不会接收自己这笔复购的奖励池奖励。`,
-        "系统优先派发给奖励池中排队最早且未冻结的用户。",
-        "派发成功后接收人扣 1 个奖励池资格。",
-      ],
-    },
-    {
-      title: "奖励发放自检",
-      rows: rewardIssues.length
-        ? [
-          `<b class="check-warn">发现 ${rewardIssues.length} 项奖励异常</b>`,
-          ...rewardIssues.slice(0, 6),
-          rewardIssues.length > 6 ? `还有 ${rewardIssues.length - 6} 项，请导出异常报告查看。` : "",
-        ].filter(Boolean)
-        : [
-          `<b class="check-ok">奖励发放规则正常</b>`,
-          "推荐奖励、下线复购奖励、奖励池奖励、金额和分期释放未发现异常。",
-        ],
-    },
-    {
-      title: "防重复提交",
-      rows: [
-        "用户重复使用同一付款参考号时会收到确认提醒。",
-        "用户重复上传同名付款凭证时会收到确认提醒。",
-        "后台自检会标记重复付款参考号和重复凭证文件名。",
-      ],
-    },
-    {
-      title: "订单风控自检",
-      rows: orderIssues.length
-        ? [
-          `<b class="check-warn">发现 ${orderIssues.length} 项订单风控风险</b>`,
-          ...orderIssues.slice(0, 6),
-          orderIssues.length > 6 ? `还有 ${orderIssues.length - 6} 项，请导出异常报告查看。` : "",
-        ].filter(Boolean)
-        : [
-          `<b class="check-ok">订单风控正常</b>`,
-          "没有发现重复付款参考号、重复凭证、金额或配套异常。",
-        ],
-    },
-    {
-      title: "提现触发条件",
-      rows: [
-        `最低提现金额：${money(MIN_WITHDRAW_AMOUNT)}。`,
-        `两次提现申请间隔：${WITHDRAW_COOLDOWN_HOURS} 小时。`,
-        "用户必须账户正常，且拥有有效配套。",
-        "申请金额不能超过当前可提现余额。",
-      ],
-    },
-    {
-      title: "提现风控自检",
-      rows: withdrawIssues.length
-        ? [
-          `<b class="check-warn">发现 ${withdrawIssues.length} 项提现风控风险</b>`,
-          ...withdrawIssues.slice(0, 6),
-          withdrawIssues.length > 6 ? `还有 ${withdrawIssues.length - 6} 项，请导出异常报告查看。` : "",
-        ].filter(Boolean)
-        : [
-          `<b class="check-ok">提现风控正常</b>`,
-          "没有发现共享收款账号等提现风险。",
-        ],
-    },
-    {
-      title: "后台人工审核",
-      rows: [
-        "充值订单需要后台确认后才发放积分、资格和奖励。",
-        "奖励先进入待确认或分期释放状态，可取消或冻结。",
-        "提现申请需要后台审核，通过后再标记打款。",
-      ],
-    },
-    {
-      title: "部署前自检",
-      rows: [
-        `页面前端版本应显示：${APP_VERSION}。`,
-        "如果出现 permission-denied，先发布最新 firestore.rules。",
-        "如果凭证上传异常，先发布 storage.rules；MVP 会把小图暂存订单内。",
-      ],
-    },
-    {
-      title: "管理员上线顺序",
-      rows: [
-        "1. 发布最新 index.html、app.js、styles.css。",
-        "2. 到 Firebase Console 发布最新 firestore.rules 和 storage.rules。",
-        "3. 用管理员账号登录，确认后台指标、待办中心、风控页正常。",
-        "4. 用普通用户账号完成首充、复购、提现全流程实测。",
-        "5. 风控页没有未处理异常后，再对外开放链接。",
-      ],
-    },
-    {
-      title: "Rules 发布状态",
-      rows: [
-        `Firestore：${rulesStatus.firestoreRules}。`,
-        `Storage：${rulesStatus.storageRules}。`,
-        rulesStatus.detail,
-      ],
-    },
-    {
-      title: "部署环境状态",
-      className: "wide-card",
-      rows: [
-        `Firebase 项目：${deploymentStatus.projectId}。`,
-        `Auth 域名：${deploymentStatus.authDomain}。`,
-        `Hosting public：${deploymentStatus.hostingPublic}。`,
-        deploymentStatus.detail,
-        ...renderDeployChecklistRows(),
-      ],
-    },
-    {
-      title: "Cloud Functions 状态",
-      rows: [
-        `当前状态：${cloudFunctions.label}。`,
-        `调用函数：${cloudFunctions.callable}。`,
-        cloudFunctions.detail,
-      ],
-    },
-    {
-      title: "实机测试清单",
-      className: "wide-card",
-      rows: renderTestChecklistRows(),
-    },
-  ].map((card) => `
-    <article class="risk-card ${card.className || ""}">
-      <strong>${card.title}</strong>
-      ${card.rows.map((row) => `<span>${row}</span>`).join("")}
-    </article>
-  `).join("");
-}
-
-function getSelectValue(selector, fallback) {
-  return document.querySelector(selector)?.value || fallback;
-}
-
-function getInputValue(selector) {
-  return document.querySelector(selector)?.value.trim() || "";
-}
-
-function renderAdminLogs() {
-  renderLogActionOptions();
-  const logs = filteredLogs();
-  const limit = getSelectValue("#logLimitFilter", "200");
-  const visibleLogs = limit === "all" ? logs : logs.slice(0, Number(limit));
-  const rows = visibleLogs.map((log) => `
-    <tr>
-      <td>${new Date(log.createdAt).toLocaleString("zh-CN")}</td>
-      <td>${log.adminEmail || "-"}</td>
-      <td>${log.action}</td>
-      <td>${log.target || "-"}</td>
-      <td>${log.detail || "-"}</td>
-    </tr>
-  `).join("");
-  document.querySelector("#adminLogTable").innerHTML = rows || `<tr><td colspan="5">没有符合条件的操作日志</td></tr>`;
-}
-
-function renderLogActionOptions() {
-  const select = document.querySelector("#logActionFilter");
-  if (!select) return;
-  const currentValue = select.value || "all";
-  const actions = [...new Set((state.adminLogs || []).map((log) => log.action).filter(Boolean))].sort();
-  select.innerHTML = [
-    `<option value="all">全部动作</option>`,
-    ...actions.map((action) => `<option value="${action}">${action}</option>`),
-  ].join("");
-  select.value = actions.includes(currentValue) ? currentValue : "all";
-}
-
-function addAdminLog(action, target, detail = "") {
-  if (!Array.isArray(state.adminLogs)) state.adminLogs = [];
-  state.adminLogs.push({
-    id: id("alog"),
-    adminUid: firebaseUser?.uid || "",
-    adminEmail: firebaseUser?.email || "",
-    action,
-    target,
-    detail,
-    createdAt: new Date().toISOString(),
+  const merged = cloudProducts.map((cloudProduct) => {
+    if (pendingProductById.has(cloudProduct.id)) return pendingProductById.get(cloudProduct.id);
+    const localProduct = localById.get(cloudProduct.id);
+    const protectedBranches = protectedBranchesByProduct.get(cloudProduct.id);
+    if (!localProduct || !protectedBranches?.size) return cloudProduct;
+    let mergedProduct = normalizeProductBranches(cloudProduct);
+    for (const branchId of protectedBranches) {
+      mergedProduct = setBranchStock(mergedProduct, branchId, getBranchStock(localProduct, branchId));
+    }
+    return mergedProduct;
   });
+  for (const pendingProduct of pendingProducts) {
+    if (!merged.some((product) => product.id === pendingProduct.id)) merged.push(pendingProduct);
+  }
+  return merged;
 }
 
-function addRepeatCreditLog(data, userId, change, balance, reason, source = "", note = "", createdAt = new Date().toISOString()) {
-  if (!Array.isArray(data.repeatCreditLogs)) data.repeatCreditLogs = [];
-  data.repeatCreditLogs.push({
-    id: id("rclog"),
-    userId,
-    change,
-    balance,
-    reason,
-    source,
-    note,
-    createdAt,
-  });
-}
-
-function exportStamp(date = new Date()) {
-  const pad = (value) => String(value).padStart(2, "0");
-  return [
-    date.getFullYear(),
-    pad(date.getMonth() + 1),
-    pad(date.getDate()),
-    "-",
-    pad(date.getHours()),
-    pad(date.getMinutes()),
-    pad(date.getSeconds()),
-  ].join("");
-}
-
-function exportBundle() {
-  const paidOrders = (state.orders || []).filter((order) => order.status === "paid");
-  const readiness = readinessChecks();
-  const orderIssues = orderRiskIssues(state);
-  const rewardIssues = rewardIntegrityIssues(state);
-  const withdrawIssues = withdrawRiskIssues(state);
-  const integrityIssues = dataIntegrityIssues(state, { includeOrderIssues: false, includeRewardIssues: false, includeWithdrawIssues: false });
-  const testChecklist = testChecklistReport();
-  const deployChecklist = deployChecklistReport();
-  const readinessStatus = readinessSummary();
-  const cloudFunctions = cloudFunctionStatusReport();
-  const rulesStatus = rulesStatusReport();
-  const deploymentStatus = deploymentStatusReport();
-  const bundle = {
-    exportedAt: new Date().toISOString(),
-    appVersion: APP_VERSION,
-    projectId: firebaseConfig.projectId,
-    exportedBy: firebaseUser?.email || "",
-    summary: {
-      users: state.users.length,
-      orders: state.orders.length,
-      paidSales: paidOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0),
-      rewards: state.rewards.length,
-      withdraws: state.withdraws.length,
-      repeatCreditLogs: (state.repeatCreditLogs || []).length,
-      adminLogs: (state.adminLogs || []).length,
-      riskItems: readiness.length,
-      riskPendingItems: readiness.filter((check) => !check.ok).length,
-      orderIssues: orderIssues.length,
-      rewardIssues: rewardIssues.length,
-      withdrawIssues: withdrawIssues.length,
-      integrityIssues: integrityIssues.length,
-      testChecklistDone: testChecklist.done,
-      testChecklistTotal: testChecklist.total,
-      deployChecklistDone: deployChecklist.done,
-      deployChecklistTotal: deployChecklist.total,
-      readinessStatus: readinessStatus.status,
-      readinessLabel: readinessStatus.label,
-      readinessDetail: readinessStatus.detail,
-      cloudFunctionsStatus: cloudFunctions.status,
-      cloudFunctionsRequiredForMvp: cloudFunctions.requiredForMvp,
-      rulesStatus: rulesStatus.status,
-      deploymentStatus: deploymentStatus.status,
-    },
-    riskReport: {
-      summary: readinessStatus,
-      cloudFunctions,
-      rulesStatus,
-      deploymentStatus,
-      checks: readiness,
-      orderIssues,
-      rewardIssues,
-      withdrawIssues,
-      integrityIssues,
-      testChecklist,
-      deployChecklist,
-    },
-    data: state,
-  };
-  const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `amsystem-backup-${exportStamp()}.json`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-function exportRiskReport() {
-  const checks = readinessChecks();
-  const issues = dataIntegrityIssues(state, { includeOrderIssues: false, includeRewardIssues: false, includeWithdrawIssues: false });
-  const orderIssues = orderRiskIssues(state);
-  const rewardIssues = rewardIntegrityIssues(state);
-  const withdrawIssues = withdrawRiskIssues(state);
-  const testChecklist = testChecklistReport();
-  const deployChecklist = deployChecklistReport();
-  const readinessStatus = readinessSummary();
-  const cloudFunctions = cloudFunctionStatusReport();
-  const rulesStatus = rulesStatusReport();
-  const deploymentStatus = deploymentStatusReport();
-  downloadCsv(
-    `amsystem-risk-report-${exportStamp()}.csv`,
-    ["类型", "状态", "项目", "详情", "完成时间"],
-    [
-      ["上线状态", readinessStatus.label, readinessStatus.status, readinessStatus.detail, ""],
-      ["Cloud Functions", cloudFunctions.label, cloudFunctions.status, cloudFunctions.detail, ""],
-      ["Rules", rulesStatus.label, rulesStatus.status, rulesStatus.detail, ""],
-      ["部署环境", deploymentStatus.label, deploymentStatus.status, deploymentStatus.detail, ""],
-      ...checks.map((check) => ["自检", check.ok ? "通过" : "待处理", check.label, check.detail, ""]),
-      ...testChecklist.items.map((item) => ["实机测试", item.done ? "完成" : "未完成", `步骤 ${item.index}`, item.text, item.completedAt || ""]),
-      ...deployChecklist.items.map((item) => ["部署检查", item.done ? "完成" : "未完成", `步骤 ${item.index}`, item.text, item.completedAt || ""]),
-      ...orderIssues.map((issue) => ["订单风控", "异常", "明细", issue, ""]),
-      ...rewardIssues.map((issue) => ["奖励发放", "异常", "明细", issue, ""]),
-      ...withdrawIssues.map((issue) => ["提现风控", "异常", "明细", issue, ""]),
-      ...issues.map((issue) => ["数据一致性", "异常", "明细", issue, ""]),
-    ]
-  );
-}
-
-function exportTestChecklistReport() {
-  const report = testChecklistReport();
-  downloadCsv(
-    `amsystem-test-checklist-${exportStamp()}.csv`,
-    ["步骤", "状态", "测试内容", "完成时间", "导出人", "导出时间"],
-    report.items.map((item) => [
-      item.index,
-      item.done ? "完成" : "未完成",
-      item.text,
-      item.completedAt || "",
-      firebaseUser?.email || "",
-      new Date().toISOString(),
-    ])
-  );
-}
-
-function exportDeployChecklistReport() {
-  const report = deployChecklistReport();
-  downloadCsv(
-    `amsystem-deploy-checklist-${exportStamp()}.csv`,
-    ["步骤", "状态", "部署检查内容", "完成时间", "导出人", "导出时间"],
-    report.items.map((item) => [
-      item.index,
-      item.done ? "完成" : "未完成",
-      item.text,
-      item.completedAt || "",
-      firebaseUser?.email || "",
-      new Date().toISOString(),
-    ])
-  );
-}
-
-function exportTodoReport() {
-  downloadCsv(
-    `amsystem-todos-${exportStamp()}.csv`,
-    ["项目", "数量", "等级", "详情", "处理模块", "处理动作"],
-    adminTodoItems().map((item) => [
-      item.title,
-      item.count,
-      item.level,
-      item.detail,
-      item.tab,
-      item.action,
-    ])
-  );
-}
-
-function sumRows(rows, pick) {
-  return rows.reduce((sum, row) => sum + Number(pick(row) || 0), 0);
-}
-
-function exportFinanceSummary() {
-  const orders = state.orders || [];
-  const rewards = state.rewards || [];
-  const withdraws = state.withdraws || [];
-  const users = state.users || [];
-  const paidOrders = orders.filter((order) => order.status === "paid");
-  const pendingOrders = orders.filter((order) => order.status === "pending");
-  const cancelledOrders = orders.filter((order) => ["cancelled", "refunded"].includes(order.status));
-  const confirmedFirstRewards = rewards.filter((reward) => reward.type === "first" && reward.status === "confirmed");
-  const repeatRewards = rewards.filter((reward) => reward.type === "repeat");
-  const pendingRewards = rewards.filter((reward) => reward.status === "pending");
-  const releasingRewards = rewards.filter((reward) => reward.status === "releasing");
-  const cancelledRewards = rewards.filter((reward) => ["cancelled", "frozen"].includes(reward.status));
-  const pendingWithdraws = withdraws.filter((withdraw) => withdraw.status === "pending");
-  const approvedWithdraws = withdraws.filter((withdraw) => withdraw.status === "approved");
-  const paidoutWithdraws = withdraws.filter((withdraw) => withdraw.status === "paidout");
-  const rejectedWithdraws = withdraws.filter((withdraw) => withdraw.status === "rejected");
-  const userBreakdowns = users.map((user) => withdrawBreakdown(user.id));
-  downloadCsv(
-    `amsystem-finance-summary-${exportStamp()}.csv`,
-    ["分类", "项目", "数量", "金额", "说明"],
-    [
-      ["充值订单", "已支付充值", paidOrders.length, sumRows(paidOrders, (order) => order.amount), "已确认付款的订单总额"],
-      ["充值订单", "待审核充值", pendingOrders.length, sumRows(pendingOrders, (order) => order.amount), "用户已提交但后台未确认"],
-      ["充值订单", "已取消/退款", cancelledOrders.length, sumRows(cancelledOrders, (order) => order.amount), "不计入有效充值"],
-      ["奖励", "已确认推荐奖励", confirmedFirstRewards.length, sumRows(confirmedFirstRewards, (reward) => reward.amount), "可进入提现余额"],
-      ["奖励", "已释放复购奖励", repeatRewards.length, sumRows(repeatRewards, (reward) => reward.releasedAmount || (reward.status === "confirmed" ? reward.amount : 0)), "已释放部分可提现"],
-      ["奖励", "待确认奖励", pendingRewards.length, sumRows(pendingRewards, (reward) => reward.amount), "等待确认日或管理员处理"],
-      ["奖励", "分期中待释放", releasingRewards.length, sumRows(releasingRewards, (reward) => Number(reward.amount || 0) - Number(reward.releasedAmount || 0)), "复购奖励剩余未释放"],
-      ["奖励", "已取消/冻结奖励", cancelledRewards.length, sumRows(cancelledRewards, (reward) => reward.amount), "不进入可提现余额"],
-      ["提现", "待审核提现", pendingWithdraws.length, sumRows(pendingWithdraws, (withdraw) => withdraw.amount), "等待管理员审核"],
-      ["提现", "已通过待打款", approvedWithdraws.length, sumRows(approvedWithdraws, (withdraw) => withdraw.amount), "已审核通过但未标记打款"],
-      ["提现", "已打款提现", paidoutWithdraws.length, sumRows(paidoutWithdraws, (withdraw) => withdraw.amount), "已经标记打款"],
-      ["提现", "已拒绝提现", rejectedWithdraws.length, sumRows(rejectedWithdraws, (withdraw) => withdraw.amount), "不扣除可提现余额"],
-      ["用户余额", "当前全体可提现余额", users.length, sumRows(userBreakdowns, (item) => item.available), "推荐奖励可提现 + 复购奖励已释放 - 申请/处理中"],
-      ["用户余额", "复购奖励待释放", users.length, sumRows(userBreakdowns, (item) => item.pendingRelease), "未来可能释放的复购奖励"],
-    ]
-  );
-}
-
-function exportMyRecords(user = currentUser()) {
-  const referrer = findUser(user.referrerId);
-  const [, statusLabel] = packageStatus(user);
-  const breakdown = withdrawBreakdown(user.id);
-  const rows = [
-    ["用户资料", "用户ID", user.id, ""],
-    ["用户资料", "显示名称", user.name || "", ""],
-    ["用户资料", "账号", user.account || "", ""],
-    ["用户资料", "手机", user.phone || "", ""],
-    ["用户资料", "推荐码", user.inviteCode || "", ""],
-    ["用户资料", "推荐人", referrer ? `${referrer.name} / ${referrer.inviteCode}` : "无", ""],
-    ["用户资料", "配套状态", statusLabel, ""],
-    ["用户资料", "充值积分", user.points || 0, "充值积分不可提现"],
-    ["用户资料", "可提现奖励", breakdown.available, "仅包含已确认/已释放奖励"],
-    ["用户资料", "奖励池资格", user.repeatCredits || 0, ""],
-    ["订单", "订单号", "配套/类型/金额", "状态/时间/处理结果"],
-    ...(state.orders || []).filter((order) => order.userId === user.id).map((order) => {
-      const plan = orderPlan(order);
-      return [
-        "订单",
-        order.id,
-        `${plan?.name || "-"} / ${order.type === "first" ? "首充" : "复购"} / ${money(order.amount)}`,
-        `${labelStatus(order.status)} / ${order.createdAt || ""} / ${order.confirmSummary || order.reviewNote || "-"}`,
+async function loadCloudDataOnce() {
+  if (!hasCloud() || !navigator.onLine) return false;
+  try {
+    updateCloudStatus("正在读取云端资料");
+    const data = await window.cloudPOS.loadUserData(getActiveCashier());
+    try {
+      const cloudSettings = await window.cloudPOS.loadSettings();
+      if (cloudSettings && !pendingManagement.settings) {
+        appSettings = { ...appSettings, ...cloudSettings };
+        save(STORAGE_KEYS.settings, appSettings);
+      }
+    } catch (settingsError) {
+      console.warn("Cloud settings load skipped", settingsError);
+    }
+    if (data.branches.length) {
+      branches = mergeCloudBranchesWithPending(
+        data.branches.filter((branch) => branch.active !== false)
+      );
+      save(STORAGE_KEYS.branches, branches);
+    }
+    if (data.users.length) {
+      authorizedUsers = mergeCloudUsersWithPending(data.users);
+      save(STORAGE_KEYS.authorizedUsers, authorizedUsers);
+    }
+    if (data.products.length) {
+      const legacyCloudProducts = data.products.filter(isLegacyDemoProduct);
+      products = mergeCloudProductsWithPending(
+        data.products.filter((product) => product.active !== false && !isLegacyDemoProduct(product))
+      );
+      save(STORAGE_KEYS.products, products);
+      if (legacyCloudProducts.length && isCloudAdmin() && window.cloudPOS.deleteProduct) {
+        await Promise.all(
+          legacyCloudProducts.map((product) => window.cloudPOS.deleteProduct(product.id))
+        );
+        writeAuditLog("products.legacy-demo.delete", {
+          productIds: legacyCloudProducts.map((product) => product.id),
+          barcodes: legacyCloudProducts.map((product) => product.barcode)
+        });
+      }
+    }
+    if (data.sales.length) {
+      const cloudSales = normalizeCloudSales(data.sales);
+      const pendingById = new Map(
+        [...pendingSales, ...pendingSaleUpdates].map((sale) => [sale.id, normalizeSaleExternalReferences(sale)])
+      );
+      const cloudWithLocalPending = cloudSales.map((sale) => pendingById.get(sale.id) || sale);
+      const mergedSales = [
+        ...cloudWithLocalPending,
+        ...sales.filter((sale) => !cloudSales.some((item) => item.id === sale.id))
       ];
-    }),
-    ["奖励", "奖励ID", "类型/金额/比例", "状态/可处理日/来源订单"],
-    ...(state.rewards || []).filter((reward) => reward.userId === user.id).map((reward) => [
-      "奖励",
-      reward.id,
-      `${rewardTypeText(reward)} / ${rewardAmountText(reward)} / ${Number(reward.rate || 0)}%`,
-      `${labelStatus(reward.status)} / ${rewardNextDateText(reward)} / ${reward.orderId}`,
-    ]),
-    ["提现", "提现ID", "金额/方式/账号", "状态/申请时间/打款时间"],
-    ...(state.withdraws || []).filter((withdraw) => withdraw.userId === user.id).map((withdraw) => [
-      "提现",
-      withdraw.id,
-      `${money(withdraw.amount)} / ${withdraw.method || "-"} / ${withdraw.account || "-"}`,
-      `${labelStatus(withdraw.status)} / ${withdraw.createdAt || ""} / ${withdraw.paidAt || "-"}`,
-    ]),
-    ["奖励池资格流水", "流水ID", "变动/余额/原因", "时间/来源/备注"],
-    ...(state.repeatCreditLogs || []).filter((log) => log.userId === user.id).map((log) => [
-      "奖励池资格流水",
-      log.id,
-      `${Number(log.change || 0)} / ${Number(log.balance || 0)} / ${repeatCreditReasonText(log.reason)}`,
-      `${log.createdAt || ""} / ${log.source || "-"} / ${log.note || "-"}`,
-    ]),
-  ];
-  downloadCsv(
-    `amsystem-my-records-${normalizeInviteCode(user.inviteCode || user.id)}-${exportStamp()}.csv`,
-    ["分类", "项目", "内容", "备注"],
-    rows
+      sales = mergedSales.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      save(STORAGE_KEYS.sales, sales);
+    }
+    if ((data.stockAdjustments || []).length) {
+      const cloudAdjustments = normalizeCloudTimelineItems(data.stockAdjustments || []);
+      stockAdjustments = [...cloudAdjustments, ...stockAdjustments.filter((item) => !cloudAdjustments.some((cloudItem) => cloudItem.id === item.id))].slice(0, 500);
+      save(STORAGE_KEYS.stockAdjustments, stockAdjustments);
+    }
+    if ((data.auditLogs || []).length) {
+      const cloudAuditLogs = normalizeCloudTimelineItems(data.auditLogs || []);
+      auditLogs = [...cloudAuditLogs, ...auditLogs.filter((item) => !cloudAuditLogs.some((cloudItem) => cloudItem.id === item.id))].slice(0, 500);
+      save(STORAGE_KEYS.auditLogs, auditLogs);
+    }
+    migrateManagementData();
+    migrateProductsForBranches();
+    updateCloudStatus("云端资料已更新", true);
+    renderAll();
+    return true;
+  } catch (error) {
+    updateCloudStatus(`读取云端失败：${getErrorMessage(error)}`);
+    console.warn("Cloud data load failed", error);
+    return false;
+  }
+}
+
+async function loadCloudData() {
+  if (cloudDataLoadPromise) return cloudDataLoadPromise;
+  cloudDataLoadPromise = loadCloudDataOnce();
+  try {
+    return await cloudDataLoadPromise;
+  } finally {
+    cloudDataLoadPromise = null;
+  }
+}
+
+async function syncThenLoadCloudData() {
+  await syncPendingChanges();
+  return loadCloudData();
+}
+
+async function saveSettings(event) {
+  event.preventDefault();
+  if (!requireAdmin()) return;
+  const serviceDays = Number(els.serviceDaysInput.value);
+  const lowStockThreshold = Number(els.lowStockThresholdInput.value);
+  const nextSettings = {
+    businessName: els.businessNameInput.value.trim(),
+    defaultServiceName: els.defaultServiceNameInput.value.trim(),
+    serviceDays,
+    lowStockThreshold,
+    receiptFooter: els.receiptFooterInput.value.trim()
+  };
+  if (
+    !nextSettings.businessName
+    || !nextSettings.defaultServiceName
+    || !Number.isInteger(serviceDays)
+    || serviceDays < 1
+    || !Number.isInteger(lowStockThreshold)
+    || lowStockThreshold < 0
+  ) {
+    alert("请检查业务名称、服务名称、服务天数和低库存阈值。天数与阈值必须是有效整数。");
+    return;
+  }
+  if (!save(STORAGE_KEYS.settings, nextSettings)) return;
+  appSettings = nextSettings;
+  syncManagementToCloud("settings", appSettings);
+  writeAuditLog("settings.update", { settings: appSettings });
+  renderAll();
+}
+
+async function applyCloudUser(appUser, firebaseUser = null) {
+  if (!isCloudAuthorizationValid(appUser)) {
+    lockCloudSession(firebaseUser?.email, "此 Google 邮箱未获授权或已被停用，POS 已自动退出。", true);
+    return;
+  }
+
+  lastAuthorizationCheckAt = Date.now();
+  appUser = cacheCloudAuthorizedUser(appUser);
+  const previousBranchId = currentBranchId;
+  const targetBranchId = appUser.role === "admin" ? currentBranchId : (appUser.branchId || "hq");
+  if (appUser.role !== "admin" && hasOpenShift() && !isShiftIdentity(appUser.email, targetBranchId)) {
+    lockCloudSession(appUser.email, `当前班次属于 ${getCurrentShiftLabel()}，不能改由其他员工接手。`);
+    return;
+  }
+
+  cloudSessionActive = true;
+  currentCloudUser = appUser;
+
+  if (appUser.role === "admin") {
+    adminEmail = normalizeEmail(appUser.email);
+    ensureAdminAuthorized(adminEmail);
+    persistSessionEmail(STORAGE_KEYS.adminEmail, adminEmail);
+    currentBranchId = branches.some((branch) => branch.id === currentBranchId) ? currentBranchId : "hq";
+  } else {
+    adminEmail = "";
+    clearSessionEmail(STORAGE_KEYS.adminEmail);
+    currentBranchId = appUser.branchId || "hq";
+    if (currentBranchId !== previousBranchId) cart = [];
+  }
+
+  operatorEmail = appUser.email;
+  persistSessionEmail(STORAGE_KEYS.operatorEmail, operatorEmail);
+  localStorage.setItem(STORAGE_KEYS.branchId, currentBranchId);
+  if (!hasOpenShift() || isShiftIdentity(appUser.email, currentBranchId)) ensureCurrentShift();
+  updateCloudStatus(`云端已登录：${appUser.email}`, true);
+  renderAll();
+  const sessionEmail = normalizeEmail(appUser.email);
+  await syncPendingChanges();
+  if (normalizeEmail(currentCloudUser?.email) === sessionEmail) await loadCloudData();
+}
+
+function requireAdmin() {
+  if (isAdmin()) return true;
+  alert("只有唯一管理员可以操作后台。请先输入管理员邮箱。");
+  els.adminEmailInput.focus();
+  return false;
+}
+
+function requireOperations() {
+  if (canUseOperations()) return true;
+  alert("请先使用授权员工账号登录。");
+  els.operatorEmailInput.focus();
+  return false;
+}
+
+function isCloudAdmin() {
+  return currentCloudUser && currentCloudUser.role === "admin";
+}
+
+function requireCloudAdmin() {
+  if (isCloudAdmin()) return true;
+  alert("这个操作需要 Google 管理员登录。请点击 Google 管理员登录。");
+  return false;
+}
+
+async function loginAdmin(event) {
+  event.preventDefault();
+  if (navigator.onLine) {
+    els.adminLoginMessage.textContent = "联网时后台必须使用 Google 管理员登录。";
+    els.adminLoginMessage.classList.remove("error");
+    await signInWithGoogle();
+    return;
+  }
+  const email = normalizeEmail(els.adminEmailInput.value);
+  const password = els.adminPasswordInput.value;
+  if (!(await isConfiguredAdminEmail(email))) {
+    els.adminLoginMessage.textContent = "邮箱不匹配，无法进入后台。";
+    els.adminLoginMessage.classList.add("error");
+    return;
+  }
+  const adminUser = authorizedUsers.find((user) =>
+    normalizeEmail(user.email) === email
+    && user.active !== false
+    && (user.role === "admin" || user.role === "管理员")
   );
+  if (!adminUser?.offlinePasswordHash) {
+    els.adminLoginMessage.textContent = "管理员尚未设置离线密码，请联网后使用 Google 管理员登录设置。";
+    els.adminLoginMessage.classList.add("error");
+    return;
+  }
+  if (!(await verifyOfflinePassword(adminUser, password))) {
+    els.adminLoginMessage.textContent = "管理员离线密码不正确。";
+    els.adminLoginMessage.classList.add("error");
+    els.adminPasswordInput.focus();
+    return;
+  }
+  adminEmail = adminUser.email;
+  persistSessionEmail(STORAGE_KEYS.adminEmail, adminEmail);
+  if (!operatorEmail) {
+    operatorEmail = adminUser.email;
+    persistSessionEmail(STORAGE_KEYS.operatorEmail, operatorEmail);
+  }
+  els.adminEmailInput.value = "";
+  els.adminPasswordInput.value = "";
+  els.adminLoginMessage.textContent = "管理员离线身份已验证。";
+  els.adminLoginMessage.classList.remove("error");
+  renderAll();
 }
 
-function csvEscape(value) {
-  const text = String(value ?? "");
-  return `"${text.replace(/"/g, '""')}"`;
+function logoutAdmin() {
+  const previousAdminEmail = normalizeEmail(adminEmail);
+  adminEmail = "";
+  clearSessionEmail(STORAGE_KEYS.adminEmail);
+  if (previousAdminEmail && normalizeEmail(operatorEmail) === previousAdminEmail) {
+    operatorEmail = "";
+    clearSessionEmail(STORAGE_KEYS.operatorEmail);
+  }
+  els.adminLoginMessage.textContent = "商品管理、导出销售记录和清空数据仅管理员可用。";
+  els.adminLoginMessage.classList.remove("error");
+  logoutCloudIfReady();
+  renderAll();
 }
 
-function downloadCsv(filename, headers, rows) {
-  const content = [
-    headers.map(csvEscape).join(","),
-    ...rows.map((row) => row.map(csvEscape).join(",")),
-  ].join("\n");
-  const blob = new Blob([`\uFEFF${content}`], { type: "text/csv;charset=utf-8" });
+function createSlug(value) {
+  return normalizeEmail(value)
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 36) || `branch-${Date.now()}`;
+}
+
+function renderManagementLists() {
+  if (!isAdmin()) return;
+  els.userBranchSelect.innerHTML = "";
+  for (const branch of branches) {
+    const option = document.createElement("option");
+    option.value = branch.id;
+    option.textContent = branch.name;
+    els.userBranchSelect.append(option);
+  }
+
+  els.branchList.innerHTML = "";
+  for (const branch of branches) {
+    const row = document.createElement("div");
+    row.className = "management-row branch-management-row";
+    row.innerHTML = `
+      <div>
+        <strong>${escapeHtml(branch.name)}</strong>
+        <small>${escapeHtml(branch.id)} · ${authorizedUsers.filter((user) => user.branchId === branch.id).length} 位授权用户</small>
+      </div>
+      <div class="row-actions branch-merchant-actions">
+        <input type="text" value="${escapeHtml(branch.simplePayMerchantId || "")}" placeholder="SimplePay 商家 ID" aria-label="${escapeHtml(branch.name)} SimplePay 商家 ID">
+        <button class="ghost" type="button">保存对应商家</button>
+      </div>
+    `;
+    const merchantInput = row.querySelector("input");
+    row.querySelector("button").addEventListener("click", () => {
+      updateBranchSimplePayMerchant(branch.id, merchantInput.value);
+    });
+    els.branchList.append(row);
+  }
+
+  els.userList.innerHTML = "";
+  for (const user of authorizedUsers.filter((item) => item.active !== false)) {
+    const row = document.createElement("div");
+    row.className = "management-row";
+    const offlineText = user.offlinePasswordHash ? "已设离线密码" : "未设离线密码";
+    row.innerHTML = `
+      <div>
+        <strong>${escapeHtml(user.name)}</strong>
+        <small>${escapeHtml(user.email)} · ${escapeHtml(getBranchName(user.branchId))} · ${escapeHtml(user.role || "POS用户")} · ${offlineText}</small>
+      </div>
+      <button class="ghost danger" type="button" ${user.role === "管理员" || user.role === "admin" ? "disabled" : ""}>移除</button>
+    `;
+    const button = row.querySelector("button");
+    button.addEventListener("click", () => removeAuthorizedUser(user.id));
+    els.userList.append(row);
+  }
+
+  els.syncOverview.innerHTML = "";
+  const syncRow = document.createElement("div");
+  syncRow.className = "management-row";
+  syncRow.innerHTML = `
+    <div>
+      <strong>${pendingSales.length} 单订单、${pendingSaleUpdates.length} 个订单更新、${pendingProducts.length} 个库存、${pendingStockAdjustments.length} 条调整、${pendingAuditLogs.length} 条审计、${getPendingManagementCount()} 项后台资料待同步</strong>
+      <small>${pendingSales.length || pendingSaleUpdates.length || pendingProducts.length || pendingStockAdjustments.length || pendingAuditLogs.length || getPendingManagementCount() ? "恢复网络并完成对应权限登录后会自动补传，也可以手动补传。" : "所有本机变更已处理。"}</small>
+    </div>
+  `;
+  els.syncOverview.append(syncRow);
+
+  els.shiftList.innerHTML = "";
+  if (!shifts.length) {
+    els.shiftList.innerHTML = '<div class="empty">暂无交班记录</div>';
+  } else {
+    for (const shift of shifts.slice(0, 10)) {
+      const row = document.createElement("div");
+      row.className = "management-row";
+      const cashDifference = shift.reconciliation?.cashDifference;
+      row.innerHTML = `
+        <div>
+          <strong>${escapeHtml(shift.operatorName || "-")} · ${escapeHtml(shift.branchName || "-")}</strong>
+          <small>${new Date(shift.openedAt).toLocaleString()} 至 ${shift.closedAt ? new Date(shift.closedAt).toLocaleString() : "-"}</small>
+        </div>
+        <div class="row-actions">
+          <small>${shift.summary?.orders || 0} 单 · ${money(shift.summary?.total || 0)}${cashDifference === undefined ? "" : ` · 现金差额 ${money(cashDifference)}`}</small>
+          <button class="ghost" type="button" data-export-shift>导出结算</button>
+        </div>
+      `;
+      row.querySelector("[data-export-shift]").addEventListener("click", () => exportCurrentShiftSettlement(shift));
+      els.shiftList.append(row);
+    }
+  }
+
+  els.auditList.innerHTML = "";
+  const auditRows = [...auditLogs].slice(0, 10);
+  if (!auditRows.length) {
+    els.auditList.innerHTML = '<div class="empty">暂无审计记录</div>';
+  } else {
+    for (const log of auditRows) {
+      const row = document.createElement("div");
+      row.className = "management-row";
+      row.innerHTML = `
+        <div>
+          <strong>${escapeHtml(log.action)}</strong>
+          <small>${new Date(log.createdAt).toLocaleString()} · ${escapeHtml(log.actor?.email || "-")}</small>
+        </div>
+        <small>${escapeHtml(log.branchName || "-")}</small>
+      `;
+      els.auditList.append(row);
+    }
+  }
+
+  els.stockAdjustmentList.innerHTML = "";
+  const stockRows = [...stockAdjustments].slice(0, 10);
+  if (!stockRows.length) {
+    els.stockAdjustmentList.innerHTML = '<div class="empty">暂无库存流水</div>';
+  } else {
+    for (const adjustment of stockRows) {
+      const row = document.createElement("div");
+      row.className = "management-row";
+      row.innerHTML = `
+        <div>
+          <strong>${escapeHtml(adjustment.productName || "-")}</strong>
+          <small>${new Date(adjustment.createdAt).toLocaleString()} · ${escapeHtml(adjustment.branchName || getBranchName(adjustment.branchId || "hq"))}</small>
+        </div>
+        <small>${Number(adjustment.beforeStock || 0)} → ${Number(adjustment.afterStock || 0)} (${Number(adjustment.delta || 0) >= 0 ? "+" : ""}${Number(adjustment.delta || 0)})</small>
+      `;
+      els.stockAdjustmentList.append(row);
+    }
+  }
+}
+
+function renderStockAdjustmentList() {
+  if (!canUseOperations()) return;
+  els.stockAdjustmentList.innerHTML = "";
+  const stockRows = stockAdjustments
+    .filter((adjustment) => canManageBranch(adjustment.branchId || "hq"))
+    .slice(0, 10);
+  if (!stockRows.length) {
+    els.stockAdjustmentList.innerHTML = '<div class="empty">暂无库存流水</div>';
+    return;
+  }
+  for (const adjustment of stockRows) {
+    const row = document.createElement("div");
+    row.className = "management-row";
+    row.innerHTML = `
+      <div>
+        <strong>${escapeHtml(adjustment.productName || "-")}</strong>
+        <small>${new Date(adjustment.createdAt).toLocaleString()} · ${escapeHtml(adjustment.branchName || getBranchName(adjustment.branchId || "hq"))}</small>
+      </div>
+      <small>${Number(adjustment.beforeStock || 0)} → ${Number(adjustment.afterStock || 0)} (${Number(adjustment.delta || 0) >= 0 ? "+" : ""}${Number(adjustment.delta || 0)})</small>
+    `;
+    els.stockAdjustmentList.append(row);
+  }
+}
+
+function addBranch(event) {
+  event.preventDefault();
+  if (!requireAdmin()) return;
+  const name = els.branchNameInput.value.trim();
+  const simplePayMerchantId = els.branchSimplePayMerchantIdInput.value.trim();
+  if (!name) {
+    alert("请填写分行名称。");
+    els.branchNameInput.focus();
+    return;
+  }
+  const id = createSlug(name);
+  if (branches.some((branch) => branch.id === id || branch.name === name)) {
+    alert("这个分行已经存在。");
+    return;
+  }
+  const branch = { id, name, simplePayMerchantId };
+  const nextBranches = [...branches, branch];
+  const nextProducts = products.map((product) => setBranchStock(product, id, 0));
+  if (!saveStorageBatch([
+    [STORAGE_KEYS.branches, nextBranches],
+    [STORAGE_KEYS.products, nextProducts]
+  ])) return;
+  branches = nextBranches;
+  products = nextProducts;
+  syncManagementToCloud("branch", branch);
+  writeAuditLog("branch.create", { id, name, simplePayMerchantId });
+  els.branchForm.reset();
+  renderAll();
+}
+
+function updateBranchSimplePayMerchant(branchId, value) {
+  if (!requireAdmin()) return;
+  const simplePayMerchantId = String(value || "").trim();
+  const branch = branches.find((item) => item.id === branchId);
+  if (!branch) return;
+  const updatedBranch = { ...branch, simplePayMerchantId };
+  const nextBranches = branches.map((item) => item.id === branchId ? updatedBranch : item);
+  if (!save(STORAGE_KEYS.branches, nextBranches)) return;
+  branches = nextBranches;
+  syncManagementToCloud("branch", updatedBranch);
+  writeAuditLog("branch.simplepay-merchant.update", {
+    branchId,
+    configured: Boolean(simplePayMerchantId)
+  });
+  renderAll();
+}
+
+async function addAuthorizedUser(event) {
+  event.preventDefault();
+  if (!requireAdmin()) return;
+  const email = normalizeEmail(els.userEmailInput.value);
+  const offlinePassword = els.userPasswordInput.value;
+  const name = els.userNameInput.value.trim();
+  const branchId = els.userBranchSelect.value;
+  if (!name || !email || !branches.some((branch) => branch.id === branchId)) {
+    alert("请填写有效员工姓名、邮箱并选择存在的分行。");
+    return;
+  }
+  if (offlinePassword.length < 8) {
+    alert("员工离线密码至少需要 8 位。");
+    els.userPasswordInput.focus();
+    return;
+  }
+  const offlinePasswordSalt = createPasswordSalt();
+  const existingUser = authorizedUsers.find((user) => normalizeEmail(user.email) === email);
+  if (existingUser && (existingUser.role === "管理员" || existingUser.role === "admin")) {
+    alert("管理员账号不能在这里更新。");
+    return;
+  }
+  const user = {
+    id: existingUser?.id || createId(),
+    name,
+    email,
+    branchId,
+    role: "POS用户",
+    active: true,
+    offlinePasswordAlgorithm: "PBKDF2-SHA256",
+    offlinePasswordIterations: OFFLINE_PASSWORD_ITERATIONS,
+    offlinePasswordSalt,
+    offlinePasswordHash: await hashOfflinePassword(email, offlinePassword, offlinePasswordSalt)
+  };
+  const nextUsers = existingUser
+    ? authorizedUsers.map((item) => normalizeEmail(item.email) === email ? user : item)
+    : [...authorizedUsers, user];
+  if (!save(STORAGE_KEYS.authorizedUsers, nextUsers)) return;
+  authorizedUsers = nextUsers;
+  syncManagementToCloud("user", user);
+  writeAuditLog(existingUser ? "user.update" : "user.authorize", { email: user.email, name: user.name, branchId: user.branchId });
+  els.userForm.reset();
+  renderAll();
+}
+
+function removeAuthorizedUser(userId) {
+  if (!requireAdmin()) return;
+  const removedUser = authorizedUsers.find((user) => user.id === userId);
+  const nextUsers = authorizedUsers.map((user) => {
+    if (user.id !== userId || user.role === "管理员" || user.role === "admin") return user;
+    return { ...user, active: false };
+  });
+  if (!save(STORAGE_KEYS.authorizedUsers, nextUsers)) return;
+  authorizedUsers = nextUsers;
+  if (!getOperator()) logoutOperator();
+  if (removedUser && removedUser.role !== "管理员" && removedUser.role !== "admin") {
+    syncManagementToCloud("user", { ...removedUser, active: false });
+    writeAuditLog("user.remove", { email: removedUser.email, name: removedUser.name, branchId: removedUser.branchId });
+  }
+  renderAll();
+}
+
+function createId() {
+  if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+  return `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function createPosOrderId(branchId = currentBranchId) {
+  const branchToken = String(branchId || "hq")
+    .replace(/[^a-z0-9]/gi, "")
+    .slice(0, 8)
+    .toUpperCase() || "HQ";
+  const randomToken = window.crypto?.getRandomValues
+    ? Array.from(window.crypto.getRandomValues(new Uint8Array(3)), (value) => value.toString(16).padStart(2, "0")).join("").toUpperCase()
+    : Math.random().toString(16).slice(2, 8).toUpperCase();
+  return `POS-${branchToken}-${Date.now()}-${randomToken}`;
+}
+
+function money(value) {
+  return `RM ${Number(value || 0).toFixed(2)}`;
+}
+
+function formatDate(date) {
+  return date.toLocaleDateString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  });
+}
+
+function inputDate(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function monthStartDate(date = new Date()) {
+  return inputDate(new Date(date.getFullYear(), date.getMonth(), 1));
+}
+
+function monthEndDate(date = new Date()) {
+  return inputDate(new Date(date.getFullYear(), date.getMonth() + 1, 0));
+}
+
+function setReportRange(startDate, endDate) {
+  els.reportStartInput.value = startDate || "";
+  els.reportEndInput.value = endDate || "";
+  renderGlobalDashboard();
+}
+
+function ensureReportRange() {
+  if (reportRangeInitialized) return;
+  reportRangeInitialized = true;
+  setReportRange(monthStartDate(), monthEndDate());
+}
+
+function getReportSales() {
+  const startDate = els.reportStartInput.value;
+  const endDate = els.reportEndInput.value;
+  return getActiveSales().filter((sale) => {
+    const saleDate = inputDate(new Date(sale.createdAt));
+    if (startDate && saleDate < startDate) return false;
+    if (endDate && saleDate > endDate) return false;
+    return true;
+  });
+}
+
+function getReportRangeLabel() {
+  const startDate = els.reportStartInput.value;
+  const endDate = els.reportEndInput.value;
+  if (!startDate && !endDate) return "全部";
+  if (startDate && endDate) return `${startDate} 至 ${endDate}`;
+  if (startDate) return `${startDate} 起`;
+  return `${endDate} 前`;
+}
+
+function getProductSalesRows(reportSales = getReportSales()) {
+  const productMap = new Map();
+  for (const sale of reportSales) {
+    for (const item of sale.items || []) {
+      const key = item.id || item.name;
+      const existing = productMap.get(key) || {
+        name: item.name,
+        qty: 0,
+        revenue: 0
+      };
+      existing.qty += Number(item.qty || 0);
+      existing.revenue += Number(item.price || 0) * Number(item.qty || 0);
+      productMap.set(key, existing);
+    }
+  }
+  return [...productMap.values()].sort((a, b) => b.revenue - a.revenue || b.qty - a.qty);
+}
+
+function getDailySalesRows(reportSales = getReportSales()) {
+  const dayMap = new Map();
+  for (const sale of reportSales) {
+    const day = inputDate(new Date(sale.createdAt));
+    const existing = dayMap.get(day) || { day, orders: 0, revenue: 0 };
+    existing.orders += 1;
+    existing.revenue += Number(sale.total || 0);
+    dayMap.set(day, existing);
+  }
+  return [...dayMap.values()].sort((a, b) => b.day.localeCompare(a.day));
+}
+
+function getPaymentSummaryRows(reportSales = getReportSales()) {
+  const paymentMap = new Map();
+  for (const sale of reportSales) {
+    const method = sale.payment?.method || "现金";
+    const existing = paymentMap.get(method) || { method, orders: 0, total: 0 };
+    existing.orders += 1;
+    existing.total += Number(sale.total || 0);
+    paymentMap.set(method, existing);
+  }
+  return [...paymentMap.values()].sort((a, b) => b.total - a.total);
+}
+
+function renderAll() {
+  els.versionStatus.textContent = APP_VERSION;
+  if (!paymentMethodInitialized) {
+    els.paymentMethodInput.value = preferredPaymentMethod;
+    paymentMethodInitialized = true;
+  }
+  renderBranchSelect();
+  renderInventoryBranchFilter();
+  renderSalesBranchFilter();
+  renderCategoryFilter();
+  renderProducts();
+  renderCart();
+  renderSales();
+  renderSettingsForm();
+  renderPrinterSettings();
+  renderFollowUps();
+  renderLowStock();
+  renderMenuProductList();
+  renderInventoryOverview();
+  renderGlobalDashboard();
+  renderManagementLists();
+  renderIntegrationOverview();
+  renderStockAdjustmentList();
+  renderAdminAccess();
+  renderOperatorAccess();
+  updateNetworkStatus();
+}
+
+function renderInventoryBranchFilter() {
+  if (!els.inventoryBranchFilter) return;
+  const selectedBranchId = isAdmin()
+    ? (resolveBranchId(els.inventoryBranchFilter.value) || currentBranchId || "hq")
+    : (getOperator()?.branchId || currentBranchId || "hq");
+  els.inventoryBranchFilter.innerHTML = "";
+  for (const branch of branches) {
+    const option = document.createElement("option");
+    option.value = branch.id;
+    option.textContent = branch.name;
+    els.inventoryBranchFilter.append(option);
+  }
+  els.inventoryBranchFilter.value = branches.some((branch) => branch.id === selectedBranchId)
+    ? selectedBranchId
+    : (branches[0]?.id || "hq");
+  els.inventoryBranchFilter.disabled = !isAdmin();
+  els.inventoryBranchFilter.title = isAdmin() ? "管理员可查看所有分行库存" : "员工只能处理授权分行库存";
+}
+
+function renderSalesBranchFilter() {
+  if (!els.salesBranchFilter) return;
+  const operatorBranchId = getOperator()?.branchId || currentBranchId || "hq";
+  const previousValue = els.salesBranchFilter.value;
+  els.salesBranchFilter.innerHTML = "";
+  if (isAdmin()) {
+    const allOption = document.createElement("option");
+    allOption.value = "all";
+    allOption.textContent = "全部分行";
+    els.salesBranchFilter.append(allOption);
+    for (const branch of branches) {
+      const option = document.createElement("option");
+      option.value = branch.id;
+      option.textContent = branch.name;
+      els.salesBranchFilter.append(option);
+    }
+    els.salesBranchFilter.value = previousValue === "all" || branches.some((branch) => branch.id === previousValue)
+      ? previousValue
+      : "all";
+    els.salesBranchFilter.disabled = false;
+    return;
+  }
+  const option = document.createElement("option");
+  option.value = operatorBranchId;
+  option.textContent = getBranchName(operatorBranchId);
+  els.salesBranchFilter.append(option);
+  els.salesBranchFilter.value = operatorBranchId;
+  els.salesBranchFilter.disabled = true;
+}
+
+function renderMenuProductList() {
+  if (!isAdmin()) return;
+  els.menuProductList.innerHTML = "";
+  const keyword = els.menuSearchInput.value.trim().toLowerCase();
+  const filteredProducts = products.filter((product) => {
+    if (!keyword) return true;
+    return [product.name, product.barcode, product.category]
+      .some((value) => String(value || "").toLowerCase().includes(keyword));
+  });
+  if (!filteredProducts.length) {
+    els.menuProductList.innerHTML = '<div class="empty">暂无菜单商品</div>';
+    return;
+  }
+  for (const product of filteredProducts.slice(0, 50)) {
+    const row = document.createElement("div");
+    row.className = "management-row";
+    row.innerHTML = `
+      <div>
+        <strong>${escapeHtml(product.name)}</strong>
+        <small>${escapeHtml(product.category || "-")} · SKU ${escapeHtml(product.barcode || "-")}</small>
+      </div>
+      <div class="row-actions">
+        <small>${money(product.price)} · ${escapeHtml(getBranchName(currentBranchId))}库存 ${getBranchStock(product)}</small>
+        <button class="ghost" type="button" data-edit-product>编辑资料 / 价格</button>
+      </div>
+    `;
+    row.querySelector("[data-edit-product]").addEventListener("click", () => fillProductForm(product));
+    els.menuProductList.append(row);
+  }
+}
+
+function fillProductForm(product) {
+  editingProductId = product.id;
+  els.nameInput.value = product.name || "";
+  els.barcodeInput.value = product.barcode || "";
+  els.categoryInput.value = product.category || "";
+  els.priceInput.value = Number(product.price || 0);
+  els.saveProductBtn.textContent = "更新商品";
+  els.cancelProductEditBtn.classList.remove("hidden");
+  els.nameInput.focus();
+}
+
+function resetProductFormEditor() {
+  editingProductId = "";
+  els.productForm.reset();
+  els.saveProductBtn.textContent = "新增商品";
+  els.cancelProductEditBtn.classList.add("hidden");
+}
+
+function renderInventoryOverview() {
+  if (!canUseOperations()) return;
+  els.inventoryOverviewList.innerHTML = "";
+  const selectedBranchId = isAdmin()
+    ? (resolveBranchId(els.inventoryBranchFilter.value) || currentBranchId || "hq")
+    : (getOperator()?.branchId || currentBranchId || "hq");
+  const selectedBranchName = getBranchName(selectedBranchId);
+  const keyword = els.inventorySearchInput.value.trim().toLowerCase();
+  const filteredProducts = products.filter((product) => {
+    if (!keyword) return true;
+    return [product.name, product.barcode, product.category]
+      .some((value) => String(value || "").toLowerCase().includes(keyword));
+  });
+  if (!filteredProducts.length) {
+    els.inventoryOverviewList.innerHTML = '<div class="empty">暂无库存资料</div>';
+    return;
+  }
+  for (const product of filteredProducts.slice(0, 50)) {
+    const selectedStock = getBranchStock(product, selectedBranchId);
+    const totalStock = Object.values(normalizeProductBranches(product).branchStock || {})
+      .reduce((sum, stock) => sum + Number(stock || 0), 0);
+    const row = document.createElement("div");
+    row.className = "management-row inventory-row";
+    row.innerHTML = `
+      <div>
+        <strong>${escapeHtml(product.name)}</strong>
+        <small>${escapeHtml(selectedBranchName)} · SKU ${escapeHtml(product.barcode || "-")} · 总库存 ${totalStock}</small>
+      </div>
+      <form class="inventory-adjust-control" data-adjust-stock data-product-id="${escapeHtml(product.id)}" data-branch-id="${escapeHtml(selectedBranchId)}">
+        <input type="number" min="0" step="1" required value="${selectedStock}" aria-label="${escapeHtml(product.name)} ${escapeHtml(selectedBranchName)} 库存">
+        <button class="ghost stock-adjust-button" type="submit">保存</button>
+      </form>
+    `;
+    const form = row.querySelector("[data-adjust-stock]");
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const input = form.querySelector("input");
+      adjustInventoryStock(form.dataset.productId, form.dataset.branchId, input.value, input);
+    });
+    els.inventoryOverviewList.append(row);
+  }
+}
+
+function adjustInventoryStock(productId, branchId, rawValue, inputElement = null) {
+  if (!requireOperations()) return;
+  const product = products.find((item) => item.id === productId);
+  const resolvedBranchId = resolveBranchId(branchId);
+  if (!product || !resolvedBranchId) {
+    alert("找不到商品或分行。");
+    return;
+  }
+  if (!canManageBranch(resolvedBranchId)) {
+    alert("员工只能调整自己授权分行的库存。");
+    return;
+  }
+  const beforeStock = getBranchStock(product, resolvedBranchId);
+  const nextStock = Number(rawValue);
+  if (!Number.isFinite(nextStock) || nextStock < 0 || !Number.isInteger(nextStock)) {
+    if (inputElement) {
+      inputElement.setCustomValidity("库存必须是 0 或以上的整数");
+      inputElement.reportValidity();
+      inputElement.focus();
+    } else {
+      alert("库存必须是 0 或以上的整数。");
+    }
+    return;
+  }
+  if (inputElement) inputElement.setCustomValidity("");
+  if (nextStock === beforeStock) return;
+
+  let savedProduct = product;
+  const nextProducts = products.map((item) => {
+    if (item.id !== productId) return normalizeProductBranches(item);
+    savedProduct = normalizeProductBranches(setBranchStock(item, resolvedBranchId, nextStock));
+    return savedProduct;
+  });
+  const adjustment = {
+    id: `ADJ${Date.now()}`,
+    createdAt: new Date().toISOString(),
+    productId: savedProduct.id,
+    productName: savedProduct.name,
+    barcode: savedProduct.barcode,
+    branchId: resolvedBranchId,
+    branchName: getBranchName(resolvedBranchId),
+    beforeStock,
+    afterStock: nextStock,
+    delta: nextStock - beforeStock,
+    reason: "库存页调整",
+    operator: getCurrentActor()
+  };
+  const nextStockAdjustments = [
+    adjustment,
+    ...stockAdjustments.filter((item) => item.id !== adjustment.id)
+  ].slice(0, 500);
+  const saved = saveStorageBatch([
+    [STORAGE_KEYS.products, nextProducts],
+    [STORAGE_KEYS.stockAdjustments, nextStockAdjustments]
+  ]);
+  if (!saved) return;
+  products = nextProducts;
+  stockAdjustments = nextStockAdjustments;
+  syncProductToCloud(savedProduct);
+  syncStockAdjustmentToCloud(adjustment);
+  writeAuditLog("inventory.adjust", {
+    productId: savedProduct.id,
+    productName: savedProduct.name,
+    barcode: savedProduct.barcode,
+    branchId: resolvedBranchId,
+    previousStock: beforeStock,
+    nextStock
+  });
+  renderAll();
+}
+
+function renderSettingsForm() {
+  if (!isAdmin()) return;
+  els.businessNameInput.value = appSettings.businessName;
+  els.defaultServiceNameInput.value = appSettings.defaultServiceName;
+  els.serviceDaysInput.value = appSettings.serviceDays;
+  els.lowStockThresholdInput.value = appSettings.lowStockThreshold ?? 5;
+  els.receiptFooterInput.value = appSettings.receiptFooter;
+  const adminUser = authorizedUsers.find((user) =>
+    normalizeEmail(user.email) === normalizeEmail(adminEmail || currentCloudUser?.email)
+    && (user.role === "admin" || user.role === "管理员")
+  );
+  els.adminOfflinePasswordStatus.textContent = adminUser?.offlinePasswordHash
+    ? `已设置${isCloudAdmin() ? "，可在此更新" : "；更新时需要 Google 管理员登录"}`
+    : `尚未设置${isCloudAdmin() ? "" : "；请先使用 Google 管理员登录"}`;
+}
+
+async function saveAdminOfflinePassword(event) {
+  event.preventDefault();
+  if (!requireCloudAdmin()) return;
+  const password = els.adminOfflinePasswordInput.value;
+  const confirmation = els.adminOfflinePasswordConfirm.value;
+  if (password.length < 8) {
+    alert("管理员离线密码至少需要 8 位。");
+    els.adminOfflinePasswordInput.focus();
+    return;
+  }
+  if (password !== confirmation) {
+    alert("两次输入的管理员离线密码不一致。");
+    els.adminOfflinePasswordConfirm.focus();
+    return;
+  }
+  const email = normalizeEmail(currentCloudUser.email);
+  if (!(await isConfiguredAdminEmail(email))) {
+    alert("当前 Google 账号不是唯一管理员。");
+    return;
+  }
+  const existing = authorizedUsers.find((user) => normalizeEmail(user.email) === email) || {};
+  const offlinePasswordSalt = createPasswordSalt();
+  const adminUser = {
+    ...existing,
+    id: existing.id || "admin-user",
+    name: currentCloudUser.name || existing.name || "管理员",
+    email,
+    branchId: "hq",
+    role: "admin",
+    active: true,
+    offlinePasswordAlgorithm: "PBKDF2-SHA256",
+    offlinePasswordIterations: OFFLINE_PASSWORD_ITERATIONS,
+    offlinePasswordSalt,
+    offlinePasswordHash: await hashOfflinePassword(email, password, offlinePasswordSalt)
+  };
+  const nextUsers = authorizedUsers.some((user) => normalizeEmail(user.email) === email)
+    ? authorizedUsers.map((user) => normalizeEmail(user.email) === email ? adminUser : user)
+    : [adminUser, ...authorizedUsers];
+  if (!save(STORAGE_KEYS.authorizedUsers, nextUsers)) return;
+  authorizedUsers = nextUsers;
+  currentCloudUser = { ...currentCloudUser, ...adminUser };
+  const cloudSynced = await syncManagementToCloud("user", adminUser);
+  writeAuditLog("admin.offline-password.update", { email });
+  els.adminOfflinePasswordForm.reset();
+  els.adminOfflinePasswordStatus.textContent = cloudSynced
+    ? "管理员离线密码已安全更新并同步云端。"
+    : "管理员离线密码已保存到本设备；云端尚未同步，其他设备暂时不能离线使用。";
+  els.adminOfflinePasswordStatus.classList.toggle("error", !cloudSynced);
+  renderManagementLists();
+}
+
+function renderPrinterSettings() {
+  if (!els.printerPaperWidth) return;
+  els.printerPaperWidth.value = printerSettings.paperWidth;
+  els.printerAutoPrint.checked = Boolean(printerSettings.autoPrint);
+  const printer = window.thermalPrinter;
+  const supported = Boolean(printer?.isSupported());
+  const connected = Boolean(printer?.isConnected());
+  const printing = Boolean(printer?.isPrinting());
+  els.printerConnectBtn.disabled = !supported || connected || printing;
+  els.printerPairBtn.disabled = !supported || printing;
+  els.printerTestBtn.disabled = !supported || !connected || printing;
+  els.printerForgetBtn.disabled = printing || (!printerSettings.deviceId && !printer?.getDeviceInfo().id);
+  els.bluetoothPrintReceiptBtn.disabled = !supported || printing;
+  if (!supported) {
+    updatePrinterStatus("此浏览器不支持蓝牙直连，请使用 Android 或电脑的 Chrome / Edge。", "error");
+  }
+}
+
+function renderIntegrationOverview() {
+  if (!els.integrationOverview) return;
+  const activeSales = getNonVoidedSales();
+  const outboxJobCount = sales.reduce((total, sale) => {
+    const outbox = sale.integrationOutbox || {};
+    return total
+      + (Array.isArray(outbox.checkoutJobIds) ? outbox.checkoutJobIds.length : 0)
+      + (Array.isArray(outbox.voidJobIds) ? outbox.voidJobIds.length : 0);
+  }, 0);
+  const references = activeSales.map((sale) => normalizeSaleExternalReferences(sale).externalReferences);
+  const simplePayRows = references.filter((item) => item.simplePayStatus !== "not-used");
+  const affiliateRows = references.filter((item) => item.affiliateStatus !== "not-used");
+  const simplePayPending = simplePayRows.filter((item) => item.simplePayStatus === "pending").length;
+  const affiliatePending = affiliateRows.filter((item) => item.affiliateStatus === "pending").length;
+  const markedFailedCount = references.filter((item) =>
+    item.simplePayStatus === "failed" || item.affiliateStatus === "failed"
+  ).length;
+  const integrityIssues = getIntegrationIssues(activeSales);
+  const failedCount = markedFailedCount + integrityIssues.length;
+  const inventoryReviewCount = sales.filter(requiresInventoryReview).length;
+  const issueHint = integrityIssues[0]?.message || "在交易记录打开“关联资料”处理";
+  els.integrationOverview.innerHTML = `
+    <div class="management-row">
+      <div>
+        <strong>连接模式</strong>
+        <small>订单内保存参考号，暂不进行跨项目实时查询</small>
+      </div>
+      <span>低成本手动关联</span>
+    </div>
+    <div class="management-row">
+      <div>
+        <strong>Integration outbox</strong>
+        <small>订单同步时一并建立，使用固定任务编号避免重复处理</small>
+      </div>
+      <span>${outboxJobCount} 项任务</span>
+    </div>
+    <div class="management-row">
+      <div>
+        <strong>SimplePay</strong>
+        <small>${simplePayRows.length} 笔使用记录</small>
+      </div>
+      <span>${simplePayPending} 笔待确认</span>
+    </div>
+    <div class="management-row">
+      <div>
+        <strong>简单联盟</strong>
+        <small>${affiliateRows.length} 笔含推荐或联盟资料</small>
+      </div>
+      <span>${affiliatePending} 笔待关联</span>
+    </div>
+    <div class="management-row">
+      <div>
+        <strong>关联异常</strong>
+        <small>${escapeHtml(issueHint)}</small>
+      </div>
+      <span>${failedCount} 笔</span>
+    </div>
+    <div class="management-row ${inventoryReviewCount ? "diagnostic-warning" : ""}">
+      <div>
+        <strong>离线库存复核</strong>
+        <small>先读取云端库存并调整，再确认订单复核</small>
+      </div>
+      <span>${inventoryReviewCount} 笔待处理</span>
+    </div>
+    <div class="management-row">
+      <div>
+        <strong>价格来源</strong>
+        <small>POS 当前仍使用本机菜单价格；正式融合后以联盟配套为准</small>
+      </div>
+      <span>联盟配套 RM 180</span>
+    </div>
+    <div class="row-actions integration-review-actions">
+      <button class="primary" type="button" data-review-integration="pending">处理待关联</button>
+      <button class="ghost" type="button" data-review-integration="failed">查看异常</button>
+      <button class="ghost" type="button" data-review-integration="inventory-review">库存待复核</button>
+    </div>
+  `;
+  for (const button of els.integrationOverview.querySelectorAll("[data-review-integration]")) {
+    button.addEventListener("click", () => openIntegrationQueue(button.dataset.reviewIntegration));
+  }
+}
+
+function openIntegrationQueue(filter) {
+  showAllSalesDates = true;
+  showMoreSales = true;
+  els.salesIntegrationFilter.value = filter;
+  setAppView("transactions");
+  renderSales();
+}
+
+function duplicateValues(items, getValue) {
+  const seen = new Set();
+  const duplicates = new Set();
+  for (const item of items) {
+    const value = String(getValue(item) || "").trim().toLowerCase();
+    if (!value) continue;
+    if (seen.has(value)) duplicates.add(value);
+    seen.add(value);
+  }
+  return [...duplicates];
+}
+
+function runLocalDiagnostics() {
+  const checks = [];
+  const addCheck = (label, level, detail) => checks.push({ label, level, detail });
+
+  try {
+    const key = "__simplepos_diagnostic__";
+    localStorage.setItem(key, "ok");
+    localStorage.removeItem(key);
+    addCheck("本机储存", "pass", "可正常写入");
+  } catch (error) {
+    addCheck("本机储存", "error", `无法写入：${error.message}`);
+  }
+
+  addCheck(
+    "储存资料完整性",
+    protectedCorruptStorageKeys.size || lastStorageWriteError ? "error" : (storageReadIssues.length ? "warning" : "pass"),
+    lastStorageWriteError
+      ? `最近写入失败：${lastStorageWriteError}`
+      : protectedCorruptStorageKeys.size
+        ? `${protectedCorruptStorageKeys.size} 项损坏原始资料尚未安全备份`
+        : storageReadIssues.length
+          ? `${storageReadIssues.length} 项损坏资料已另存，完整备份会包含恢复附件`
+          : "未发现损坏或写入失败"
+  );
+
+  const duplicateBranchIds = duplicateValues(branches, (branch) => branch.id);
+  const invalidBranches = branches.filter((branch) => !branch.id || !branch.name);
+  addCheck(
+    "分行资料",
+    duplicateBranchIds.length || invalidBranches.length ? "error" : "pass",
+    duplicateBranchIds.length
+      ? `重复分行 ID：${duplicateBranchIds.join(", ")}`
+      : (invalidBranches.length ? `${invalidBranches.length} 笔资料不完整` : `${branches.length} 个分行正常`)
+  );
+
+  const duplicateProductIds = duplicateValues(products, (product) => product.id);
+  const duplicateBarcodes = duplicateValues(products, (product) => product.barcode);
+  const invalidStocks = [];
+  for (const product of products) {
+    for (const [branchId, stock] of Object.entries(normalizeProductBranches(product).branchStock || {})) {
+      if (!Number.isFinite(Number(stock)) || Number(stock) < 0) {
+        invalidStocks.push(`${product.name || product.id}@${branchId}`);
+      }
+    }
+  }
+  const productLevel = duplicateProductIds.length || duplicateBarcodes.length || invalidStocks.length ? "error" : "pass";
+  const productDetail = duplicateProductIds.length
+    ? `重复商品 ID：${duplicateProductIds.join(", ")}`
+    : duplicateBarcodes.length
+      ? `重复 SKU：${duplicateBarcodes.join(", ")}`
+      : invalidStocks.length
+        ? `库存异常：${invalidStocks.slice(0, 3).join(", ")}`
+        : `${products.length} 个商品及分行库存正常`;
+  addCheck("商品与库存", productLevel, productDetail);
+
+  const duplicateSaleIds = duplicateValues(sales, (sale) => sale.id);
+  const invalidSales = sales.filter((sale) =>
+    !sale.id
+    || !branches.some((branch) => branch.id === (sale.branchId || "hq"))
+    || !Array.isArray(sale.items)
+    || !Number.isFinite(Number(sale.total))
+  );
+  addCheck(
+    "销售订单",
+    duplicateSaleIds.length || invalidSales.length ? "error" : "pass",
+    duplicateSaleIds.length
+      ? `重复订单号：${duplicateSaleIds.join(", ")}`
+      : (invalidSales.length ? `${invalidSales.length} 笔订单结构异常` : `${sales.length} 笔订单结构正常`)
+  );
+
+  const duplicateEmails = duplicateValues(authorizedUsers, (user) => user.email);
+  const invalidUsers = authorizedUsers.filter((user) =>
+    !user.email || !branches.some((branch) => branch.id === user.branchId)
+  );
+  addCheck(
+    "员工授权",
+    duplicateEmails.length || invalidUsers.length ? "error" : "pass",
+    duplicateEmails.length
+      ? `重复邮箱：${duplicateEmails.join(", ")}`
+      : (invalidUsers.length ? `${invalidUsers.length} 位用户的授权分行无效` : `${authorizedUsers.length} 位授权用户正常`)
+  );
+
+  const integrationIssues = getIntegrationIssues(getActiveSales());
+  addCheck(
+    "外部系统关联",
+    integrationIssues.length ? "warning" : "pass",
+    integrationIssues.length ? `${integrationIssues.length} 个问题；${integrationIssues[0].message}` : "订单参考号未发现重复或缺失"
+  );
+
+  const inventoryReviews = sales.filter(requiresInventoryReview);
+  addCheck(
+    "离线库存复核",
+    inventoryReviews.length ? "warning" : "pass",
+    inventoryReviews.length
+      ? `${inventoryReviews.length} 笔订单等待核对；${inventoryReviews[0].id}：${getInventoryConflictSummary(inventoryReviews[0])}`
+      : "没有库存冲突待复核"
+  );
+
+  const pendingCount = pendingSales.length
+    + pendingSaleUpdates.length
+    + pendingProducts.length
+    + pendingStockAdjustments.length
+    + pendingAuditLogs.length
+    + getPendingManagementCount();
+  const orphanUpdates = pendingSaleUpdates.filter((pending) =>
+    !sales.some((sale) => sale.id === pending.id)
+  );
+  addCheck(
+    "待同步队列",
+    orphanUpdates.length ? "error" : (pendingCount ? "warning" : "pass"),
+    orphanUpdates.length
+      ? `${orphanUpdates.length} 个订单更新找不到本机订单`
+      : (pendingCount ? `共有 ${pendingCount} 项等待网络同步` : "没有待同步资料")
+  );
+
+  const allShifts = [currentShift, ...shifts].filter(Boolean);
+  const cashMovements = allShifts.flatMap((shift) =>
+    (Array.isArray(shift.cashMovements) ? shift.cashMovements : []).map((movement) => ({
+      ...movement,
+      shiftId: shift.id
+    }))
+  );
+  const duplicateMovementIds = duplicateValues(cashMovements, (movement) => movement.id);
+  const movementIds = new Set(cashMovements.map((movement) => movement.id));
+  const invalidMovements = cashMovements.filter((movement) =>
+    !movement.id
+    || !["in", "out"].includes(movement.type)
+    || !Number.isFinite(Number(movement.amount))
+    || Number(movement.amount) <= 0
+    || !movement.reason
+    || (movement.reversalOf && !movementIds.has(movement.reversalOf))
+  );
+  addCheck(
+    "现金流水",
+    duplicateMovementIds.length || invalidMovements.length ? "error" : "pass",
+    duplicateMovementIds.length
+      ? `重复流水 ID：${duplicateMovementIds.join(", ")}`
+      : (invalidMovements.length ? `${invalidMovements.length} 笔现金流水结构异常` : `${cashMovements.length} 笔逐笔现金流水正常`)
+  );
+
+  const errors = checks.filter((check) => check.level === "error").length;
+  const warnings = checks.filter((check) => check.level === "warning").length;
+  const summaryLevel = errors ? "error" : (warnings ? "warning" : "pass");
+  const summaryText = errors
+    ? `${errors} 项错误，${warnings} 项提醒`
+    : (warnings ? `没有结构错误，${warnings} 项提醒` : "全部检查通过");
+  els.diagnosticsOverview.innerHTML = `
+    <div class="management-row diagnostic-${summaryLevel}">
+      <div>
+        <strong>自检结果</strong>
+        <small>${new Date().toLocaleString()}</small>
+      </div>
+      <span>${escapeHtml(summaryText)}</span>
+    </div>
+  `;
+  for (const check of checks) {
+    const row = document.createElement("div");
+    row.className = `management-row diagnostic-${check.level}`;
+    row.innerHTML = `
+      <div>
+        <strong>${escapeHtml(check.label)}</strong>
+        <small>${escapeHtml(check.detail)}</small>
+      </div>
+      <span>${check.level === "pass" ? "通过" : (check.level === "warning" ? "提醒" : "错误")}</span>
+    `;
+    els.diagnosticsOverview.append(row);
+  }
+  return { checks, errors, warnings };
+}
+
+function daysUntil(dateValue) {
+  const target = new Date(dateValue);
+  const today = new Date();
+  target.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  return Math.ceil((target - today) / 86400000);
+}
+
+function getFollowUpStatusText(sale) {
+  if (isSaleVoided(sale)) return "已作废";
+  const status = sale.followUp?.status || "pending";
+  if (status === "contacted") return "已联系";
+  if (status === "completed") return "已完成";
+  return "待跟进";
+}
+
+function getFollowUpDueText(daysLeft) {
+  if (daysLeft < 0) return `已到期 ${Math.abs(daysLeft)} 天`;
+  if (daysLeft === 0) return "今天到期";
+  return `${daysLeft} 天后到期`;
+}
+
+function updateSaleFollowUp(saleId, status) {
+  if (!requireAdmin()) return;
+  const sale = sales.find((item) => item.id === saleId);
+  if (!sale) return;
+  const nextFollowUp = {
+    status,
+    updatedAt: new Date().toISOString(),
+    updatedBy: getCurrentActor()
+  };
+  sales = sales.map((item) => item.id === saleId ? { ...item, followUp: nextFollowUp } : item);
+  save(STORAGE_KEYS.sales, sales);
+  const updatedSale = sales.find((item) => item.id === saleId);
+  pendingSales = pendingSales.map((item) => item.id === saleId ? updatedSale : item);
+  savePendingSales();
+  syncSaleUpdateToCloud(updatedSale, "客户跟进");
+  writeAuditLog("followup.update", {
+    saleId,
+    customer: sale.customer?.name || "",
+    phone: sale.customer?.phone || "",
+    status
+  });
+  renderAll();
+}
+
+function isSaleVoided(sale) {
+  return sale.status === "voided";
+}
+
+function isSalePaymentPending(sale) {
+  return sale.status === "payment-pending";
+}
+
+function getSaleStatusText(sale) {
+  if (isSaleVoided(sale)) return "已作废";
+  if (isSalePaymentPending(sale)) return "等待 SimplePay 付款（库存已预留）";
+  return "正常";
+}
+
+function getSaleSyncText(sale) {
+  if (pendingSales.some((item) => item.id === sale.id)) return "待同步";
+  if (pendingSaleUpdates.some((item) => item.id === sale.id)) return "更新待同步";
+  if (requiresInventoryReview(sale)) return "已同步 · 库存待复核";
+  if (getInventoryReviewStatus(sale) === "resolved") return "已同步 · 库存已复核";
+  if (sale.syncStatus === "synced") return "已同步";
+  if (sale.syncStatus === "queued" || sale.syncStatus === "pending") return "后台同步中";
+  return "已处理";
+}
+
+function getIntegrationStatusText(status, pendingText = "待关联") {
+  if (status === "linked") return "已关联";
+  if (status === "failed") return "关联异常";
+  if (status === "pending") return pendingText;
+  return "未使用";
+}
+
+function getSaleIntegrationSummary(sale) {
+  const normalized = normalizeSaleExternalReferences(sale);
+  const references = normalized.externalReferences;
+  return `SimplePay ${getIntegrationStatusText(references.simplePayStatus, "待确认")} · 联盟 ${getIntegrationStatusText(references.affiliateStatus)}`;
+}
+
+function getIntegrationIssues(source = getActiveSales()) {
+  const issues = [];
+  const posOrderIds = new Map();
+  const simplePayReferences = new Map();
+  const affiliateOrderIds = new Map();
+  for (const sale of source) {
+    const references = normalizeSaleExternalReferences(sale).externalReferences;
+    const checks = [
+      ["POS 订单号", references.posOrderId, posOrderIds],
+      ["SimplePay 参考号", references.simplePayReference, simplePayReferences],
+      ["联盟订单号", references.affiliateOrderId, affiliateOrderIds]
+    ];
+    for (const [label, value, seen] of checks) {
+      if (!value && label === "POS 订单号") {
+        issues.push({ saleIds: [sale.id], message: `${sale.id} 缺少 POS 订单号` });
+        continue;
+      }
+      if (!value) continue;
+      if (seen.has(value) && seen.get(value) !== sale.id) {
+        issues.push({
+          saleIds: [seen.get(value), sale.id],
+          message: `${label} ${value} 重复用于 ${seen.get(value)} 与 ${sale.id}`
+        });
+      } else {
+        seen.set(value, sale.id);
+      }
+    }
+    if (references.simplePayStatus === "linked" && !references.simplePayReference) {
+      issues.push({ saleIds: [sale.id], message: `${sale.id} 的 SimplePay 已关联但缺少参考号` });
+    }
+    if (references.affiliateStatus === "linked" && !references.affiliateOrderId) {
+      issues.push({ saleIds: [sale.id], message: `${sale.id} 的联盟已关联但缺少订单号` });
+    }
+  }
+  return issues;
+}
+
+function matchesIntegrationFilter(sale, filter, issueSaleIds = new Set()) {
+  if (filter === "all") return true;
+  if (filter === "inventory-review") return requiresInventoryReview(sale);
+  if (filter === "inventory-resolved") return getInventoryReviewStatus(sale) === "resolved";
+  const references = normalizeSaleExternalReferences(sale).externalReferences;
+  if (filter === "pending") {
+    return references.simplePayStatus === "pending" || references.affiliateStatus === "pending";
+  }
+  if (filter === "simplepay-pending") return references.simplePayStatus === "pending";
+  if (filter === "affiliate-pending") return references.affiliateStatus === "pending";
+  if (filter === "linked") {
+    return references.simplePayStatus === "linked" || references.affiliateStatus === "linked";
+  }
+  if (filter === "failed") {
+    return references.simplePayStatus === "failed"
+      || references.affiliateStatus === "failed"
+      || issueSaleIds.has(sale.id);
+  }
+  return true;
+}
+
+async function syncSaleUpdateToCloud(sale, reason = "订单资料") {
+  queuePendingSaleUpdate(sale);
+  if (pendingSales.some((item) => item.id === sale.id)) return false;
+  if (!hasCloud() || !navigator.onLine) return false;
+  try {
+    await window.cloudPOS.saveSale(sale);
+    markSaleUpdateSynced(sale.id);
+    updateCloudStatus(`${reason}已同步`, true);
+    return true;
+  } catch (error) {
+    updateCloudStatus(`${reason}待同步`);
+    console.warn(`${reason} sync failed`, error);
+    return false;
+  }
+}
+
+async function syncVoidToCloud(sale) {
+  if (!pendingSaleUpdates.some((item) => item.id === sale.id)) queuePendingSaleUpdate(sale);
+  if (!hasCloud() || !navigator.onLine || !window.cloudPOS.saveVoid) {
+    updateCloudStatus("退款事务待同步");
+    return false;
+  }
+  try {
+    const result = await window.cloudPOS.saveVoid(sale);
+    applyVoidSyncResult(sale.id, result);
+    return true;
+  } catch (error) {
+    updateCloudStatus("退款待同步");
+    console.warn("Void sale sync failed", error);
+    return false;
+  }
+}
+
+function openInventoryForReview(saleId) {
+  const sale = sales.find((item) => item.id === saleId);
+  if (!sale || !canManageBranch(sale.branchId || "hq")) return;
+  setAppView("inventory");
+  els.inventoryBranchFilter.value = sale.branchId || "hq";
+  renderInventoryOverview();
+}
+
+function resolveInventoryReview(saleId) {
+  const sale = sales.find((item) => item.id === saleId);
+  if (!sale || !requiresInventoryReview(sale) || !canManageBranch(sale.branchId || "hq")) return;
+  if (!confirm(`请先在库存页核对并调整 ${sale.branchName || getBranchName(sale.branchId || "hq")} 的云端库存。\n\n确定已完成订单 ${sale.id} 的库存复核吗？`)) return;
+  const resolvedAt = new Date().toISOString();
+  const resolvedBy = getCurrentActor();
+  const updatedSale = {
+    ...sale,
+    inventoryReview: {
+      ...(sale.inventoryReview || {}),
+      status: "resolved",
+      resolvedAt,
+      resolvedBy,
+      resolution: "manual-stock-review"
+    },
+    syncStatus: "pending-update",
+    updatedAt: resolvedAt
+  };
+  sales = sales.map((item) => item.id === sale.id ? updatedSale : item);
+  save(STORAGE_KEYS.sales, sales);
+  syncSaleUpdateToCloud(updatedSale, "库存复核");
+  writeAuditLog("inventory.conflict.resolved", {
+    saleId: sale.id,
+    branchId: sale.branchId || "hq",
+    conflicts: sale.inventoryReview?.conflicts || []
+  });
+  renderAll();
+}
+
+function openIntegrationEditor(saleId) {
+  if (!requireAdmin()) return;
+  const sale = sales.find((item) => item.id === saleId);
+  if (!sale || !canManageBranch(sale.branchId || "hq")) return;
+  const normalized = normalizeSaleExternalReferences(sale);
+  const references = normalized.externalReferences;
+  editingIntegrationSaleId = sale.id;
+  els.integrationOrderNo.textContent = `订单号：${sale.id}`;
+  els.integrationPosOrderId.value = references.posOrderId || sale.id;
+  els.integrationSimplePayReference.value = references.simplePayReference || "";
+  els.integrationSimplePayStatus.value = references.simplePayStatus;
+  els.integrationAffiliateReferralCode.value = references.affiliateReferralCode || "";
+  els.integrationAffiliateOrderId.value = references.affiliateOrderId || "";
+  els.integrationAffiliateStatus.value = references.affiliateStatus;
+  els.integrationDialog.showModal();
+}
+
+function closeIntegrationEditor() {
+  editingIntegrationSaleId = "";
+  els.integrationForm.reset();
+  if (els.integrationDialog.open) els.integrationDialog.close();
+}
+
+async function copyIntegrationOrderId() {
+  const orderId = els.integrationPosOrderId.value;
+  if (!orderId) return;
+  try {
+    await navigator.clipboard.writeText(orderId);
+  } catch {
+    els.integrationPosOrderId.focus();
+    els.integrationPosOrderId.select();
+    document.execCommand("copy");
+  }
+  const originalText = els.copyIntegrationOrderIdBtn.textContent;
+  els.copyIntegrationOrderIdBtn.textContent = "已复制";
+  setTimeout(() => {
+    els.copyIntegrationOrderIdBtn.textContent = originalText;
+  }, 1200);
+}
+
+function saveIntegrationDetails(event) {
+  event.preventDefault();
+  if (!requireAdmin()) {
+    closeIntegrationEditor();
+    return;
+  }
+  const sale = sales.find((item) => item.id === editingIntegrationSaleId);
+  if (!sale || !canManageBranch(sale.branchId || "hq")) {
+    closeIntegrationEditor();
+    return;
+  }
+  const simplePayReference = els.integrationSimplePayReference.value.trim();
+  const simplePayStatus = els.integrationSimplePayStatus.value;
+  const affiliateReferralCode = els.integrationAffiliateReferralCode.value.trim().toUpperCase();
+  const affiliateOrderId = els.integrationAffiliateOrderId.value.trim();
+  const affiliateStatus = els.integrationAffiliateStatus.value;
+  if (simplePayStatus === "linked" && !simplePayReference) {
+    alert("SimplePay 标记为已关联时必须填写参考号。");
+    return;
+  }
+  if (affiliateStatus === "linked" && !affiliateOrderId) {
+    alert("联盟标记为已关联时必须填写联盟订单号。");
+    return;
+  }
+  const duplicateSimplePaySale = simplePayReference && sales.find((item) =>
+    item.id !== sale.id
+    && normalizeSaleExternalReferences(item).externalReferences.simplePayReference === simplePayReference
+  );
+  if (duplicateSimplePaySale) {
+    alert(`SimplePay 参考号已用于订单 ${duplicateSimplePaySale.id}。`);
+    return;
+  }
+  const duplicateAffiliateSale = affiliateOrderId && sales.find((item) =>
+    item.id !== sale.id
+    && normalizeSaleExternalReferences(item).externalReferences.affiliateOrderId === affiliateOrderId
+  );
+  if (duplicateAffiliateSale) {
+    alert(`联盟订单号已关联 POS 订单 ${duplicateAffiliateSale.id}。`);
+    return;
+  }
+
+  const updatedAt = new Date().toISOString();
+  const updatedBy = getCurrentActor();
+  const updatedSale = normalizeSaleExternalReferences({
+    ...sale,
+    customer: {
+      ...(sale.customer || {}),
+      referralCode: affiliateReferralCode
+    },
+    payment: {
+      ...(sale.payment || {}),
+      reference: sale.payment?.method === "简单支付 / SimplePay"
+        ? simplePayReference
+        : (sale.payment?.reference || "")
+    },
+    externalReferences: {
+      ...(sale.externalReferences || {}),
+      posOrderId: sale.externalReferences?.posOrderId || sale.id,
+      simplePayReference,
+      simplePayStatus,
+      affiliateReferralCode,
+      affiliateOrderId,
+      affiliateStatus,
+      updatedAt,
+      updatedBy
+    },
+    syncStatus: "pending-update"
+  });
+  sales = sales.map((item) => item.id === sale.id ? updatedSale : item);
+  pendingSales = pendingSales.map((item) => item.id === sale.id ? updatedSale : item);
+  save(STORAGE_KEYS.sales, sales);
+  savePendingSales();
+  syncSaleUpdateToCloud(updatedSale, "订单关联资料");
+  writeAuditLog("sale.integration.update", {
+    saleId: sale.id,
+    branchId: sale.branchId || "hq",
+    simplePayStatus,
+    affiliateStatus
+  });
+  closeIntegrationEditor();
+  renderAll();
+}
+
+function getActiveSales(source = sales) {
+  return source.filter((sale) => !isSaleVoided(sale) && !isSalePaymentPending(sale));
+}
+
+function getNonVoidedSales(source = sales) {
+  return source.filter((sale) => !isSaleVoided(sale));
+}
+
+function voidSale(saleId) {
+  if (!requireOperations()) return;
+  const sale = sales.find((item) => item.id === saleId);
+  if (!sale || isSaleVoided(sale)) return;
+  if (!canVoidSale(sale)) {
+    alert("员工只能处理自己授权分行的退款/作废。");
+    return;
+  }
+  const unpaidCancellation = isSalePaymentPending(sale);
+  if (!unpaidCancellation && navigator.onLine && hasCloud() && pendingSales.some((item) => item.id === saleId)) {
+    alert("订单首次云端同步仍在进行，请稍后再退款。断网订单仍可直接作废。");
+    return;
+  }
+  const actionText = unpaidCancellation ? "取消待付款订单并释放预留库存" : "作废订单并回补库存";
+  if (!confirm(`确定${actionText} ${sale.id} 吗？`)) return;
+  const voidedAt = new Date().toISOString();
+  const actor = getCurrentActor();
+  const hadInventoryConflict = requiresInventoryReview(sale);
+  const adjustments = [];
+  const nextProducts = products.map((product) => {
+    const sold = (sale.items || []).find((item) => item.id === product.id);
+    if (!sold) return product;
+    const beforeStock = getBranchStock(product, sale.branchId || "hq");
+    const afterStock = beforeStock + Number(sold.qty || 0);
+    const updatedProduct = setBranchStock(product, sale.branchId || "hq", afterStock);
+    const adjustment = {
+      id: `VOID${Date.now()}-${product.id}`,
+      createdAt: voidedAt,
+      productId: product.id,
+      productName: product.name,
+      barcode: product.barcode,
+      branchId: sale.branchId || "hq",
+      branchName: sale.branchName || getBranchName(sale.branchId || "hq"),
+      beforeStock,
+      afterStock,
+      delta: Number(sold.qty || 0),
+      reason: hadInventoryConflict
+        ? `库存冲突订单作废，本机回补（云端未扣减） ${sale.id}`
+        : (unpaidCancellation ? `待付款订单取消，释放预留库存 ${sale.id}` : `订单作废回补 ${sale.id}`),
+      cloudStockSyncMode: hadInventoryConflict ? "not-required" : "refund-transaction",
+      operator: actor
+    };
+    adjustments.push(adjustment);
+    return updatedProduct;
+  });
+  const updatedSale = attachIntegrationOutbox({
+    ...sale,
+    status: "voided",
+    voidedAt,
+    voidedBy: actor,
+    inventoryReview: hadInventoryConflict ? {
+      ...(sale.inventoryReview || {}),
+      status: "resolved",
+      resolvedAt: voidedAt,
+      resolvedBy: actor,
+      resolution: "order-voided"
+    } : sale.inventoryReview,
+    syncStatus: "pending-update"
+  }, "void");
+  const nextSales = sales.map((item) => item.id === saleId ? updatedSale : item);
+  const nextPendingSales = pendingSales.filter((item) => item.id !== saleId);
+  const nextPendingSaleUpdates = [
+    updatedSale,
+    ...pendingSaleUpdates.filter((item) => item.id !== saleId)
+  ];
+  const adjustmentIds = new Set(adjustments.map((adjustment) => adjustment.id));
+  const nextStockAdjustments = [
+    ...adjustments,
+    ...stockAdjustments.filter((adjustment) => !adjustmentIds.has(adjustment.id))
+  ].slice(0, 500);
+  const nextPendingStockAdjustments = [
+    ...adjustments,
+    ...pendingStockAdjustments.filter((adjustment) => !adjustmentIds.has(adjustment.id))
+  ];
+  const voidSaved = saveStorageBatch([
+    [STORAGE_KEYS.products, nextProducts],
+    [STORAGE_KEYS.sales, nextSales],
+    [STORAGE_KEYS.pendingSales, nextPendingSales],
+    [STORAGE_KEYS.pendingSaleUpdates, nextPendingSaleUpdates],
+    [STORAGE_KEYS.stockAdjustments, nextStockAdjustments],
+    [STORAGE_KEYS.pendingStockAdjustments, nextPendingStockAdjustments]
+  ]);
+  if (!voidSaved) {
+    alert(`${unpaidCancellation ? "取消" : "退款"}尚未执行：本机无法安全保存订单与库存，原订单保持原状态。`);
+    return;
+  }
+  products = nextProducts;
+  sales = nextSales;
+  pendingSales = nextPendingSales;
+  pendingSaleUpdates = nextPendingSaleUpdates;
+  stockAdjustments = nextStockAdjustments;
+  pendingStockAdjustments = nextPendingStockAdjustments;
+  for (const adjustment of adjustments) {
+    syncStockAdjustmentToCloud(adjustment);
+  }
+  syncVoidToCloud(updatedSale);
+  writeAuditLog(unpaidCancellation ? "sale.payment-pending.cancel" : "sale.void", {
+    saleId,
+    branchId: sale.branchId || "hq",
+    total: sale.total,
+    inventoryConflictClosed: hadInventoryConflict
+  });
+  if (hadInventoryConflict) {
+    alert("订单已作废并恢复本机库存。云端原本没有扣减这笔库存，因此系统不会用本机数量覆盖云端。");
+  }
+  renderAll();
+}
+
+function renderFollowUps() {
+  if (!isAdmin()) {
+    els.followUpList.innerHTML = '<div class="empty compact-empty">客户跟进仅管理员可用</div>';
+    return;
+  }
+  els.followUpList.innerHTML = "";
+  const activePlans = getActiveSales()
+    .filter((sale) => sale.service?.endDate)
+    .map((sale) => ({ ...sale, daysLeft: daysUntil(sale.service.endDate) }))
+    .filter((sale) => sale.followUp?.status !== "completed")
+    .filter((sale) => sale.daysLeft >= -7)
+    .sort((a, b) => a.daysLeft - b.daysLeft)
+    .slice(0, 10);
+
+  if (!activePlans.length) {
+    els.followUpList.innerHTML = '<div class="empty">暂无需要跟进的客户</div>';
+    return;
+  }
+
+  for (const sale of activePlans) {
+    const row = document.createElement("div");
+    row.className = "management-row";
+    const dueStatus = getFollowUpDueText(sale.daysLeft);
+    const phone = sale.customer?.phone || "";
+    const whatsappNumber = phone.replace(/[^0-9]/g, "");
+    row.innerHTML = `
+      <div>
+        <strong>${escapeHtml(sale.customer?.name || "未填写姓名")}</strong>
+        <small>${escapeHtml(phone || "-")} · ${escapeHtml(sale.branchName || getBranchName(sale.branchId || "hq"))} · ${escapeHtml(dueStatus)} · ${escapeHtml(getFollowUpStatusText(sale))}</small>
+      </div>
+      <div class="row-actions">
+        ${whatsappNumber ? `<a class="ghost small-link" href="https://wa.me/${escapeHtml(whatsappNumber)}" target="_blank" rel="noopener">WhatsApp</a>` : ""}
+        <button class="ghost" type="button" data-followup="contacted">已联系</button>
+        <button class="ghost" type="button" data-followup="completed">已完成</button>
+      </div>
+    `;
+    for (const button of row.querySelectorAll("[data-followup]")) {
+      button.addEventListener("click", () => updateSaleFollowUp(sale.id, button.dataset.followup));
+    }
+    els.followUpList.append(row);
+  }
+}
+
+function renderLowStock() {
+  if (!canUseOperations()) return;
+  els.lowStockList.innerHTML = "";
+  const lowStockItems = [];
+  const threshold = Number(appSettings.lowStockThreshold ?? 5);
+  for (const product of products) {
+    for (const branch of branches) {
+      if (!canManageBranch(branch.id)) continue;
+      const stock = getBranchStock(product, branch.id);
+      if (stock <= threshold) {
+        lowStockItems.push({ product, branch, stock });
+      }
+    }
+  }
+
+  if (!lowStockItems.length) {
+    els.lowStockList.innerHTML = '<div class="empty">暂无低库存商品</div>';
+    return;
+  }
+
+  for (const item of lowStockItems.slice(0, 12)) {
+    const row = document.createElement("div");
+    row.className = "management-row";
+    row.innerHTML = `
+      <div>
+        <strong>${escapeHtml(item.product.name)}</strong>
+        <small>${escapeHtml(item.branch.name)} · SKU ${escapeHtml(item.product.barcode || "-")}</small>
+      </div>
+      <small>库存 ${item.stock} / 阈值 ${threshold}</small>
+    `;
+    els.lowStockList.append(row);
+  }
+}
+
+function renderCategoryFilter() {
+  const selected = els.categoryFilter.value || "all";
+  const categories = [...new Set(products.map((product) => product.category))].sort();
+  els.categoryFilter.innerHTML = '<option value="all">全部分类</option>';
+  els.categoryRail.innerHTML = "";
+  const allButton = document.createElement("button");
+  allButton.type = "button";
+  allButton.className = selected === "all" ? "active" : "";
+  allButton.textContent = "全部分类";
+  allButton.addEventListener("click", () => {
+    els.categoryFilter.value = "all";
+    renderProducts();
+    renderCategoryFilter();
+  });
+  els.categoryRail.append(allButton);
+  for (const category of categories) {
+    const option = document.createElement("option");
+    option.value = category;
+    option.textContent = category;
+    els.categoryFilter.append(option);
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = selected === category ? "active" : "";
+    button.textContent = category;
+    button.addEventListener("click", () => {
+      els.categoryFilter.value = category;
+      renderProducts();
+      renderCategoryFilter();
+    });
+    els.categoryRail.append(button);
+  }
+  els.categoryFilter.value = categories.includes(selected) ? selected : "all";
+}
+
+function renderProducts() {
+  const keyword = els.searchInput.value.trim().toLowerCase();
+  const category = els.categoryFilter.value;
+  const filtered = products.filter((product) => {
+    const matchKeyword = [product.name, product.barcode].some((value) =>
+      String(value || "").toLowerCase().includes(keyword)
+    );
+    const matchCategory = category === "all" || product.category === category;
+    return matchKeyword && matchCategory;
+  });
+
+  els.productGrid.innerHTML = "";
+  if (!filtered.length) {
+    els.productGrid.innerHTML = '<div class="empty">没有找到商品</div>';
+    return;
+  }
+
+  for (const product of filtered) {
+    const branchStock = getBranchStock(product);
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "product-card";
+    card.disabled = branchStock <= 0;
+    card.innerHTML = `
+      <strong>${escapeHtml(product.name)}</strong>
+      <span class="product-meta">${escapeHtml(product.category)} · ${escapeHtml(getBranchName(currentBranchId))}库存 ${branchStock}</span>
+      <span class="product-meta">条码 ${escapeHtml(product.barcode || "-")}</span>
+      <span class="price">${money(product.price)}</span>
+    `;
+    card.addEventListener("click", () => addToCart(product.id));
+    els.productGrid.append(card);
+  }
+}
+
+function addToCart(productId) {
+  const product = products.find((item) => item.id === productId);
+  const existing = cart.find((item) => item.id === productId);
+  const currentQty = existing ? existing.qty : 0;
+  if (product?.affiliatePlanId && currentQty >= 1) {
+    alert("联盟配套每张订单只能选择一个单位；多个单位请分别下单。");
+    return;
+  }
+  if (!product || currentQty >= getBranchStock(product)) {
+    alert("库存不足，不能继续添加。");
+    return;
+  }
+  if (existing) {
+    existing.qty += 1;
+  } else {
+    cart.push({
+      id: product.id,
+      name: product.name,
+      barcode: product.barcode || "",
+      category: product.category || "",
+      affiliatePlanId: product.affiliatePlanId || "",
+      price: product.price,
+      qty: 1,
+      branchId: currentBranchId
+    });
+  }
+  renderCart();
+}
+
+function renderCart() {
+  els.cartItems.innerHTML = "";
+  els.cartHint.textContent = cart.length ? `${cart.length} 种商品` : "还没有商品";
+
+  if (!cart.length) {
+    els.cartItems.innerHTML = '<div class="empty">点击左侧商品开始收银</div>';
+  }
+
+  for (const item of cart) {
+    const row = document.createElement("div");
+    row.className = "cart-item";
+    row.innerHTML = `
+      <div class="cart-item-top">
+        <strong>${escapeHtml(item.name)}</strong>
+        <span>${money(item.price * item.qty)}</span>
+      </div>
+      <div class="qty-row">
+        <button type="button" aria-label="减少">-</button>
+        <span>${item.qty} x ${money(item.price)}</span>
+        <button type="button" aria-label="增加">+</button>
+        <button type="button" class="ghost danger">删除</button>
+      </div>
+    `;
+    const [minusBtn, plusBtn, removeBtn] = row.querySelectorAll("button");
+    minusBtn.addEventListener("click", () => updateCartQty(item.id, item.qty - 1));
+    plusBtn.addEventListener("click", () => updateCartQty(item.id, item.qty + 1));
+    removeBtn.addEventListener("click", () => updateCartQty(item.id, 0));
+    els.cartItems.append(row);
+  }
+
+  if (!cart.length) {
+    els.paidInput.value = "";
+    autoFillPaid = true;
+  } else if (autoFillPaid) {
+    els.paidInput.value = getCartDueAmount().toFixed(2);
+  }
+  const totals = getCartTotals();
+  els.subtotalText.textContent = money(totals.subtotal);
+  els.totalText.textContent = money(totals.total);
+  els.changeText.textContent = money(totals.change);
+  updatePaymentPreview();
+  const exactPaidButton = els.quickPaidButtons?.querySelector('[data-quick-paid="due"]');
+  if (exactPaidButton) exactPaidButton.textContent = totals.total > 0 ? totals.total.toFixed(2) : "刚好";
+  for (const button of els.quickPaymentButtons.querySelectorAll("[data-payment-method]")) {
+    button.classList.toggle("active", button.dataset.paymentMethod === els.paymentMethodInput.value);
+  }
+  els.checkoutBtn.disabled = !cart.length;
+}
+
+function updateCartQty(productId, nextQty) {
+  const product = products.find((item) => item.id === productId);
+  if (nextQty <= 0) {
+    cart = cart.filter((item) => item.id !== productId);
+  } else if (product && nextQty <= getBranchStock(product)) {
+    cart = cart.map((item) => item.id === productId ? { ...item, qty: nextQty } : item);
+  } else {
+    alert("库存不足。");
+  }
+  renderCart();
+}
+
+function getCartTotals() {
+  const subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+  const discount = Math.max(0, Number(els.discountInput.value || 0));
+  const total = getCartDueAmount();
+  const paid = Number(els.paidInput.value || 0);
+  return { subtotal, discount, total, paid, change: Math.max(0, paid - total) };
+}
+
+function getCartDueAmount() {
+  const subtotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+  const discount = Math.max(0, Number(els.discountInput.value || 0));
+  return Math.max(0, subtotal - discount);
+}
+
+function needsPaymentReference(method) {
+  return method !== "现金" && method !== "简单支付 / SimplePay";
+}
+
+function requireAffiliateCustomerPhone() {
+  const hasAffiliateItems = Boolean(window.integrationContract?.hasAffiliateItems(cart));
+  if (!hasAffiliateItems || els.customerPhoneInput.value.trim()) return true;
+  if (els.paymentDialog.open) els.paymentDialog.close();
+  els.orderOptionsPanel.classList.remove("hidden");
+  alert("购买联盟配套必须填写客户电话，以便匹配联盟账号；推荐码仍可选填。");
+  els.customerPhoneInput.focus();
+  return false;
+}
+
+function updatePaymentPreview() {
+  const totals = getCartTotals();
+  if (els.paymentDueText) els.paymentDueText.textContent = money(totals.total);
+  if (els.paymentChangePreview) els.paymentChangePreview.textContent = money(totals.change);
+}
+
+function openPaymentDialog() {
+  if (!cart.length) return;
+  if (!requireOperator()) return;
+  if (!requireAffiliateCustomerPhone()) return;
+  if (!ensureCurrentShift()) return;
+  autoFillPaid = true;
+  els.customPaidPanel.classList.add("hidden");
+  renderCart();
+  updatePaymentPreview();
+  els.paymentDialog.showModal();
+}
+
+async function checkout() {
+  if (checkoutInProgress) return;
+  if (!cart.length) return;
+  if (!requireOperator()) return;
+  if (!requireAffiliateCustomerPhone()) return;
+  const totals = getCartTotals();
+  const paymentMethod = els.paymentMethodInput.value;
+  const paymentReference = els.paymentReferenceInput.value.trim();
+  const simplePayPending = paymentMethod === "简单支付 / SimplePay" && !paymentReference;
+  if (!simplePayPending && totals.paid < totals.total) {
+    alert("实收金额不足。");
+    els.paidInput.focus();
+    return;
+  }
+  if (needsPaymentReference(paymentMethod) && !paymentReference && !confirm("这个付款方式建议填写参考号。确定继续收款吗？")) {
+    els.paymentReferenceInput.focus();
+    return;
+  }
+  if (!ensureCurrentShift()) return;
+  checkoutInProgress = true;
+  els.confirmPaymentBtn.disabled = true;
+  els.confirmPaymentBtn.textContent = "正在保存订单...";
+  try {
+    const cashier = getActiveCashier();
+
+    const createdAt = new Date();
+    const serviceEnd = new Date(createdAt);
+    serviceEnd.setDate(serviceEnd.getDate() + Number(appSettings.serviceDays || 21));
+
+    const saleId = createPosOrderId();
+    const affiliateReferralCode = els.affiliateReferralCodeInput.value.trim().toUpperCase();
+    const affiliateEligible = Boolean(window.integrationContract?.hasAffiliateItems(cart));
+    const sale = attachIntegrationOutbox({
+    id: saleId,
+    createdAt: createdAt.toISOString(),
+    branchId: currentBranchId,
+    branchName: getBranchName(currentBranchId),
+    operator: cashier,
+    shiftId: currentShift?.id || "",
+    customer: {
+      name: els.customerNameInput.value.trim(),
+      phone: els.customerPhoneInput.value.trim(),
+      referralCode: affiliateReferralCode
+    },
+    service: {
+      name: appSettings.defaultServiceName,
+      startDate: createdAt.toISOString(),
+      endDate: serviceEnd.toISOString(),
+      durationDays: Number(appSettings.serviceDays || 21)
+    },
+    items: structuredClone(cart),
+    subtotal: totals.subtotal,
+    discount: totals.discount,
+    total: totals.total,
+    paid: simplePayPending ? 0 : totals.paid,
+    change: simplePayPending ? 0 : totals.change,
+    payment: {
+      method: paymentMethod,
+      reference: paymentReference
+    },
+    externalReferences: {
+      posOrderId: saleId,
+      simplePayReference: paymentMethod === "简单支付 / SimplePay" ? paymentReference : "",
+      simplePayStatus: paymentMethod === "简单支付 / SimplePay"
+        ? (paymentReference ? "linked" : "pending")
+        : "not-used",
+      affiliateReferralCode,
+      affiliateOrderId: "",
+      affiliateStatus: affiliateEligible ? "pending" : "not-used"
+    },
+    status: simplePayPending ? "payment-pending" : "completed",
+    syncStatus: navigator.onLine && hasCloud() ? "queued" : "pending"
+    }, "checkout");
+
+    const changedProducts = [];
+    const nextProducts = products.map((product) => {
+      const sold = sale.items.find((item) => item.id === product.id);
+      if (!sold) return product;
+      const updatedProduct = setBranchStock(product, currentBranchId, getBranchStock(product) - sold.qty);
+      changedProducts.push(updatedProduct);
+      return updatedProduct;
+    });
+    const nextSales = [sale, ...sales];
+    const nextPendingSales = [
+      { ...sale, syncStatus: "pending" },
+      ...pendingSales.filter((item) => item.id !== sale.id)
+    ];
+    const checkoutSaved = saveStorageBatch([
+      [STORAGE_KEYS.products, nextProducts],
+      [STORAGE_KEYS.sales, nextSales],
+      [STORAGE_KEYS.pendingSales, nextPendingSales]
+    ]);
+    if (!checkoutSaved) {
+      alert("收款尚未完成：本机无法安全保存订单。购物车和库存都没有改变，请先处理浏览器储存空间后重试。");
+      return;
+    }
+    products = nextProducts;
+    sales = nextSales;
+    pendingSales = nextPendingSales;
+    cart = [];
+    els.customerNameInput.value = "";
+    els.customerPhoneInput.value = "";
+    els.affiliateReferralCodeInput.value = "";
+    els.discountInput.value = "0";
+    els.paidInput.value = "";
+    els.paymentReferenceInput.value = "";
+    autoFillPaid = true;
+    if (!hasCloud() || !window.cloudPOS.saveCheckout) {
+      for (const product of changedProducts) {
+        syncProductToCloud(product);
+      }
+    }
+    if (els.paymentDialog.open) els.paymentDialog.close();
+    showReceipt(sale);
+    renderAll();
+    syncSaleToCloud(sale).then(async () => {
+      await syncPendingSaleUpdates();
+      renderSales();
+    });
+  } finally {
+    checkoutInProgress = false;
+    els.confirmPaymentBtn.disabled = false;
+    els.confirmPaymentBtn.textContent = "确认收款";
+  }
+}
+
+function showReceipt(sale) {
+  lastReceiptSale = sale;
+  renderReceiptContent(sale);
+  els.receiptDialog.showModal();
+  if (printerSettings.autoPrint && window.thermalPrinter?.isConnected()) {
+    printBluetoothReceipt(sale, true);
+  }
+}
+
+function renderReceiptContent(sale) {
+  const simplePayCode = getSimplePayIntentCode(sale);
+  els.receiptTitle.textContent = simplePayCode ? "等待顾客付款" : "收款成功";
+  els.receiptNo.textContent = `订单号：${sale.id}`;
+  els.receiptText.textContent = buildReceipt(sale);
+  els.receiptSimplePayPanel.classList.toggle("hidden", !simplePayCode);
+  els.receiptCheckPaymentBtn.classList.toggle("hidden", !isSalePaymentPending(sale));
+  els.receiptPaymentStatus.classList.add("hidden");
+  els.receiptPaymentStatus.classList.remove("error");
+  els.receiptPaymentStatus.textContent = "";
+  if (simplePayCode) {
+    els.receiptSimplePayQr.src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=10&data=${encodeURIComponent(simplePayCode)}`;
+    els.receiptSimplePayIntent.textContent = window.integrationContract.jobId(sale.id, "simplepay.payment");
+  } else {
+    els.receiptSimplePayQr.removeAttribute("src");
+    els.receiptSimplePayIntent.textContent = "";
+  }
+}
+
+async function refreshSimplePayPayment(saleId, button = null) {
+  const sale = sales.find((item) => item.id === saleId);
+  if (!sale || !isSalePaymentPending(sale)) return false;
+  if (!navigator.onLine || !hasCloud() || !window.cloudPOS.loadSale) {
+    alert("当前无法读取云端付款状态。请联网并使用 Google 登录后重试。");
+    return false;
+  }
+  const originalText = button?.textContent || "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "正在检查";
+  }
+  if (els.receiptDialog.open && lastReceiptSale?.id === saleId) {
+    els.receiptPaymentStatus.classList.remove("hidden", "error");
+    els.receiptPaymentStatus.textContent = "正在读取这张订单的付款状态...";
+  }
+  try {
+    if (pendingSales.some((item) => item.id === saleId)) {
+      const syncResult = await syncSaleToCloud(sale);
+      if (!syncResult.ok) throw new Error("订单尚未同步云端");
+    }
+    const cloudSale = await window.cloudPOS.loadSale(saleId);
+    if (!cloudSale) throw new Error("云端尚未找到这张订单");
+    if (!canManageBranch(cloudSale.branchId || "hq")) {
+      throw new Error("当前账号无权读取这张订单");
+    }
+    if (!isSalePaymentPending(cloudSale)) {
+      const updatedSale = normalizeSaleExternalReferences({
+        ...sale,
+        ...cloudSale,
+        syncStatus: "synced"
+      });
+      const nextSales = sales.map((item) => item.id === saleId ? updatedSale : item);
+      const nextPendingSales = pendingSales.filter((item) => item.id !== saleId);
+      const saved = saveStorageBatch([
+        [STORAGE_KEYS.sales, nextSales],
+        [STORAGE_KEYS.pendingSales, nextPendingSales]
+      ]);
+      if (!saved) throw new Error("本机无法安全保存付款结果");
+      sales = nextSales;
+      pendingSales = nextPendingSales;
+      lastReceiptSale = updatedSale;
+      if (els.receiptDialog.open) {
+        renderReceiptContent(updatedSale);
+        els.receiptPaymentStatus.classList.remove("hidden", "error");
+        els.receiptPaymentStatus.textContent = "SimplePay 付款已确认，订单已计入销售。";
+      }
+      renderAll();
+      return true;
+    }
+    if (els.receiptDialog.open && lastReceiptSale?.id === saleId) {
+      els.receiptPaymentStatus.classList.remove("hidden", "error");
+      els.receiptPaymentStatus.textContent = "尚未收到付款确认，库存继续预留。";
+    } else {
+      alert("尚未收到 SimplePay 付款确认，库存继续预留。");
+    }
+    return false;
+  } catch (error) {
+    const message = `检查付款失败：${error.message || "请稍后重试"}`;
+    if (els.receiptDialog.open && lastReceiptSale?.id === saleId) {
+      els.receiptPaymentStatus.classList.remove("hidden");
+      els.receiptPaymentStatus.classList.add("error");
+      els.receiptPaymentStatus.textContent = message;
+    } else {
+      alert(message);
+    }
+    return false;
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+}
+
+function getSimplePayIntentCode(sale) {
+  if (
+    sale.payment?.method !== "简单支付 / SimplePay"
+    || sale.externalReferences?.simplePayReference
+    || !window.integrationContract
+  ) return "";
+  const intentId = window.integrationContract.jobId(sale.id, "simplepay.payment");
+  return `oneminpay://pos?intentId=${encodeURIComponent(intentId)}`;
+}
+
+function buildReceipt(sale) {
+  const lines = [
+    appSettings.businessName,
+    `订单号：${sale.id}`,
+    `分行：${sale.branchName || getBranchName(sale.branchId || "hq")}`,
+    `收银员：${sale.operator?.name || "-"}`,
+    `时间：${new Date(sale.createdAt).toLocaleString()}`,
+    `客户：${sale.customer?.name || "-"}`,
+    `电话：${sale.customer?.phone || "-"}`,
+    `计划周期：${formatDate(new Date(sale.service.startDate))} 至 ${formatDate(new Date(sale.service.endDate))}`,
+    "------------------------------"
+  ];
+  if (sale.customer?.referralCode) lines.splice(7, 0, `推荐码：${sale.customer.referralCode}`);
+  for (const item of sale.items) {
+    lines.push(`${item.name} x${item.qty}  ${money(item.price * item.qty)}`);
+  }
+  lines.push("------------------------------");
+  lines.push(`小计：${money(sale.subtotal)}`);
+  lines.push(`折扣：${money(sale.discount)}`);
+  lines.push(`应收：${money(sale.total)}`);
+  const simplePayPending = Boolean(getSimplePayIntentCode(sale));
+  lines.push(`实收：${simplePayPending ? "待确认" : money(sale.paid)}`);
+  lines.push(`找零：${simplePayPending ? "-" : money(sale.change)}`);
+  lines.push(`付款方式：${sale.payment?.method || "现金"}`);
+  if (sale.payment?.reference) lines.push(`参考号：${sale.payment.reference}`);
+  const simplePayCode = getSimplePayIntentCode(sale);
+  if (simplePayCode) {
+    lines.push("付款状态：等待顾客在 SimplePay 确认");
+    lines.push(`SimplePay付款码：${simplePayCode}`);
+  }
+  lines.push(appSettings.receiptFooter);
+  return lines.join("\n");
+}
+
+function savePrinterSettings() {
+  printerSettings = {
+    ...printerSettings,
+    paperWidth: els.printerPaperWidth.value === "80" ? "80" : "58",
+    autoPrint: els.printerAutoPrint.checked
+  };
+  save(STORAGE_KEYS.printerSettings, printerSettings);
+}
+
+function updatePrinterStatus(message, state = "idle") {
+  if (els.printerStatus) {
+    els.printerStatus.textContent = message;
+    els.printerStatus.classList.toggle("error", state === "error");
+  }
+  if (els.receiptPrinterStatus) {
+    els.receiptPrinterStatus.textContent = message;
+    els.receiptPrinterStatus.style.color = state === "error" ? "var(--danger)" : "";
+  }
+}
+
+function getBluetoothErrorMessage(error) {
+  if (error?.name === "NotFoundError") return "未选择打印机";
+  if (error?.name === "NotAllowedError") return "蓝牙权限未获允许";
+  if (error?.name === "NetworkError") return "打印机连接中断，请确认打印机已开机并靠近设备";
+  return error?.message || "蓝牙打印失败";
+}
+
+async function pairBluetoothPrinter() {
+  try {
+    updatePrinterStatus("正在等待选择打印机...");
+    const info = await window.thermalPrinter.pair();
+    printerSettings.deviceId = info.id;
+    printerSettings.deviceName = info.name;
+    savePrinterSettings();
+    updatePrinterStatus(`${info.name || "蓝牙打印机"} 已连接`, "connected");
+  } catch (error) {
+    updatePrinterStatus(getBluetoothErrorMessage(error), "error");
+  }
+  renderPrinterSettings();
+}
+
+async function reconnectBluetoothPrinter() {
+  try {
+    updatePrinterStatus("正在连接打印机...");
+    const info = await window.thermalPrinter.reconnect(printerSettings.deviceId);
+    printerSettings.deviceId = info.id;
+    printerSettings.deviceName = info.name;
+    savePrinterSettings();
+  } catch (error) {
+    updatePrinterStatus(getBluetoothErrorMessage(error), "error");
+  }
+  renderPrinterSettings();
+}
+
+async function forgetBluetoothPrinter() {
+  try {
+    await window.thermalPrinter?.forget();
+  } catch (error) {
+    console.warn("Bluetooth printer forget failed", error);
+  }
+  printerSettings.deviceId = "";
+  printerSettings.deviceName = "";
+  savePrinterSettings();
+  updatePrinterStatus("尚未连接打印机");
+  renderPrinterSettings();
+}
+
+async function ensureBluetoothPrinter() {
+  if (!window.thermalPrinter?.isSupported()) {
+    throw new Error("此浏览器不支持蓝牙直连，请使用 Android 或电脑的 Chrome / Edge");
+  }
+  if (window.thermalPrinter.isConnected()) return;
+  if (printerSettings.deviceId) {
+    await window.thermalPrinter.reconnect(printerSettings.deviceId);
+    return;
+  }
+  const info = await window.thermalPrinter.pair();
+  printerSettings.deviceId = info.id;
+  printerSettings.deviceName = info.name;
+  savePrinterSettings();
+}
+
+async function printBluetoothLines(lines) {
+  await ensureBluetoothPrinter();
+  await window.thermalPrinter.printLines(lines, printerSettings.paperWidth);
+}
+
+async function printBluetoothReceipt(sale = lastReceiptSale, automatic = false) {
+  if (!sale) {
+    updatePrinterStatus("没有可打印的小票", "error");
+    return;
+  }
+  if (automatic && !window.thermalPrinter?.isConnected()) return;
+  try {
+    els.bluetoothPrintReceiptBtn.disabled = true;
+    await printBluetoothLines(buildReceipt(sale).split("\n"));
+  } catch (error) {
+    updatePrinterStatus(getBluetoothErrorMessage(error), "error");
+  } finally {
+    els.bluetoothPrintReceiptBtn.disabled = false;
+    renderPrinterSettings();
+  }
+}
+
+async function testBluetoothPrinter() {
+  const lines = [
+    appSettings.businessName,
+    "蓝牙打印测试",
+    "中文 / English / 123456",
+    `纸宽：${printerSettings.paperWidth}mm`,
+    new Date().toLocaleString(),
+    "打印正常"
+  ];
+  try {
+    els.printerTestBtn.disabled = true;
+    await printBluetoothLines(lines);
+  } catch (error) {
+    updatePrinterStatus(getBluetoothErrorMessage(error), "error");
+  } finally {
+    renderPrinterSettings();
+  }
+}
+
+function renderSales() {
+  if (!showAllSalesDates && !els.salesDateInput.value) els.salesDateInput.value = inputDate();
+  const selectedDate = els.salesDateInput.value;
+  const keyword = els.salesSearchInput.value.trim().toLowerCase();
+  const branchFilter = els.salesBranchFilter.value || (isAdmin() ? "all" : getOperationalBranchId());
+  const paymentFilter = els.salesPaymentFilter.value;
+  const integrationFilter = els.salesIntegrationFilter.value;
+  const integrationIssues = getIntegrationIssues(
+    getActiveSales().filter((sale) => canManageBranch(sale.branchId || "hq"))
+  );
+  const integrationIssueSaleIds = new Set(integrationIssues.flatMap((issue) => issue.saleIds));
+  const selectedSales = sales.filter((sale) => {
+    if (!canManageBranch(sale.branchId || "hq")) return false;
+    if (branchFilter !== "all" && (sale.branchId || "hq") !== branchFilter) return false;
+    const matchDate = showAllSalesDates || inputDate(new Date(sale.createdAt)) === selectedDate;
+    if (!matchDate) return false;
+    if (paymentFilter !== "all" && (sale.payment?.method || "现金") !== paymentFilter) return false;
+    if (!matchesIntegrationFilter(sale, integrationFilter, integrationIssueSaleIds)) return false;
+    if (!keyword) return true;
+    const haystack = [
+      sale.id,
+      sale.customer?.name,
+      sale.customer?.phone,
+      sale.customer?.referralCode,
+      sale.branchName,
+      sale.operator?.name,
+      ...(sale.items || []).map((item) => item.name)
+    ].join(" ").toLowerCase();
+    return haystack.includes(keyword);
+  });
+  const completedSelectedSales = getActiveSales(selectedSales);
+  const total = completedSelectedSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
+  const pendingPaymentCount = selectedSales.filter(isSalePaymentPending).length;
+  const dateLabel = showAllSalesDates ? "全部日期" : selectedDate;
+  els.salesSummary.textContent = selectedSales.length
+    ? `${dateLabel} · ${completedSelectedSales.length} 单已收款，共 ${money(total)}${pendingPaymentCount ? ` · ${pendingPaymentCount} 单待付款` : ""}`
+    : `${dateLabel} · 暂无销售`;
+  els.todaySalesBtn.classList.toggle("active", !showAllSalesDates && selectedDate === inputDate());
+  els.allSalesDatesBtn.classList.toggle("active", showAllSalesDates);
+  els.salesList.innerHTML = "";
+  renderDailyPaymentSummary(selectedSales);
+
+  if (!selectedSales.length) {
+    els.salesList.innerHTML = '<div class="empty">完成收款后这里会出现销售记录</div>';
+    els.toggleSalesLimitBtn.classList.add("hidden");
+    return;
+  }
+
+  const visibleSales = selectedSales.slice(0, showMoreSales ? 50 : 8);
+  els.toggleSalesLimitBtn.classList.toggle("hidden", selectedSales.length <= 8);
+  els.toggleSalesLimitBtn.textContent = showMoreSales ? "显示较少" : `显示更多（共 ${selectedSales.length} 笔）`;
+
+  for (const sale of visibleSales) {
+    const row = document.createElement("div");
+    row.className = "sale-item";
+    row.classList.toggle("voided", isSaleVoided(sale));
+    row.classList.toggle("payment-pending", isSalePaymentPending(sale));
+    row.innerHTML = `
+      <div class="sale-item-top">
+        <strong>${isSaleVoided(sale) ? "已作废" : money(sale.total)}</strong>
+        <span>${new Date(sale.createdAt).toLocaleTimeString()}</span>
+      </div>
+      <span class="product-meta">状态：${getSaleStatusText(sale)}</span>
+      <span class="product-meta">分行：${escapeHtml(sale.branchName || getBranchName(sale.branchId || "hq"))}</span>
+      <span class="product-meta">收银员：${escapeHtml(sale.operator?.name || "-")}</span>
+      <span class="product-meta">班次：${escapeHtml(sale.shiftId || "-")}</span>
+      <span class="product-meta">同步：${getSaleSyncText(sale)}</span>
+      <span class="product-meta">付款：${escapeHtml(sale.payment?.method || "现金")}${sale.payment?.reference ? ` · ${escapeHtml(sale.payment.reference)}` : ""}</span>
+      <span class="product-meta">客户：${escapeHtml(sale.customer?.name || "-")} ${escapeHtml(sale.customer?.phone || "")}</span>
+      ${sale.customer?.referralCode ? `<span class="product-meta">联盟推荐码：${escapeHtml(sale.customer.referralCode)}</span>` : ""}
+      <span class="product-meta">关联：${escapeHtml(getSaleIntegrationSummary(sale))}</span>
+      <span class="product-meta">${(sale.items || []).map((item) =>
+        `${escapeHtml(item.name || "-")} x${Number(item.qty || 0)}`
+      ).join("，")}</span>
+      ${requiresInventoryReview(sale) ? `<div class="settlement-warning"><strong>库存待复核</strong><br>${escapeHtml(getInventoryConflictSummary(sale))}</div>` : ""}
+      ${isAdmin() ? '<button class="ghost" type="button" data-edit-integration>关联资料</button>' : ""}
+      ${isSalePaymentPending(sale) ? '<button class="primary" type="button" data-check-payment>检查付款状态</button>' : ""}
+      ${requiresInventoryReview(sale) ? '<button class="ghost" type="button" data-open-inventory-review>前往库存核对</button><button class="primary" type="button" data-resolve-inventory-review>确认库存已复核</button>' : ""}
+      ${canVoidSale(sale) ? `<button class="ghost danger" type="button" data-void-sale>${isSalePaymentPending(sale) ? "取消待付款并释放库存" : "退款 / 作废并回补库存"}</button>` : ""}
+    `;
+    row.querySelector("[data-edit-integration]")?.addEventListener("click", () => openIntegrationEditor(sale.id));
+    const paymentCheckButton = row.querySelector("[data-check-payment]");
+    if (paymentCheckButton) paymentCheckButton.addEventListener("click", () => refreshSimplePayPayment(sale.id, paymentCheckButton));
+    const inventoryButton = row.querySelector("[data-open-inventory-review]");
+    if (inventoryButton) inventoryButton.addEventListener("click", () => openInventoryForReview(sale.id));
+    const resolveButton = row.querySelector("[data-resolve-inventory-review]");
+    if (resolveButton) resolveButton.addEventListener("click", () => resolveInventoryReview(sale.id));
+    const voidButton = row.querySelector("[data-void-sale]");
+    if (voidButton) voidButton.addEventListener("click", () => voidSale(sale.id));
+    els.salesList.append(row);
+  }
+}
+
+function renderDailyPaymentSummary(selectedSales) {
+  const activeSelectedSales = getActiveSales(selectedSales);
+  const nonVoidedSelectedSales = getNonVoidedSales(selectedSales);
+  const voidedSelectedSales = selectedSales.filter(isSaleVoided);
+  const pendingPaymentSales = selectedSales.filter(isSalePaymentPending);
+  const paymentRows = getPaymentSummaryRows(activeSelectedSales);
+  els.dailyPaymentSummaryList.innerHTML = "";
+  if (!paymentRows.length && !voidedSelectedSales.length && !pendingPaymentSales.length) {
+    els.dailyPaymentSummaryList.innerHTML = '<div class="empty compact-empty">当前筛选没有结算资料</div>';
+    return;
+  }
+  for (const item of paymentRows) {
+    const row = document.createElement("div");
+    row.className = "management-row";
+    row.innerHTML = `
+      <div>
+        <strong>${escapeHtml(item.method)}</strong>
+        <small>${item.orders} 单</small>
+      </div>
+      <small>${money(item.total)}</small>
+    `;
+    els.dailyPaymentSummaryList.append(row);
+  }
+  const visibleIds = new Set(selectedSales.map((sale) => sale.id));
+  const pendingOrderCount = new Set(
+    [...pendingSales, ...pendingSaleUpdates]
+      .filter((sale) => visibleIds.has(sale.id))
+      .map((sale) => sale.id)
+  ).size;
+  const references = nonVoidedSelectedSales.map((sale) => normalizeSaleExternalReferences(sale).externalReferences);
+  const simplePayPending = references.filter((item) => item.simplePayStatus === "pending").length;
+  const affiliatePending = references.filter((item) => item.affiliateStatus === "pending").length;
+  const inventoryReviewCount = selectedSales.filter(requiresInventoryReview).length;
+  const alerts = [
+    voidedSelectedSales.length ? `作废 ${voidedSelectedSales.length} 单（原金额 ${money(voidedSelectedSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0))}）` : "",
+    pendingPaymentSales.length ? `待付款 ${pendingPaymentSales.length} 单（${money(pendingPaymentSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0))}，不计入收入）` : "",
+    pendingOrderCount ? `待同步 ${pendingOrderCount} 单` : "",
+    simplePayPending ? `SimplePay 待确认 ${simplePayPending} 单` : "",
+    affiliatePending ? `联盟待关联 ${affiliatePending} 单` : "",
+    inventoryReviewCount ? `库存待复核 ${inventoryReviewCount} 单` : ""
+  ].filter(Boolean);
+  if (alerts.length) {
+    const row = document.createElement("div");
+    row.className = "management-row diagnostic-warning";
+    row.innerHTML = `
+      <div>
+        <strong>对账提醒</strong>
+        <small>${escapeHtml(alerts.join(" · "))}</small>
+      </div>
+      <span>待处理</span>
+    `;
+    els.dailyPaymentSummaryList.append(row);
+  }
+}
+
+function renderGlobalDashboard() {
+  if (!isAdmin()) return;
+  ensureReportRange();
+  const reportSales = getReportSales();
+  const totalRevenue = reportSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
+  const customers = new Set(
+    reportSales
+      .map((sale) => `${sale.customer?.phone || ""}-${sale.customer?.name || ""}`.trim())
+      .filter(Boolean)
+  );
+
+  els.globalRevenueText.textContent = money(totalRevenue);
+  els.globalOrdersText.textContent = String(reportSales.length);
+  els.globalCustomersText.textContent = String(customers.size);
+  els.globalStockText.textContent = String(getTotalStock());
+  els.branchOverview.innerHTML = "";
+
+  for (const branch of branches) {
+    const branchSales = reportSales.filter((sale) => (sale.branchId || "hq") === branch.id);
+    const revenue = branchSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
+    const branchCustomers = new Set(
+      branchSales
+        .map((sale) => `${sale.customer?.phone || ""}-${sale.customer?.name || ""}`.trim())
+        .filter(Boolean)
+    );
+    const row = document.createElement("div");
+    row.className = "branch-row";
+    row.innerHTML = `
+      <strong>${escapeHtml(branch.name)}</strong>
+      <span>销售额 ${money(revenue)}</span>
+      <span>订单 ${branchSales.length}</span>
+      <span>客户 ${branchCustomers.size}</span>
+    `;
+    els.branchOverview.append(row);
+  }
+
+  const productRows = getProductSalesRows(reportSales).slice(0, 8);
+  els.topProductsList.innerHTML = "";
+  if (!productRows.length) {
+    els.topProductsList.innerHTML = '<div class="empty">当前日期范围暂无商品销售</div>';
+  } else {
+    for (const item of productRows) {
+      const row = document.createElement("div");
+      row.className = "management-row";
+      row.innerHTML = `
+        <div>
+          <strong>${escapeHtml(item.name)}</strong>
+          <small>销量 ${item.qty}</small>
+        </div>
+        <small>${money(item.revenue)}</small>
+      `;
+      els.topProductsList.append(row);
+    }
+  }
+
+  const dailyRows = getDailySalesRows(reportSales).slice(0, 10);
+  els.dailyTrendList.innerHTML = "";
+  if (!dailyRows.length) {
+    els.dailyTrendList.innerHTML = '<div class="empty">当前日期范围暂无每日趋势</div>';
+  } else {
+    for (const item of dailyRows) {
+      const row = document.createElement("div");
+      row.className = "management-row";
+      row.innerHTML = `
+        <div>
+          <strong>${escapeHtml(item.day)}</strong>
+          <small>${item.orders} 单</small>
+        </div>
+        <small>${money(item.revenue)}</small>
+      `;
+      els.dailyTrendList.append(row);
+    }
+  }
+
+  const paymentRows = getPaymentSummaryRows(reportSales);
+  els.paymentSummaryList.innerHTML = "";
+  if (!paymentRows.length) {
+    els.paymentSummaryList.innerHTML = '<div class="empty">当前日期范围暂无付款资料</div>';
+  } else {
+    for (const item of paymentRows) {
+      const row = document.createElement("div");
+      row.className = "management-row";
+      row.innerHTML = `
+        <div>
+          <strong>${escapeHtml(item.method)}</strong>
+          <small>${item.orders} 单</small>
+        </div>
+        <small>${money(item.total)}</small>
+      `;
+      els.paymentSummaryList.append(row);
+    }
+  }
+}
+
+function saveProduct(event) {
+  event.preventDefault();
+  if (!requireAdmin()) return;
+  const normalizedProducts = products.map((item) => normalizeProductBranches(item));
+  const product = {
+    id: editingProductId || createId(),
+    name: els.nameInput.value.trim(),
+    barcode: els.barcodeInput.value.trim(),
+    category: els.categoryInput.value.trim(),
+    price: Number(els.priceInput.value),
+    stock: 0,
+    branchStock: createBranchStock(0, currentBranchId)
+  };
+  if (!product.name || !product.category || !Number.isFinite(product.price) || product.price < 0) {
+    alert("请检查商品信息。");
+    return;
+  }
+
+  const barcodeConflict = product.barcode && normalizedProducts.find((item) =>
+    item.barcode === product.barcode && item.id !== editingProductId
+  );
+  if (barcodeConflict) {
+    alert(`条码 / SKU 已由“${barcodeConflict.name}”使用。`);
+    return;
+  }
+  const existingProduct = normalizedProducts.find((item) => item.id === editingProductId);
+  let savedProduct = product;
+  let nextProducts;
+  if (existingProduct) {
+    nextProducts = normalizedProducts.map((item) => {
+      if (item.id !== existingProduct.id) return item;
+      savedProduct = {
+        ...item,
+        name: product.name,
+        barcode: product.barcode,
+        category: product.category,
+        price: product.price
+      };
+      savedProduct = normalizeProductBranches(savedProduct);
+      return savedProduct;
+    });
+  } else {
+    savedProduct = normalizeProductBranches(product);
+    nextProducts = [savedProduct, ...normalizedProducts];
+  }
+  if (!save(STORAGE_KEYS.products, nextProducts)) return;
+  products = nextProducts;
+  syncProductToCloud(savedProduct);
+  writeAuditLog("product.save", {
+    productId: savedProduct.id,
+    productName: savedProduct.name,
+    barcode: savedProduct.barcode,
+    price: savedProduct.price
+  });
+  resetProductFormEditor();
+  renderAll();
+}
+
+function exportSales() {
+  if (!requireAdmin()) return;
+  if (!sales.length) {
+    alert("还没有销售记录可以导出。");
+    return;
+  }
+  const rows = [["订单号", "外部订单号", "班次号", "状态", "作废时间", "分行", "收银员", "收银员邮箱", "同步状态", "库存复核状态", "库存冲突详情", "库存复核人", "时间", "客户姓名", "电话", "联盟推荐码", "付款方式", "付款参考号", "SimplePay参考号", "联盟订单号", "跟进状态", "跟进更新时间", "计划名称", "服务天数", "计划开始", "计划结束", "商品", "小计", "折扣", "应收", "实收", "找零"]];
+  for (const sale of sales) {
+    rows.push([
+      sale.id,
+      sale.externalReferences?.posOrderId || sale.id,
+      sale.shiftId || "",
+      getSaleStatusText(sale),
+      sale.voidedAt ? new Date(sale.voidedAt).toLocaleString() : "",
+      sale.branchName || getBranchName(sale.branchId || "hq"),
+      sale.operator?.name || "",
+      sale.operator?.email || "",
+      getSaleSyncText(sale),
+      getInventoryReviewStatus(sale),
+      requiresInventoryReview(sale) ? getInventoryConflictSummary(sale) : "",
+      sale.inventoryReview?.resolvedBy?.email || "",
+      new Date(sale.createdAt).toLocaleString(),
+      sale.customer?.name || "",
+      sale.customer?.phone || "",
+      sale.customer?.referralCode || sale.externalReferences?.affiliateReferralCode || "",
+      sale.payment?.method || "现金",
+      sale.payment?.reference || "",
+      sale.externalReferences?.simplePayReference || "",
+      sale.externalReferences?.affiliateOrderId || "",
+      getFollowUpStatusText(sale),
+      sale.followUp?.updatedAt ? new Date(sale.followUp.updatedAt).toLocaleString() : "",
+      sale.service?.name || "",
+      sale.service?.durationDays || "",
+      sale.service?.startDate ? formatDate(new Date(sale.service.startDate)) : "",
+      sale.service?.endDate ? formatDate(new Date(sale.service.endDate)) : "",
+      sale.items.map((item) => `${item.name} x${item.qty}`).join("; "),
+      sale.subtotal,
+      sale.discount,
+      sale.total,
+      sale.paid,
+      sale.change
+    ]);
+  }
+  downloadCsv(`sales-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+}
+
+function downloadCsv(filename, rows) {
+  const csv = rows.map((row) => row.map(csvCell).join(",")).join("\n");
+  const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -3749,1564 +5034,924 @@ function downloadCsv(filename, headers, rows) {
   URL.revokeObjectURL(url);
 }
 
-function filteredOrders() {
-  const keyword = getInputValue("#orderSearchInput").toLowerCase();
-  const statusFilter = getSelectValue("#orderStatusFilter", "all");
-  const typeFilter = getSelectValue("#orderTypeFilter", "all");
-  const proofFilter = getSelectValue("#orderProofFilter", "all");
-  const riskFilter = getSelectValue("#orderRiskFilter", "all");
-
-  return state.orders.filter((order) => {
-    const user = findUser(order.userId);
-    const plan = orderPlan(order);
-    const hasRisk = orderRiskLabels(order).length > 0;
-    const searchable = [
-      order.id,
-      user?.name,
-      user?.account,
-      user?.phone,
-      user?.inviteCode,
-      plan?.name,
-      order.paymentRef,
-      order.paymentNote,
-      paymentMethodText(order.paymentMethod),
-      proofStatusText(order),
-    ].join(" ").toLowerCase();
-    const matchesKeyword = !keyword || searchable.includes(keyword);
-    const matchesStatus = statusFilter === "all" || order.status === statusFilter;
-    const matchesType = typeFilter === "all" || order.type === typeFilter;
-    const matchesProof = proofFilter === "all"
-      || order.proofStatus === proofFilter
-      || (proofFilter === "uploaded" && Boolean(order.proofUrl))
-      || (proofFilter === "inline" && Boolean(order.proofInlineData))
-      || (proofFilter === "none" && !order.proofUrl && !order.proofInlineData && order.proofStatus !== "failed");
-    const matchesRisk = riskFilter === "all"
-      || (riskFilter === "risk" && hasRisk)
-      || (riskFilter === "normal" && !hasRisk);
-    return matchesKeyword && matchesStatus && matchesType && matchesProof && matchesRisk;
-  });
+function exportBranchSummary() {
+  if (!requireAdmin()) return;
+  const reportSales = getReportSales();
+  const rows = [["日期范围", "统计口径", "分行", "订单数", "客户数", "销售额"]];
+  for (const branch of branches) {
+    const branchSales = reportSales.filter((sale) => (sale.branchId || "hq") === branch.id);
+    const customers = new Set(branchSales.map((sale) => `${sale.customer?.phone || ""}-${sale.customer?.name || ""}`).filter(Boolean));
+    const revenue = branchSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
+    rows.push([getReportRangeLabel(), "不含已作废订单", branch.name, branchSales.length, customers.size, revenue]);
+  }
+  downloadCsv(`branch-summary-${new Date().toISOString().slice(0, 10)}.csv`, rows);
 }
 
-function filteredUsers() {
-  const keyword = getInputValue("#userSearchInput").toLowerCase();
-  const packageFilter = getSelectValue("#userPackageFilter", "all");
-  const accountFilter = getSelectValue("#userAccountFilter", "all");
-  const payoutRiskFilter = getSelectValue("#userPayoutRiskFilter", "all");
-  const profileFilter = getSelectValue("#userProfileFilter", "all");
-
-  return state.users.filter((user) => {
-    const referrer = findUser(user.referrerId);
-    const hasPayoutRisk = sharedWithdrawAccountUsers(user.withdrawAccount, user.id).length > 0;
-    const isProfileComplete = profileComplete(user);
-    const searchable = [
-      user.name,
-      user.account,
-      user.phone,
-      user.inviteCode,
-      referrer?.name,
-      referrer?.account,
-    ].join(" ").toLowerCase();
-    const matchesKeyword = !keyword || searchable.includes(keyword);
-    const matchesPackage = packageFilter === "all"
-      || (packageFilter === "active" && isActivePackage(user))
-      || (packageFilter === "expired" && !isActivePackage(user));
-    const matchesAccount = accountFilter === "all"
-      || (accountFilter === "normal" && !user.frozen)
-      || (accountFilter === "frozen" && user.frozen);
-    const matchesPayoutRisk = payoutRiskFilter === "all"
-      || (payoutRiskFilter === "shared" && hasPayoutRisk)
-      || (payoutRiskFilter === "clean" && !hasPayoutRisk);
-    const matchesProfile = profileFilter === "all"
-      || (profileFilter === "complete" && isProfileComplete)
-      || (profileFilter === "incomplete" && !isProfileComplete);
-    return matchesKeyword && matchesPackage && matchesAccount && matchesPayoutRisk && matchesProfile;
-  });
+function exportProductSales() {
+  if (!requireAdmin()) return;
+  const rows = [["日期范围", "统计口径", "商品", "销量", "销售额"]];
+  for (const item of getProductSalesRows()) {
+    rows.push([getReportRangeLabel(), "不含已作废订单", item.name, item.qty, item.revenue]);
+  }
+  if (rows.length === 1) {
+    alert("当前日期范围还没有商品销售记录。");
+    return;
+  }
+  downloadCsv(`product-sales-${new Date().toISOString().slice(0, 10)}.csv`, rows);
 }
 
-function filteredRewards() {
-  const keyword = getInputValue("#rewardSearchInput").toLowerCase();
-  const statusFilter = getSelectValue("#rewardStatusFilter", "all");
-  const typeFilter = getSelectValue("#rewardTypeFilter", "all");
-  const riskFilter = getSelectValue("#rewardRiskFilter", "all");
-
-  return state.rewards.filter((reward) => {
-    const user = findUser(reward.userId);
-    const sourceUser = findUser(reward.sourceUserId);
-    const hasRisk = rewardRiskLabels(reward).length > 0;
-    const searchable = [
-      reward.id,
-      reward.orderId,
-      user?.name,
-      user?.account,
-      user?.phone,
-      sourceUser?.name,
-      sourceUser?.account,
-      sourceUser?.phone,
-    ].join(" ").toLowerCase();
-    const matchesKeyword = !keyword || searchable.includes(keyword);
-    const isDue = ["pending", "releasing"].includes(reward.status) && new Date(reward.confirmAfter) <= new Date();
-    const matchesStatus = statusFilter === "all"
-      || reward.status === statusFilter
-      || (statusFilter === "due" && isDue);
-    const matchesType = typeFilter === "all"
-      || reward.type === typeFilter
-      || (typeFilter === "repeatDirect" && reward.type === "repeat" && reward.rewardMode === "direct")
-      || (typeFilter === "repeatPool" && reward.type === "repeat" && reward.rewardMode === "pool");
-    const matchesRisk = riskFilter === "all"
-      || (riskFilter === "risk" && hasRisk)
-      || (riskFilter === "normal" && !hasRisk);
-    return matchesKeyword && matchesStatus && matchesType && matchesRisk;
-  });
+function exportPaymentSummary() {
+  if (!requireAdmin()) return;
+  const rows = [["日期范围", "统计口径", "付款方式", "订单数", "金额"]];
+  for (const item of getPaymentSummaryRows()) {
+    rows.push([getReportRangeLabel(), "不含已作废订单", item.method, item.orders, item.total]);
+  }
+  if (rows.length === 1) {
+    alert("当前日期范围还没有付款资料。");
+    return;
+  }
+  downloadCsv(`payment-summary-${new Date().toISOString().slice(0, 10)}.csv`, rows);
 }
 
-function filteredWithdraws() {
-  const keyword = getInputValue("#withdrawSearchInput").toLowerCase();
-  const statusFilter = getSelectValue("#withdrawStatusFilter", "all");
-  const riskFilter = getSelectValue("#withdrawRiskFilter", "all");
-  const minAmount = Number(getInputValue("#withdrawMinAmount") || 0);
-
-  return state.withdraws.filter((item) => {
-    const user = findUser(item.userId);
-    const hasRisk = withdrawRiskLabels(item).length > 0;
-    const searchable = [
-      item.id,
-      user?.name,
-      user?.account,
-      user?.phone,
-      user?.inviteCode,
-      item.method,
-      item.account,
-    ].join(" ").toLowerCase();
-    const matchesKeyword = !keyword || searchable.includes(keyword);
-    const matchesStatus = statusFilter === "all" || item.status === statusFilter;
-    const matchesRisk = riskFilter === "all"
-      || (riskFilter === "risk" && hasRisk)
-      || (riskFilter === "normal" && !hasRisk);
-    const matchesAmount = !minAmount || Number(item.amount || 0) >= minAmount;
-    return matchesKeyword && matchesStatus && matchesRisk && matchesAmount;
+function exportDailySettlement() {
+  if (!requireAdmin()) return;
+  const selectedDate = els.salesDateInput.value || inputDate();
+  const branchFilter = els.salesBranchFilter.value || "all";
+  const paymentFilter = els.salesPaymentFilter.value;
+  const dateSales = sales.filter((sale) => {
+    if (!canManageBranch(sale.branchId || "hq")) return false;
+    if (branchFilter !== "all" && (sale.branchId || "hq") !== branchFilter) return false;
+    const matchDate = inputDate(new Date(sale.createdAt)) === selectedDate;
+    if (!matchDate) return false;
+    return paymentFilter === "all" || (sale.payment?.method || "现金") === paymentFilter;
   });
+  if (!dateSales.length) {
+    alert("当前筛选没有结算资料。");
+    return;
+  }
+  const selectedSales = getActiveSales(dateSales);
+  const pendingPaymentSales = dateSales.filter(isSalePaymentPending);
+  const voidedSales = dateSales.filter(isSaleVoided);
+  const selectedIds = new Set(dateSales.map((sale) => sale.id));
+  const pendingOrderIds = new Set(
+    [...pendingSales, ...pendingSaleUpdates]
+      .filter((sale) => selectedIds.has(sale.id))
+      .map((sale) => sale.id)
+  );
+  const externalReferences = getNonVoidedSales(dateSales)
+    .map((sale) => normalizeSaleExternalReferences(sale).externalReferences);
+  const simplePayPending = externalReferences.filter((item) => item.simplePayStatus === "pending").length;
+  const affiliatePending = externalReferences.filter((item) => item.affiliateStatus === "pending").length;
+  const inventoryReviewCount = dateSales.filter(requiresInventoryReview).length;
+  const rows = [["类型", "日期", "付款筛选", "付款方式", "订单数", "有效金额", "订单号", "状态", "时间", "参考号", "客户", "分行", "同步", "外部关联"]];
+  for (const item of getPaymentSummaryRows(selectedSales)) {
+    rows.push(["付款汇总", selectedDate, paymentFilter === "all" ? "全部付款" : paymentFilter, item.method, item.orders, item.total, "", "", "", "", "", "", "", ""]);
+  }
+  for (const sale of selectedSales) {
+    rows.push([
+      "明细",
+      selectedDate,
+      paymentFilter === "all" ? "全部付款" : paymentFilter,
+      sale.payment?.method || "现金",
+      "",
+      sale.total,
+      sale.id,
+      "正常",
+      new Date(sale.createdAt).toLocaleString(),
+      sale.payment?.reference || "",
+      `${sale.customer?.name || ""} ${sale.customer?.phone || ""}`.trim(),
+      sale.branchName || getBranchName(sale.branchId || "hq"),
+      getSaleSyncText(sale),
+      getSaleIntegrationSummary(sale)
+    ]);
+  }
+  for (const sale of voidedSales) {
+    rows.push([
+      "作废",
+      selectedDate,
+      paymentFilter === "all" ? "全部付款" : paymentFilter,
+      sale.payment?.method || "现金",
+      "",
+      0,
+      sale.id,
+      `已作废，原金额 ${money(sale.total)}`,
+      new Date(sale.createdAt).toLocaleString(),
+      sale.payment?.reference || "",
+      `${sale.customer?.name || ""} ${sale.customer?.phone || ""}`.trim(),
+      sale.branchName || getBranchName(sale.branchId || "hq"),
+      getSaleSyncText(sale),
+      getSaleIntegrationSummary(sale)
+    ]);
+  }
+  rows.push(
+    ["风险汇总", selectedDate, "", "", pendingOrderIds.size, "", "", "待同步订单", "", "", "", "", "", ""],
+    ["风险汇总", selectedDate, "", "", pendingPaymentSales.length, pendingPaymentSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0), "", "待付款订单（不计收入）", "", "", "", "", "", ""],
+    ["风险汇总", selectedDate, "", "", simplePayPending, "", "", "SimplePay 待确认", "", "", "", "", "", ""],
+    ["风险汇总", selectedDate, "", "", affiliatePending, "", "", "联盟待关联", "", "", "", "", "", ""],
+    ["风险汇总", selectedDate, "", "", inventoryReviewCount, "", "", "库存待复核", "", "", "", "", "", ""],
+    ["风险汇总", selectedDate, "", "", voidedSales.length, 0, "", `作废原金额 ${money(voidedSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0))}`, "", "", "", "", "", ""]
+  );
+  const branchSuffix = branchFilter === "all" ? "all-branches" : branchFilter;
+  downloadCsv(`daily-settlement-${selectedDate}-${branchSuffix}.csv`, rows);
 }
 
-function filteredLogs() {
-  const keyword = getInputValue("#logSearchInput").toLowerCase();
-  const actionFilter = getSelectValue("#logActionFilter", "all");
-  return (state.adminLogs || [])
-    .filter((log) => {
-      const searchable = [
-        log.adminEmail,
-        log.action,
-        log.target,
-        log.detail,
-      ].join(" ").toLowerCase();
-      const matchesKeyword = !keyword || searchable.includes(keyword);
-      const matchesAction = actionFilter === "all" || log.action === actionFilter;
-      return matchesKeyword && matchesAction;
-    })
-    .slice()
+function exportIntegrationQueue() {
+  if (!requireOperations()) return;
+  const manageableSales = getActiveSales()
+    .filter((sale) => canManageBranch(sale.branchId || "hq"))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const issues = getIntegrationIssues(manageableSales);
+  const issueSaleIds = new Set(issues.flatMap((issue) => issue.saleIds));
+  const queue = manageableSales.filter((sale) => {
+    const references = normalizeSaleExternalReferences(sale).externalReferences;
+    return references.simplePayStatus === "pending"
+      || references.affiliateStatus === "pending"
+      || references.simplePayStatus === "failed"
+      || references.affiliateStatus === "failed"
+      || issueSaleIds.has(sale.id);
+  });
+  if (!queue.length) {
+    alert("目前没有待关联或异常订单。");
+    return;
+  }
+  const rows = [[
+    "POS订单号",
+    "时间",
+    "分行",
+    "客户",
+    "电话",
+    "金额",
+    "SimplePay状态",
+    "SimplePay参考号",
+    "联盟状态",
+    "联盟推荐码",
+    "联盟订单号",
+    "问题"
+  ]];
+  for (const sale of queue) {
+    const references = normalizeSaleExternalReferences(sale).externalReferences;
+    const issueText = issues
+      .filter((issue) => issue.saleIds.includes(sale.id))
+      .map((issue) => issue.message)
+      .join("; ");
+    const markedFailed = [
+      references.simplePayStatus === "failed" ? "SimplePay 已标记异常" : "",
+      references.affiliateStatus === "failed" ? "联盟已标记异常" : ""
+    ].filter(Boolean).join("; ");
+    rows.push([
+      references.posOrderId || sale.id,
+      new Date(sale.createdAt).toLocaleString(),
+      sale.branchName || getBranchName(sale.branchId || "hq"),
+      sale.customer?.name || "",
+      sale.customer?.phone || "",
+      sale.total,
+      getIntegrationStatusText(references.simplePayStatus, "待确认"),
+      references.simplePayReference || "",
+      getIntegrationStatusText(references.affiliateStatus),
+      references.affiliateReferralCode || "",
+      references.affiliateOrderId || "",
+      [issueText, markedFailed].filter(Boolean).join("; ")
+    ]);
+  }
+  downloadCsv(`integration-queue-${new Date().toISOString().slice(0, 10)}.csv`, rows);
 }
 
-function updateAuthStatusClean() {
-  const status = document.querySelector("#authStatus");
-  if (status) {
-    if (firebaseUser) {
-      status.textContent = `已登录：${firebaseUser.email || firebaseUser.displayName}${isAdmin() ? "（管理员）" : ""}`;
-    } else if (firebaseReady) {
-      status.textContent = "请使用 Google 登录。";
-    } else {
-      status.textContent = "正在连接 Firebase...";
+function exportInventory() {
+  if (!requireAdmin()) return;
+  const rows = [["商品", "SKU", "分类", "售价", "分行", "库存"]];
+  for (const product of products) {
+    for (const branch of branches) {
+      rows.push([
+        product.name,
+        product.barcode || "",
+        product.category || "",
+        product.price,
+        branch.name,
+        getBranchStock(product, branch.id)
+      ]);
     }
   }
-  const syncStatus = document.querySelector("#syncStatus");
-  if (syncStatus) syncStatus.textContent = readableSyncMessage(syncMessage);
+  downloadCsv(`inventory-${new Date().toISOString().slice(0, 10)}.csv`, rows);
 }
 
-function clearSignedOutSensitiveFields() {
-  state.currentUserId = "";
-  ["#profileForm", "#paymentInfoForm", "#withdrawForm", "#registerForm"].forEach((selector) => {
-    const form = document.querySelector(selector);
-    if (form) form.reset();
-  });
-  document.querySelector("#inviteLink")?.replaceChildren(document.createTextNode("-"));
-  document.querySelector("#inviteCodeBox")?.remove();
-  const localHint = document.querySelector("#localSyncHint");
-  if (localHint) {
-    localHint.textContent = "";
-    localHint.hidden = true;
+function exportCustomers() {
+  if (!requireAdmin()) return;
+  if (!sales.length) {
+    alert("还没有客户资料可以导出。");
+    return;
   }
+  const rows = [["客户姓名", "电话", "联盟推荐码", "最近订单号", "最近分行", "最近消费时间", "计划名称", "计划开始", "计划结束", "到期状态", "跟进状态", "消费次数", "累计消费"]];
+  const customerMap = new Map();
+  for (const sale of [...getActiveSales()].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))) {
+    const key = `${sale.customer?.phone || ""}-${sale.customer?.name || ""}`.trim() || sale.id;
+    const existing = customerMap.get(key) || {
+      latestSale: sale,
+      orderCount: 0,
+      totalSpend: 0
+    };
+    existing.orderCount += 1;
+    existing.totalSpend += Number(sale.total || 0);
+    customerMap.set(key, existing);
+  }
+  for (const customer of customerMap.values()) {
+    const sale = customer.latestSale;
+    const daysLeft = sale.service?.endDate ? daysUntil(sale.service.endDate) : null;
+    rows.push([
+      sale.customer?.name || "",
+      sale.customer?.phone || "",
+      sale.customer?.referralCode || sale.externalReferences?.affiliateReferralCode || "",
+      sale.id,
+      sale.branchName || getBranchName(sale.branchId || "hq"),
+      new Date(sale.createdAt).toLocaleString(),
+      sale.service?.name || "",
+      sale.service?.startDate ? formatDate(new Date(sale.service.startDate)) : "",
+      sale.service?.endDate ? formatDate(new Date(sale.service.endDate)) : "",
+      daysLeft === null ? "" : getFollowUpDueText(daysLeft),
+      getFollowUpStatusText(sale),
+      customer.orderCount,
+      customer.totalSpend
+    ]);
+  }
+  downloadCsv(`customers-${new Date().toISOString().slice(0, 10)}.csv`, rows);
 }
 
-function renderAdminLocked() {
-  document.querySelector("#metricUsers").textContent = "-";
-  document.querySelector("#metricSales").textContent = "-";
-  document.querySelector("#metricPendingOrders").textContent = "-";
-  document.querySelector("#metricPendingRewards").textContent = "-";
-  document.querySelector("#metricWithdraws").textContent = "-";
-  document.querySelector("#metricReadiness").textContent = "-";
-  document.querySelector("#adminPlanList").innerHTML = `<article class="plan-card"><strong>后台已锁定</strong><span>请使用管理员 Google 邮箱登录。</span></article>`;
-  document.querySelector("#adminUserTable").innerHTML = `<tr><td colspan="12">无管理员权限</td></tr>`;
-  document.querySelector("#repeatCreditLogTable").innerHTML = `<tr><td colspan="6">无管理员权限</td></tr>`;
-  document.querySelector("#adminOrderTable").innerHTML = `<tr><td colspan="10">无管理员权限</td></tr>`;
-  document.querySelector("#adminRewardTable").innerHTML = `<tr><td colspan="8">无管理员权限</td></tr>`;
-  document.querySelector("#adminWithdrawTable").innerHTML = `<tr><td colspan="8">无管理员权限</td></tr>`;
-  if (document.querySelector("#adminRiskList")) {
-    document.querySelector("#adminRiskList").innerHTML = `<article class="risk-card"><strong>后台已锁定</strong><span>请使用管理员 Google 邮箱登录后查看风控规则。</span></article>`;
+function exportAuditLogs() {
+  if (!requireAdmin()) return;
+  if (!auditLogs.length) {
+    alert("还没有审计日志可以导出。");
+    return;
   }
-  if (document.querySelector("#adminLogTable")) {
-    document.querySelector("#adminLogTable").innerHTML = `<tr><td colspan="5">无管理员权限</td></tr>`;
+  const rows = [["时间", "动作", "操作者", "操作者邮箱", "分行", "详情"]];
+  for (const log of auditLogs) {
+    rows.push([
+      new Date(log.createdAt).toLocaleString(),
+      log.action,
+      log.actor?.name || "",
+      log.actor?.email || "",
+      log.branchName || getBranchName(log.branchId || "hq"),
+      JSON.stringify(log.detail || {})
+    ]);
   }
+  downloadCsv(`audit-logs-${new Date().toISOString().slice(0, 10)}.csv`, rows);
 }
 
-function requireAdmin() {
-  if (isAdmin()) return true;
-  toast("只有管理员可以操作后台");
-  return false;
+function exportStockAdjustments() {
+  if (!requireAdmin()) return;
+  if (!stockAdjustments.length) {
+    alert("还没有库存流水可以导出。");
+    return;
+  }
+  const rows = [["时间", "商品", "SKU", "分行", "调整前", "调整后", "变化", "原因", "操作者", "操作者邮箱"]];
+  for (const adjustment of stockAdjustments) {
+    rows.push([
+      new Date(adjustment.createdAt).toLocaleString(),
+      adjustment.productName || "",
+      adjustment.barcode || "",
+      adjustment.branchName || getBranchName(adjustment.branchId || "hq"),
+      adjustment.beforeStock,
+      adjustment.afterStock,
+      adjustment.delta,
+      adjustment.reason || "",
+      adjustment.operator?.name || "",
+      adjustment.operator?.email || ""
+    ]);
+  }
+  downloadCsv(`stock-adjustments-${new Date().toISOString().slice(0, 10)}.csv`, rows);
 }
 
-function renderAdminActionButtons() {
-  const canAdmin = isAdmin();
-  const exportBtn = document.querySelector("#exportBtn");
-  const restoreBackupBtn = document.querySelector("#restoreBackupBtn");
-  const clearTestDataBtn = document.querySelector("#clearTestDataBtn");
-  const resetBtn = document.querySelector("#resetBtn");
-  if (exportBtn) {
-    exportBtn.disabled = !canAdmin;
-    exportBtn.title = canAdmin ? "导出完整 JSON 备份包" : "请使用管理员账号登录";
+function exportShifts() {
+  if (!requireAdmin()) return;
+  if (!shifts.length) {
+    alert("还没有交班记录可以导出。");
+    return;
   }
-  if (restoreBackupBtn) {
-    restoreBackupBtn.disabled = !canAdmin;
-    restoreBackupBtn.title = canAdmin ? "从系统导出的 JSON 备份包恢复数据" : "请使用管理员账号登录";
+  const rows = [["班次号", "分行", "操作员", "核对 / 结班人", "结班人邮箱", "开始时间", "结束时间", "订单数", "总金额", "付款汇总", "开班备用金", "现金销售", "其他现金存入", "现金取出", "应有现金", "实点现金", "现金差额", "作废订单", "本机待同步", "库存待复核", "SimplePay待确认", "联盟待关联", "交班备注"]];
+  for (const shift of shifts) {
+    const reconciledBy = shift.reconciliation?.reconciledBy || shift.closedBy || {};
+    rows.push([
+      shift.id,
+      shift.branchName || getBranchName(shift.branchId || "hq"),
+      shift.operatorName || "",
+      reconciledBy.name || "",
+      reconciledBy.email || "",
+      shift.openedAt ? new Date(shift.openedAt).toLocaleString() : "",
+      shift.closedAt ? new Date(shift.closedAt).toLocaleString() : "",
+      shift.summary?.orders || 0,
+      shift.summary?.total || 0,
+      (shift.summary?.payments || []).map((item) => `${item.method}: ${money(item.total)} (${item.orders}单)`).join("; "),
+      shift.reconciliation?.openingCash ?? shift.openingCash ?? "",
+      shift.reconciliation?.cashSales ?? shift.summary?.cashSales ?? "",
+      shift.reconciliation?.cashIn ?? shift.cashIn ?? "",
+      shift.reconciliation?.cashOut ?? shift.cashOut ?? "",
+      shift.reconciliation?.expectedCash ?? "",
+      shift.reconciliation?.countedCash ?? "",
+      shift.reconciliation?.cashDifference ?? "",
+      shift.reconciliation?.voidedOrders ?? shift.summary?.voidedOrders ?? "",
+      shift.reconciliation?.pendingSyncTotal ?? "",
+      shift.reconciliation?.inventoryReviewPending ?? shift.summary?.inventoryReviewPending ?? "",
+      shift.reconciliation?.simplePayPending ?? "",
+      shift.reconciliation?.affiliatePending ?? "",
+      shift.reconciliation?.note || ""
+    ]);
   }
-  if (clearTestDataBtn) {
-    clearTestDataBtn.disabled = !canAdmin;
-    clearTestDataBtn.title = canAdmin ? "清空测试订单、奖励、提现和流水，保留用户与配套" : "请使用管理员账号登录";
-  }
-  if (resetBtn) {
-    resetBtn.disabled = !canAdmin;
-    resetBtn.title = canAdmin ? "清空演示订单、奖励、提现和流水，并移除旧演示用户" : "请使用管理员账号登录";
-  }
+  downloadCsv(`shifts-${new Date().toISOString().slice(0, 10)}.csv`, rows);
 }
 
-function renderAll() {
-  if (!state) return;
-  updateAuthStatusClean();
-  renderAppVersion();
-  renderAdminActionButtons();
-  if (!firebaseUser) clearSignedOutSensitiveFields();
-  renderMember();
-  if (isAdmin()) {
-    renderAdmin();
-  } else {
-    renderAdminLocked();
-  }
-}
-
-document.querySelectorAll("[data-view]").forEach((button) => {
-  button.addEventListener("click", () => {
-    if (button.dataset.view === "adminView" && !requireAdmin()) return;
-    document.querySelectorAll("[data-view]").forEach((item) => item.classList.remove("active"));
-    document.querySelectorAll(".view").forEach((item) => item.classList.remove("active"));
-    button.classList.add("active");
-    document.querySelector(`#${button.dataset.view}`).classList.add("active");
-  });
-});
-
-function openTab(tabId) {
-  const panel = document.querySelector(`#${tabId}`);
-  const button = document.querySelector(`.tab[data-tab="${tabId}"]`);
-  if (!panel || !button) return;
-  const view = panel.closest(".view");
-  view.querySelectorAll(".tab").forEach((item) => item.classList.remove("active"));
-  view.querySelectorAll(".tab-panel").forEach((item) => item.classList.remove("active"));
-  button.classList.add("active");
-  panel.classList.add("active");
-}
-
-function applyTodoFocus(focus) {
-  if (!focus) return;
-  const setValue = (selector, value) => {
-    const input = document.querySelector(selector);
-    if (input) input.value = value;
+function exportBackup() {
+  if (!requireAdmin()) return;
+  const backup = {
+    schemaVersion: 2,
+    appVersion: APP_VERSION,
+    exportedAt: new Date().toISOString(),
+    settings: appSettings,
+    branches,
+    authorizedUsers,
+    products,
+    sales,
+    pendingSales,
+    pendingSaleUpdates,
+    pendingProducts,
+    pendingStockAdjustments,
+    pendingAuditLogs,
+    pendingManagement,
+    stockAdjustments,
+    auditLogs,
+    currentShift,
+    shifts,
+    storageRecovery: getStorageRecoveryEntries(),
+    preferences: {
+      paymentMethod: preferredPaymentMethod
+    }
   };
-  if (focus === "pendingOrders") {
-    setValue("#orderStatusFilter", "pending");
-    setValue("#orderTypeFilter", "all");
-    setValue("#orderProofFilter", "all");
-    setValue("#orderRiskFilter", "all");
-    setValue("#orderSearchInput", "");
-  }
-  if (focus === "paidOrders") {
-    setValue("#orderStatusFilter", "paid");
-    setValue("#orderTypeFilter", "all");
-    setValue("#orderProofFilter", "all");
-    setValue("#orderRiskFilter", "all");
-    setValue("#orderSearchInput", "");
-  }
-  if (focus === "failedProofs") {
-    setValue("#orderStatusFilter", "pending");
-    setValue("#orderTypeFilter", "all");
-    setValue("#orderProofFilter", "failed");
-    setValue("#orderRiskFilter", "all");
-    setValue("#orderSearchInput", "");
-  }
-  if (focus === "orderRisks") {
-    setValue("#orderStatusFilter", "all");
-    setValue("#orderTypeFilter", "all");
-    setValue("#orderProofFilter", "all");
-    setValue("#orderRiskFilter", "risk");
-    setValue("#orderSearchInput", "");
-  }
-  if (focus === "pendingRewards") {
-    setValue("#rewardStatusFilter", "pending");
-    setValue("#rewardTypeFilter", "all");
-    setValue("#rewardRiskFilter", "all");
-    setValue("#rewardSearchInput", "");
-  }
-  if (focus === "dueRewards") {
-    setValue("#rewardStatusFilter", "due");
-    setValue("#rewardTypeFilter", "all");
-    setValue("#rewardRiskFilter", "all");
-    setValue("#rewardSearchInput", "");
-  }
-  if (focus === "rewardIssues") {
-    setValue("#rewardStatusFilter", "all");
-    setValue("#rewardTypeFilter", "all");
-    setValue("#rewardRiskFilter", "risk");
-    setValue("#rewardSearchInput", "");
-  }
-  if (focus === "pendingWithdraws") {
-    setValue("#withdrawStatusFilter", "pending");
-    setValue("#withdrawRiskFilter", "all");
-    setValue("#withdrawSearchInput", "");
-    setValue("#withdrawMinAmount", "");
-  }
-  if (focus === "withdrawRisks") {
-    setValue("#withdrawStatusFilter", "all");
-    setValue("#withdrawRiskFilter", "risk");
-    setValue("#withdrawSearchInput", "");
-    setValue("#withdrawMinAmount", "");
-  }
-  if (focus === "payoutRiskUsers") {
-    setValue("#userPackageFilter", "all");
-    setValue("#userAccountFilter", "all");
-    setValue("#userPayoutRiskFilter", "shared");
-    setValue("#userProfileFilter", "all");
-    setValue("#userSearchInput", "");
-  }
-  if (focus === "incompleteProfiles") {
-    setValue("#userPackageFilter", "all");
-    setValue("#userAccountFilter", "all");
-    setValue("#userPayoutRiskFilter", "all");
-    setValue("#userProfileFilter", "incomplete");
-    setValue("#userSearchInput", "");
-  }
-  if (focus === "allUsers") {
-    setValue("#userPackageFilter", "all");
-    setValue("#userAccountFilter", "all");
-    setValue("#userPayoutRiskFilter", "all");
-    setValue("#userProfileFilter", "all");
-    setValue("#userSearchInput", "");
-  }
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `simple-pos-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
-function scrollToAdminFocus(tabId, focus) {
-  const panel = document.querySelector(`#${tabId}`);
-  if (!panel) return;
-  const targets = {
-    pendingOrders: "#adminOrderTable",
-    paidOrders: "#adminOrderTable",
-    failedProofs: "#adminOrderTable",
-    orderRisks: "#adminOrderTable",
-    pendingRewards: "#adminRewardTable",
-    dueRewards: "#adminRewardTable",
-    pendingWithdraws: "#adminWithdrawTable",
-    withdrawRisks: "#adminWithdrawTable",
-    payoutRiskUsers: "#adminUserTable",
-    incompleteProfiles: "#adminUserTable",
-    allUsers: "#adminUserTable",
-    duplicateOrders: "#adminRiskList",
-    rewardIssues: "#adminRewardTable",
-    integrityIssues: "#adminRiskList",
-    readiness: "#adminRiskList",
+function validateBackupData(backup) {
+  const issues = [];
+  if (!backup || typeof backup !== "object" || Array.isArray(backup)) {
+    return { ok: false, issues: ["备份根内容不是对象"], summary: null };
+  }
+  for (const field of ["branches", "products", "sales"]) {
+    if (!Array.isArray(backup[field])) issues.push(`${field} 必须是数组`);
+  }
+  if (issues.length) return { ok: false, issues, summary: null };
+
+  const branchIds = new Set();
+  for (const branch of backup.branches) {
+    if (!branch?.id || !branch?.name) {
+      issues.push("存在缺少 ID 或名称的分行");
+      continue;
+    }
+    if (branchIds.has(branch.id)) issues.push(`分行 ID 重复：${branch.id}`);
+    branchIds.add(branch.id);
+  }
+  if (!branchIds.size) issues.push("备份至少需要一个分行");
+
+  const productIds = new Set();
+  for (const product of backup.products) {
+    if (!product?.id || !product?.name || !Number.isFinite(Number(product.price))) {
+      issues.push(`商品资料异常：${product?.id || product?.name || "未知商品"}`);
+      continue;
+    }
+    if (productIds.has(product.id)) issues.push(`商品 ID 重复：${product.id}`);
+    productIds.add(product.id);
+    for (const [branchId, stock] of Object.entries(product.branchStock || {})) {
+      if (!branchIds.has(branchId) || !Number.isFinite(Number(stock)) || Number(stock) < 0) {
+        issues.push(`商品 ${product.name} 的 ${branchId} 库存无效`);
+      }
+    }
+  }
+
+  const saleIds = new Set();
+  for (const sale of backup.sales) {
+    const branchId = sale?.branchId || "hq";
+    if (!sale?.id || !Array.isArray(sale.items) || !Number.isFinite(Number(sale.total))) {
+      issues.push(`订单资料异常：${sale?.id || "未知订单"}`);
+      continue;
+    }
+    if (saleIds.has(sale.id)) issues.push(`订单号重复：${sale.id}`);
+    saleIds.add(sale.id);
+    if (!branchIds.has(branchId)) issues.push(`订单 ${sale.id} 的分行不存在：${branchId}`);
+    if (!sale.createdAt || Number.isNaN(new Date(sale.createdAt).getTime())) issues.push(`订单 ${sale.id} 时间无效`);
+    for (const item of sale.items) {
+      if (!item?.id || !Number.isFinite(Number(item.qty)) || Number(item.qty) <= 0) {
+        issues.push(`订单 ${sale.id} 含有无效商品明细`);
+      }
+    }
+  }
+
+  const users = Array.isArray(backup.authorizedUsers) ? backup.authorizedUsers : [];
+  for (const user of users) {
+    if (!user?.email || !branchIds.has(user.branchId || "hq")) {
+      issues.push(`授权用户资料异常：${user?.email || "未知用户"}`);
+    }
+  }
+  if (backup.currentShift && (!backup.currentShift.id || !branchIds.has(backup.currentShift.branchId || "hq"))) {
+    issues.push("进行中班次资料异常");
+  }
+
+  const pendingCount = [
+    backup.pendingSales,
+    backup.pendingSaleUpdates,
+    backup.pendingProducts,
+    backup.pendingStockAdjustments,
+    backup.pendingAuditLogs
+  ].reduce((count, items) => count + (Array.isArray(items) ? items.length : 0), 0)
+    + (Array.isArray(backup.pendingManagement?.branches) ? backup.pendingManagement.branches.length : 0)
+    + (Array.isArray(backup.pendingManagement?.users) ? backup.pendingManagement.users.length : 0)
+    + (backup.pendingManagement?.settings ? 1 : 0);
+
+  return {
+    ok: issues.length === 0,
+    issues,
+    summary: {
+      exportedAt: backup.exportedAt || "",
+      branches: backup.branches.length,
+      users: users.length,
+      products: backup.products.length,
+      sales: backup.sales.length,
+      shifts: Array.isArray(backup.shifts) ? backup.shifts.length : 0,
+      pendingCount
+    }
   };
-  const target = document.querySelector(targets[focus]) || panel;
-  const scrollTarget = target.closest(".table-wrap") || target.closest(".panel") || target;
-  scrollTarget.scrollIntoView({ behavior: "smooth", block: "start" });
-  scrollTarget.classList.remove("attention-pulse");
-  window.setTimeout(() => scrollTarget.classList.add("attention-pulse"), 0);
-  window.setTimeout(() => scrollTarget.classList.remove("attention-pulse"), 1400);
-  panel.querySelector(".filter-bar input, .filter-bar select")?.focus({ preventScroll: true });
 }
 
-document.querySelectorAll(".tabs").forEach((tabs) => {
-  tabs.addEventListener("click", (event) => {
-    const button = event.target.closest(".tab");
-    if (!button) return;
-    openTab(button.dataset.tab);
-  });
-});
-
-document.addEventListener("click", (event) => {
-  const openAdminTab = event.target.closest("[data-open-admin-tab]");
-  if (!openAdminTab) return;
-  event.preventDefault();
-  openTab(openAdminTab.dataset.openAdminTab);
-  applyTodoFocus(openAdminTab.dataset.todoFocus);
-  renderAll();
-  window.setTimeout(() => {
-    scrollToAdminFocus(openAdminTab.dataset.openAdminTab, openAdminTab.dataset.todoFocus);
-  }, 0);
-});
-
-document.addEventListener("click", (event) => {
-  const openMemberTab = event.target.closest("[data-open-member-tab]");
-  if (!openMemberTab) return;
-  openTab(openMemberTab.dataset.openMemberTab);
-});
-
-document.addEventListener("change", (event) => {
-  const checkbox = event.target.closest("[data-test-check]");
-  if (!checkbox) return;
-  const checked = testChecklistState();
-  if (checkbox.checked) {
-    checked[checkbox.dataset.testCheck] = {
-      done: true,
-      completedAt: new Date().toISOString(),
-    };
-  } else {
-    delete checked[checkbox.dataset.testCheck];
-  }
-  saveTestChecklistState(checked);
-  renderAdminRiskRules();
-});
-
-document.addEventListener("click", (event) => {
-  if (event.target?.id === "exportTestChecklistBtn") {
-    exportTestChecklistReport();
-    toast("测试清单已导出");
-    return;
-  }
-  if (event.target?.id !== "resetTestChecklistBtn") return;
-  saveTestChecklistState({});
-  renderAdminRiskRules();
-  toast("测试清单已重置");
-});
-
-document.addEventListener("change", (event) => {
-  const checkbox = event.target.closest("[data-deploy-check]");
-  if (!checkbox) return;
-  const checked = deployChecklistState();
-  if (checkbox.checked) {
-    checked[checkbox.dataset.deployCheck] = {
-      done: true,
-      completedAt: new Date().toISOString(),
-    };
-  } else {
-    delete checked[checkbox.dataset.deployCheck];
-  }
-  saveDeployChecklistState(checked);
-  renderAdminRiskRules();
-});
-
-document.addEventListener("click", (event) => {
-  if (event.target?.id === "exportDeployChecklistBtn") {
-    exportDeployChecklistReport();
-    toast("部署清单已导出");
-    return;
-  }
-  if (event.target?.id !== "resetDeployChecklistBtn") return;
-  saveDeployChecklistState({});
-  renderAdminRiskRules();
-  toast("部署清单已重置");
-});
-
-document.addEventListener("click", (event) => {
-  const action = event.target.closest("[data-member-action]");
-  if (!action || action.dataset.memberAction !== "profile") return;
-  const form = document.querySelector("#profileForm");
-  form?.scrollIntoView({ behavior: "smooth", block: "center" });
-  const firstEmpty = [...(form?.querySelectorAll("input") || [])].find((input) => !input.value.trim());
-  firstEmpty?.focus();
-});
-
-["#orderStatusFilter", "#orderTypeFilter", "#orderProofFilter", "#orderRiskFilter", "#rewardStatusFilter", "#rewardTypeFilter", "#rewardRiskFilter", "#withdrawStatusFilter", "#withdrawRiskFilter", "#userPackageFilter", "#userAccountFilter", "#userPayoutRiskFilter", "#userProfileFilter", "#logActionFilter", "#logLimitFilter"].forEach((selector) => {
-  document.querySelector(selector)?.addEventListener("change", renderAll);
-});
-
-document.querySelector("#userSearchInput")?.addEventListener("input", renderAll);
-document.querySelector("#orderSearchInput")?.addEventListener("input", renderAll);
-document.querySelector("#rewardSearchInput")?.addEventListener("input", renderAll);
-document.querySelector("#withdrawSearchInput")?.addEventListener("input", renderAll);
-document.querySelector("#withdrawMinAmount")?.addEventListener("input", renderAll);
-document.querySelector("#logSearchInput")?.addEventListener("input", renderAll);
-
-document.addEventListener("input", (event) => {
-  if (event.target?.id === "repeatLogSearchInput") renderAll();
-});
-
-document.addEventListener("change", (event) => {
-  if (["repeatLogUserFilter", "repeatLogReasonFilter"].includes(event.target?.id)) renderAll();
-});
-
-document.addEventListener("click", (event) => {
-  if (event.target?.id !== "clearRepeatLogFiltersBtn") return;
-  const searchInput = document.querySelector("#repeatLogSearchInput");
-  const userFilter = document.querySelector("#repeatLogUserFilter");
-  const reasonFilter = document.querySelector("#repeatLogReasonFilter");
-  if (searchInput) searchInput.value = "";
-  if (userFilter) userFilter.value = "all";
-  if (reasonFilter) reasonFilter.value = "all";
-  renderAll();
-});
-
-document.querySelector("#clearUserFiltersBtn")?.addEventListener("click", () => {
-  const searchInput = document.querySelector("#userSearchInput");
-  const packageFilter = document.querySelector("#userPackageFilter");
-  const accountFilter = document.querySelector("#userAccountFilter");
-  const payoutRiskFilter = document.querySelector("#userPayoutRiskFilter");
-  const profileFilter = document.querySelector("#userProfileFilter");
-  if (searchInput) searchInput.value = "";
-  if (packageFilter) packageFilter.value = "all";
-  if (accountFilter) accountFilter.value = "all";
-  if (payoutRiskFilter) payoutRiskFilter.value = "all";
-  if (profileFilter) profileFilter.value = "all";
-  renderAll();
-});
-
-document.querySelector("#clearOrderFiltersBtn")?.addEventListener("click", () => {
-  const searchInput = document.querySelector("#orderSearchInput");
-  const statusFilter = document.querySelector("#orderStatusFilter");
-  const typeFilter = document.querySelector("#orderTypeFilter");
-  const proofFilter = document.querySelector("#orderProofFilter");
-  const riskFilter = document.querySelector("#orderRiskFilter");
-  if (searchInput) searchInput.value = "";
-  if (statusFilter) statusFilter.value = "all";
-  if (typeFilter) typeFilter.value = "all";
-  if (proofFilter) proofFilter.value = "all";
-  if (riskFilter) riskFilter.value = "all";
-  renderAll();
-});
-
-document.querySelector("#clearRewardFiltersBtn")?.addEventListener("click", () => {
-  const searchInput = document.querySelector("#rewardSearchInput");
-  const statusFilter = document.querySelector("#rewardStatusFilter");
-  const typeFilter = document.querySelector("#rewardTypeFilter");
-  const riskFilter = document.querySelector("#rewardRiskFilter");
-  if (searchInput) searchInput.value = "";
-  if (statusFilter) statusFilter.value = "all";
-  if (typeFilter) typeFilter.value = "all";
-  if (riskFilter) riskFilter.value = "all";
-  renderAll();
-});
-
-document.querySelector("#clearWithdrawFiltersBtn")?.addEventListener("click", () => {
-  const searchInput = document.querySelector("#withdrawSearchInput");
-  const statusFilter = document.querySelector("#withdrawStatusFilter");
-  const riskFilter = document.querySelector("#withdrawRiskFilter");
-  const minAmountInput = document.querySelector("#withdrawMinAmount");
-  if (searchInput) searchInput.value = "";
-  if (statusFilter) statusFilter.value = "all";
-  if (riskFilter) riskFilter.value = "all";
-  if (minAmountInput) minAmountInput.value = "";
-  renderAll();
-});
-
-document.querySelector("#clearLogFiltersBtn")?.addEventListener("click", () => {
-  const searchInput = document.querySelector("#logSearchInput");
-  const actionFilter = document.querySelector("#logActionFilter");
-  const limitFilter = document.querySelector("#logLimitFilter");
-  if (searchInput) searchInput.value = "";
-  if (actionFilter) actionFilter.value = "all";
-  if (limitFilter) limitFilter.value = "200";
-  renderAll();
-});
-
-document.querySelector("#firebaseLoginBtn").addEventListener("click", async () => {
-  try {
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: "select_account" });
-    await signInWithPopup(auth, provider);
-  } catch (error) {
-    console.error(error);
-    toast("Google 登录失败，请检查 Firebase 授权域名");
-  }
-});
-
-document.querySelector("#firebaseLogoutBtn").addEventListener("click", async () => {
-  await signOut(auth);
-  toast("已退出登录");
-});
-
-document.querySelector("#exportMyRecordsBtn")?.addEventListener("click", () => {
-  if (!firebaseUser) return toast("请先使用 Google 登录");
-  exportMyRecords(currentUser());
-  toast("我的记录已导出");
-});
-
-document.querySelector("#testFirestoreBtn").addEventListener("click", async () => {
-  if (!firebaseUser) return toast("请先使用 Google 登录");
-  state.lastSyncTestAt = new Date().toISOString();
-  await saveState();
-  renderAll();
-  toast(cloudAvailable ? "云端保存成功" : "云端保存失败，请看状态提示");
-});
-
-document.addEventListener("click", async (event) => {
-  if (event.target?.id !== "testStorageBtn") return;
-  if (!firebaseUser) return toast("请先使用 Google 登录");
-  const proofFile = document.querySelector("#paymentInfoForm [name='paymentProof']")?.files[0];
-  if (!proofFile) return toast("请先选择一张付款证明");
-  try {
-    toast("正在测试 Storage 上传...");
-    await withTimeout(uploadPaymentProof(proofFile, `TEST-${Date.now()}`), PROOF_UPLOAD_TIMEOUT_MS, "付款证明上传超时，请检查 Firebase Storage 是否已启用");
-    toast("Storage 上传成功");
-  } catch (error) {
-    toast(uploadErrorMessage(error));
-  }
-});
-
-document.querySelector("#exportUsersBtn")?.addEventListener("click", () => {
-  if (!requireAdmin()) return;
-  downloadCsv(
-    `amsystem-users-${exportStamp()}.csv`,
-    ["用户ID", "姓名", "账号", "手机", "邀请码", "推荐人", "积分", "推荐名额记录", "直接推荐数", "奖励池资格", "默认收款方式", "默认收款账号", "资料状态", "缺失资料", "共享账号数量", "共享账号用户", "配套状态", "账号状态"],
-    filteredUsers().map((user) => {
-      const referrer = findUser(user.referrerId);
-      const [, statusLabel] = packageStatus(user);
-      const sharedUsers = sharedWithdrawAccountUsers(user.withdrawAccount, user.id);
-      const missingFields = profileMissingFields(user);
-      return [
-        user.id,
-        user.name,
-        user.account,
-        user.phone || "",
-        user.inviteCode,
-        referrer?.name || "",
-        user.points,
-        user.slots || 0,
-        directReferralCount(user.id),
-        user.repeatCredits || 0,
-        user.withdrawMethod || "",
-        user.withdrawAccount || "",
-        missingFields.length ? "资料不完整" : "资料完整",
-        missingFields.join("；"),
-        sharedUsers.length,
-        sharedUsers.map((item) => `${item.name} / ${item.account}`).join("；"),
-        statusLabel,
-        user.frozen ? "已冻结" : "正常",
-      ];
-    })
-  );
-});
-
-function referralExportRows() {
-  const usersById = new Map((state.users || []).map((user) => [user.id, user]));
-  const rows = new Map();
-  (state.users || []).filter((user) => user.referrerId).forEach((user) => {
-    const referral = referralDocForUser(user);
-    rows.set(referral.id, referral);
-  });
-  (state.referrals || []).forEach((referral) => {
-    if (!referral.referrerId || !referral.inviteeId) return;
-    const key = referral.id || `${referral.referrerId}_${referral.inviteeId}`;
-    rows.set(key, { ...(rows.get(key) || {}), ...referral, id: key });
-  });
-  return [...rows.values()].map((referral) => {
-    const referrer = usersById.get(referral.referrerId);
-    const invitee = usersById.get(referral.inviteeId);
-    const [, statusLabel] = invitee ? packageStatus(invitee) : ["neutral", "用户不存在"];
-    const paidTotal = (state.orders || [])
-      .filter((order) => order.userId === referral.inviteeId && order.status === "paid")
-      .reduce((sum, order) => sum + Number(order.amount || 0), 0);
-    return [
-      referral.id,
-      referral.referrerId,
-      referrer?.name || referral.referrerName || "",
-      referrer?.account || "",
-      referrer?.inviteCode || "",
-      referral.inviteeId,
-      invitee?.name || referral.inviteeName || "",
-      invitee?.account || referral.inviteeAccount || "",
-      invitee?.inviteCode || "",
-      statusLabel,
-      paidTotal,
-      invitee ? "是" : "否",
-      referral.createdAt || "",
-    ];
-  });
+function buildRestoredState(backup) {
+  return {
+    branches: structuredClone(backup.branches),
+    authorizedUsers: structuredClone(Array.isArray(backup.authorizedUsers) ? backup.authorizedUsers : defaultAuthorizedUsers),
+    products: structuredClone(backup.products),
+    sales: backup.sales.map(normalizeSaleExternalReferences),
+    pendingSales: (Array.isArray(backup.pendingSales) ? backup.pendingSales : []).map(normalizeSaleExternalReferences),
+    pendingSaleUpdates: (Array.isArray(backup.pendingSaleUpdates) ? backup.pendingSaleUpdates : []).map(normalizeSaleExternalReferences),
+    pendingProducts: structuredClone(Array.isArray(backup.pendingProducts) ? backup.pendingProducts : []),
+    pendingStockAdjustments: structuredClone(Array.isArray(backup.pendingStockAdjustments) ? backup.pendingStockAdjustments : []),
+    pendingAuditLogs: structuredClone(Array.isArray(backup.pendingAuditLogs) ? backup.pendingAuditLogs : []),
+    pendingManagement: normalizePendingManagement(backup.pendingManagement),
+    stockAdjustments: structuredClone(Array.isArray(backup.stockAdjustments) ? backup.stockAdjustments : []),
+    auditLogs: structuredClone(Array.isArray(backup.auditLogs) ? backup.auditLogs : []),
+    currentShift: backup.currentShift ? structuredClone(backup.currentShift) : null,
+    shifts: structuredClone(Array.isArray(backup.shifts) ? backup.shifts : []),
+    appSettings: { ...defaultSettings, ...(backup.settings || {}) },
+    paymentMethod: backup.preferences?.paymentMethod || preferredPaymentMethod
+  };
 }
 
-document.querySelector("#exportReferralsBtn")?.addEventListener("click", async () => {
+function restoreBackupFile(file) {
   if (!requireAdmin()) return;
-  const rows = referralExportRows();
-  downloadCsv(
-    `amsystem-referrals-${exportStamp()}.csv`,
-    ["关系ID", "推荐人ID", "推荐人", "推荐人账号", "推荐人邀请码", "下线ID", "下线", "下线账号", "下线邀请码", "下线配套状态", "下线累计充值", "下线用户是否存在", "绑定时间"],
-    rows
-  );
-  addAdminLog("导出推荐关系", "用户管理", `导出 ${rows.length} 条推荐关系`);
-  await saveState();
-  renderAll();
-  toast("推荐关系已导出");
-});
-
-document.querySelector("#exportPlansBtn")?.addEventListener("click", async () => {
-  if (!requireAdmin()) return;
-  downloadCsv(
-    `amsystem-plans-${exportStamp()}.csv`,
-    ["配套ID", "配套名称", "金额", "单位金额", "单位数", "发放积分", "推荐名额", "奖励池资格记录", "复购冷却小时", "有效期天数", "推荐奖励%", "下线复购奖励%", "奖励池奖励%", "是否已有订单使用"],
-    (state.plans || []).map((plan) => [
-      plan.id,
-      plan.name,
-      plan.amount,
-      PACKAGE_UNIT_AMOUNT,
-      isValidPackageAmount(plan.amount) ? packageUnits(plan.amount) : "",
-      plan.points,
-      plan.slots,
-      planRepeatCredits(plan),
-      planRepeatCooldownHours(plan),
-      plan.validDays,
-      plan.firstRate,
-      planDirectRepeatRate(plan),
-      planPoolRepeatRate(plan),
-      planUsed(plan.id) ? "是" : "否",
-    ])
-  );
-  addAdminLog("导出配套规则", "配套设置", `导出 ${state.plans.length} 个配套`);
-  await saveState();
-  renderAll();
-  toast("配套规则已导出");
-});
-
-document.addEventListener("click", (event) => {
-  if (event.target?.id !== "exportRepeatCreditLogsBtn") return;
-  if (!requireAdmin()) return;
-  const logs = filteredRepeatCreditLogs();
-  downloadCsv(
-    `amsystem-repeat-credit-logs-${exportStamp()}.csv`,
-    ["流水ID", "时间", "用户ID", "用户", "账号", "变动", "余额", "原因", "来源", "备注"],
-    logs.map((log) => {
-      const user = findUser(log.userId);
-      return [
-        log.id,
-        log.createdAt,
-        log.userId,
-        user?.name || "",
-        user?.account || "",
-        log.change || 0,
-        log.balance || 0,
-        repeatCreditReasonText(log.reason),
-        log.source || "",
-        log.note || "",
-      ];
-    })
-  );
-});
-
-document.querySelector("#exportOrdersBtn")?.addEventListener("click", () => {
-  if (!requireAdmin()) return;
-  downloadCsv(
-    `amsystem-orders-${exportStamp()}.csv`,
-    ["订单号", "用户", "配套", "类型", "金额", "锁定积分", "锁定推荐名额记录", "锁定有效天数", "锁定推荐奖励比例", "锁定下线复购比例", "锁定奖励池比例", "锁定奖励池资格记录", "锁定冷却小时", "付款方式", "付款参考号", "凭证状态", "风险提示", "状态", "处理备注", "处理结果", "申请时间", "确认时间", "取消时间"],
-    filteredOrders().map((order) => {
-      const user = findUser(order.userId);
-      const plan = orderPlan(order);
-      return [
-        order.id,
-        user?.name || "",
-        plan?.name || "",
-        order.type,
-        order.amount,
-        plan?.points || 0,
-        plan?.slots || 0,
-        plan?.validDays || 0,
-        plan?.firstRate || 0,
-        plan ? planDirectRepeatRate(plan) : 0,
-        plan ? planPoolRepeatRate(plan) : 0,
-        plan ? planRepeatCredits(plan) : 0,
-        plan ? planRepeatCooldownHours(plan) : 0,
-        paymentMethodText(order.paymentMethod),
-        order.paymentRef || "",
-        proofStatusText(order),
-        orderRiskLabels(order).join("；"),
-        labelStatus(order.status),
-        order.reviewNote || "",
-        order.confirmSummary || "",
-        order.createdAt,
-        order.reviewedAt || order.paidAt || "",
-        order.cancelledAt || "",
-      ];
-    })
-  );
-});
-
-document.querySelector("#exportRewardsBtn")?.addEventListener("click", () => {
-  if (!requireAdmin()) return;
-  downloadCsv(
-    `amsystem-rewards-${exportStamp()}.csv`,
-    ["奖励ID", "奖励人", "来源用户", "订单", "订单金额", "配套快照", "类型", "比例", "金额", "按比例应得", "计算差额", "风控风险", "状态", "可确认日", "审核备注", "审核时间"],
-    filteredRewards().map((reward) => {
-      const user = findUser(reward.userId);
-      const sourceUser = findUser(reward.sourceUserId);
-      const order = (state.orders || []).find((item) => item.id === reward.orderId);
-      const plan = order ? orderPlan(order) : null;
-      const expectedAmount = order ? +(Number(order.amount || 0) * (Number(reward.rate || 0) / 100)).toFixed(2) : 0;
-      const amountGap = order ? Number((Number(reward.amount || 0) - expectedAmount).toFixed(2)) : 0;
-      const risks = rewardRiskLabels(reward).join("；");
-      return [
-        reward.id,
-        user?.name || "",
-        sourceUser?.name || "",
-        reward.orderId,
-        order?.amount || "",
-        plan ? `${plan.name} / ${orderPlanSummary(plan)}` : "",
-        rewardTypeText(reward),
-        reward.rate,
-        rewardAmountText(reward),
-        order ? expectedAmount : "",
-        order ? amountGap : "",
-        risks,
-        labelStatus(reward.status),
-        rewardNextDateText(reward),
-        reward.reviewNote || "",
-        reward.reviewedAt || "",
-      ];
-    })
-  );
-});
-
-document.querySelector("#exportWithdrawsBtn")?.addEventListener("click", () => {
-  if (!requireAdmin()) return;
-  downloadCsv(
-    `amsystem-withdraws-${exportStamp()}.csv`,
-    ["提现ID", "用户", "金额", "来源", "方式", "账号", "推荐奖励可提现", "复购奖励已释放", "复购奖励待释放", "已申请/处理中", "当前可提现余额", "风险提示", "状态", "审核备注", "申请时间", "审核时间", "打款时间"],
-    filteredWithdraws().map((item) => {
-      const user = findUser(item.userId);
-      const breakdown = user ? withdrawBreakdown(user.id) : {};
-      return [
-        item.id,
-        user?.name || "",
-        item.amount,
-        item.source === "reward" ? "奖励提现" : item.source || "",
-        item.method,
-        item.account,
-        breakdown.first || 0,
-        breakdown.repeatReleased || 0,
-        breakdown.pendingRelease || 0,
-        breakdown.requested || 0,
-        breakdown.available || 0,
-        withdrawRiskLabels(item).join("；"),
-        labelStatus(item.status),
-        item.reviewNote || "",
-        item.createdAt,
-        item.reviewedAt || "",
-        item.paidAt || "",
-      ];
-    })
-  );
-});
-
-document.querySelector("#exportLogsBtn")?.addEventListener("click", () => {
-  if (!requireAdmin()) return;
-  downloadCsv(
-    `amsystem-admin-logs-${exportStamp()}.csv`,
-    ["日志ID", "时间", "管理员", "动作", "对象", "详情"],
-    filteredLogs().map((log) => [
-      log.id,
-      log.createdAt,
-      log.adminEmail || "",
-      log.action || "",
-      log.target || "",
-      log.detail || "",
-    ])
-  );
-});
-
-document.querySelector("#profileForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (!firebaseUser) return toast("请先使用 Google 登录");
-  const user = currentUser();
-  const form = new FormData(event.currentTarget);
-  user.name = form.get("name").trim();
-  user.phone = form.get("phone").trim();
-  user.withdrawMethod = form.get("withdrawMethod").trim();
-  user.withdrawAccount = form.get("withdrawAccount").trim();
-  if (!user.name) return toast("请填写显示名称");
-  await saveState();
-  renderAll();
-  toast("用户资料已保存");
-});
-
-document.querySelector("#registerForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (!firebaseUser) return toast("请先使用 Google 登录");
-  const formEl = event.currentTarget;
-  const user = currentUser();
-  const inviteCode = inviteCodeFromInput(new FormData(formEl).get("inviteCode"));
-  if (!inviteCode) return toast("请输入推荐码");
-  if (user.referrerId) return toast("你已经绑定推荐人，不能更换");
-  const inviteSnapshot = await getDoc(doc(db, INVITE_COLLECTION, inviteCode));
-  if (!inviteSnapshot.exists()) return toast("推荐码不存在或尚未同步");
-  const invite = inviteSnapshot.data();
-  if (invite.userId === user.id) return toast("不能绑定自己");
-  if (invite.frozen) return toast("推荐人账号暂不可绑定");
-  user.referrerId = invite.userId;
-  state.referrals = referralDocsForState(state);
-  const unlocked = grantReferralPoolCredit(state, invite.userId, user.id);
-  await saveState();
-  formEl.reset();
-  renderAll();
-  toast(unlocked ? "推荐人已绑定，推荐人已解锁 1 个奖励池资格" : "推荐人已绑定");
-});
-
-document.querySelector("#planForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (!requireAdmin()) return;
-  const form = new FormData(event.currentTarget);
-  const data = planFromForm(form);
-  if (!data.name || data.amount <= 0 || data.validDays <= 0) return toast("请填写完整配套资料");
-  if (!isValidPackageAmount(data.amount)) return toast(`充值金额必须是 RM${PACKAGE_UNIT_AMOUNT} 的整数倍，例如 RM180、RM360、RM720`);
-  const wasEditing = Boolean(editingPlanId);
-  if (editingPlanId) {
-    const plan = findPlan(editingPlanId);
-    if (!plan) return toast("找不到要编辑的配套");
-    Object.assign(plan, data);
-    addAdminLog("编辑配套", plan.name, `金额 ${plan.amount} / 积分 ${plan.points}`);
-  } else {
-    state.plans.push({ id: id("plan"), ...data });
-    addAdminLog("新增配套", data.name, `金额 ${data.amount} / 积分 ${data.points}`);
-  }
-  resetPlanForm();
-  await saveState();
-  renderAll();
-  toast(wasEditing ? "配套规则已保存" : "配套规则已新增");
-});
-
-document.addEventListener("click", (event) => {
-  if (event.target?.id !== "cancelPlanEditBtn") return;
-  resetPlanForm();
-  toast("已取消编辑");
-});
-
-document.querySelector("#planForm [name='amount']")?.addEventListener("input", syncPlanUnitFields);
-
-document.querySelector("#pointsForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (!requireAdmin()) return;
-  const form = new FormData(event.currentTarget);
-  const user = findUser(form.get("userId"));
-  const change = Number(form.get("points"));
-  user.points += change;
-  state.pointLogs.push({ id: id("log"), userId: user.id, change, balance: user.points, source: "admin", note: form.get("note").trim(), createdAt: new Date().toISOString() });
-  addAdminLog("调整积分", user.name, `变动 ${change}，备注：${form.get("note").trim()}`);
-  event.currentTarget.reset();
-  await saveState();
-  renderAll();
-  toast("积分已调整");
-});
-
-document.querySelector("#repeatCreditsForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (!requireAdmin()) return;
-  const form = new FormData(event.currentTarget);
-  const user = findUser(form.get("userId"));
-  const change = Number(form.get("credits"));
-  if (!user || Number.isNaN(change)) return toast("奖励池资格调整无效");
-  const before = Number(user.repeatCredits || 0);
-  user.repeatCredits = Math.max(Math.min(before + change, MAX_REPEAT_POOL_CREDITS), 0);
-  if (user.repeatCredits > 0 && before <= 0) {
-    user.repeatCreditQueueAt = new Date().toISOString();
-  }
-  if (user.repeatCredits <= 0) {
-    user.repeatCreditQueueAt = "";
-  }
-  const actualChange = user.repeatCredits - before;
-  addAdminLog("调整奖励池资格", user.name, `申请变动 ${change}，实际变动 ${actualChange}，当前 ${user.repeatCredits}，备注：${form.get("note").trim()}`);
-  if (actualChange !== 0) {
-    addRepeatCreditLog(state, user.id, actualChange, user.repeatCredits, "admin", "admin", form.get("note").trim());
-  }
-  event.currentTarget.reset();
-  await saveState();
-  renderAll();
-  toast(user.repeatCredits === MAX_REPEAT_POOL_CREDITS && before + change > MAX_REPEAT_POOL_CREDITS
-    ? `奖励池资格已调整，最多只能保留 ${MAX_REPEAT_POOL_CREDITS} 个`
-    : "奖励池资格已调整");
-});
-
-document.querySelector("#withdrawForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const user = currentUser();
-  const form = new FormData(event.currentTarget);
-  const amount = Number(form.get("amount"));
-  const method = form.get("method").trim() || user.withdrawMethod || "";
-  const account = form.get("account").trim() || user.withdrawAccount || "";
-  const eligibility = withdrawEligibility(user);
-  if (!eligibility.eligible) return toast(`暂不能提现：${eligibility.reasons.join("、")}`);
-  if (amount < MIN_WITHDRAW_AMOUNT) return toast(`最低提现金额为 ${money(MIN_WITHDRAW_AMOUNT)}`);
-  if (amount > eligibility.available) return toast("可提现奖励不足");
-  if (!method || !account) return toast("请先填写收款方式和收款账号");
-  if (amount > confirmedAvailable(user.id)) return toast("可提现奖励不足");
-  const cooldown = withdrawCooldownRemaining(user.id);
-  if (cooldown > 0) return toast(`提现冷却中，请 ${durationText(cooldown)} 后再申请`);
-  state.withdraws.push({ id: id("wd"), userId: user.id, amount, method, account, source: "reward", status: "pending", createdAt: new Date().toISOString() });
-  event.currentTarget.reset();
-  await saveState();
-  renderAll();
-  toast("提现申请已提交，等待后台审核");
-});
-
-document.querySelector("#confirmDueBtn").addEventListener("click", async () => {
-  if (!requireAdmin()) return;
-  const dueRewards = state.rewards.filter((reward) =>
-    ["pending", "releasing"].includes(reward.status)
-    && (TEST_INSTANT_MODE || new Date(reward.confirmAfter) <= new Date())
-  );
-  const dueAmount = dueRewards.reduce((sum, reward) => {
-    if (TEST_INSTANT_MODE) return sum + Math.max(Number(reward.amount || 0) - Number(reward.releasedAmount || 0), 0);
-    if (Array.isArray(reward.releasePlan)) {
-      return sum + reward.releasePlan
-        .filter((part) => !part.released && new Date(part.releaseAt) <= new Date())
-        .reduce((partSum, part) => partSum + Number(part.amount || 0), 0);
-    }
-    return sum + Number(reward.amount || 0);
-  }, 0);
-  if (!dueRewards.length) return toast("暂无到期可确认奖励");
-  if (!window.confirm(`${TEST_INSTANT_MODE ? "测试即时模式：确定强制结算全部待处理奖励？" : "确定批量处理到期奖励？"}\n\n数量：${dueRewards.length} 笔\n预计释放/确认：${money(dueAmount)}`)) return;
-  let count = 0;
-  const now = new Date();
-  state.rewards.forEach((reward) => {
-    if (TEST_INSTANT_MODE && settleRewardNow(reward, now)) {
-      count += 1;
-      addAdminLog("测试即时结算奖励", reward.orderId, `奖励 ${money(reward.amount)}`);
-      return;
-    }
-    if (Array.isArray(reward.releasePlan) && ["pending", "releasing"].includes(reward.status) && releaseDueRewardParts(reward, now)) {
-      count += 1;
-      addAdminLog("释放分期奖励", reward.orderId, `已释放 ${money(reward.releasedAmount || 0)} / ${money(reward.amount)}`);
-      return;
-    }
-    if (!Array.isArray(reward.releasePlan) && reward.status === "pending" && new Date(reward.confirmAfter) <= now) {
-      reward.status = "confirmed";
-      count += 1;
-      addAdminLog("确认到期奖励", reward.orderId, `奖励 ${money(reward.amount)}`);
-    }
-  });
-  await saveState();
-  renderAll();
-  toast(count ? `已确认 ${count} 笔奖励` : "暂无到期可确认奖励");
-});
-
-document.body.addEventListener("click", async (event) => {
-  const memberOrderDetail = event.target.closest("[data-member-order-detail]");
-  if (memberOrderDetail) {
-    const user = currentUser();
-    const order = state.orders.find((item) => item.id === memberOrderDetail.dataset.memberOrderDetail && item.userId === user.id);
-    if (!order) return toast("找不到订单");
-    window.alert(orderDetailText(order));
+  if (file.size > 25 * 1024 * 1024) {
+    alert("备份文件超过 25 MB，已停止读取。请确认选择的是简单POS JSON 备份。");
     return;
   }
-
-  const memberRewardDetail = event.target.closest("[data-member-reward-detail]");
-  if (memberRewardDetail) {
-    const user = currentUser();
-    const reward = state.rewards.find((item) => item.id === memberRewardDetail.dataset.memberRewardDetail && item.userId === user.id);
-    if (!reward) return toast("找不到奖励记录");
-    window.alert(rewardDetailText(reward));
-    return;
-  }
-
-  const memberWithdrawDetail = event.target.closest("[data-member-withdraw-detail]");
-  if (memberWithdrawDetail) {
-    const user = currentUser();
-    const withdraw = state.withdraws.find((item) => item.id === memberWithdrawDetail.dataset.memberWithdrawDetail && item.userId === user.id);
-    if (!withdraw) return toast("找不到提现申请");
-    window.alert(withdrawDetailText(withdraw));
-    return;
-  }
-
-  const orderDetail = event.target.closest("[data-order-detail]");
-  if (orderDetail) {
-    if (!requireAdmin()) return;
-    const order = state.orders.find((item) => item.id === orderDetail.dataset.orderDetail);
-    if (!order) return toast("找不到订单");
-    window.alert(orderDetailText(order));
-    return;
-  }
-
-  const rewardDetail = event.target.closest("[data-reward-detail]");
-  if (rewardDetail) {
-    if (!requireAdmin()) return;
-    const reward = state.rewards.find((item) => item.id === rewardDetail.dataset.rewardDetail);
-    if (!reward) return toast("找不到奖励记录");
-    window.alert(rewardDetailText(reward));
-    return;
-  }
-
-  const withdrawDetail = event.target.closest("[data-withdraw-detail]");
-  if (withdrawDetail) {
-    if (!requireAdmin()) return;
-    const withdraw = state.withdraws.find((item) => item.id === withdrawDetail.dataset.withdrawDetail);
-    if (!withdraw) return toast("找不到提现申请");
-    window.alert(withdrawDetailText(withdraw));
-    return;
-  }
-
-  const userDetail = event.target.closest("[data-user-detail]");
-  if (userDetail) {
-    if (!requireAdmin()) return;
-    const user = findUser(userDetail.dataset.userDetail);
-    if (!user) return toast("找不到用户");
-    window.alert(userDetailText(user));
-    return;
-  }
-
-  const exportUserRecords = event.target.closest("[data-export-user-records]");
-  if (exportUserRecords) {
-    if (!requireAdmin()) return;
-    const user = findUser(exportUserRecords.dataset.exportUserRecords);
-    if (!user) return toast("找不到用户");
-    exportMyRecords(user);
-    addAdminLog("导出用户记录", user.name || user.id, `导出 ${user.account || user.id} 的个人记录`);
-    await saveState();
-    renderAll();
-    toast("用户记录已导出");
-    return;
-  }
-
-  const editPlan = event.target.closest("[data-edit-plan]");
-  if (editPlan) {
-    if (!requireAdmin()) return;
-    const plan = findPlan(editPlan.dataset.editPlan);
-    if (!plan) return toast("找不到配套");
-    editingPlanId = plan.id;
-    fillPlanForm(plan);
-    toast("正在编辑配套");
-    return;
-  }
-
-  const deletePlan = event.target.closest("[data-delete-plan]");
-  if (deletePlan) {
-    if (!requireAdmin()) return;
-    const plan = findPlan(deletePlan.dataset.deletePlan);
-    if (!plan) return toast("找不到配套");
-    if (planUsed(plan.id)) return toast("已有待处理或已付款订单使用这个配套，不能删除");
-    if (!window.confirm(`确定删除配套：${plan.name}？`)) return;
-    state.plans = state.plans.filter((item) => item.id !== plan.id);
-    if (editingPlanId === plan.id) resetPlanForm();
-    addAdminLog("删除配套", plan.name, `金额 ${plan.amount}`);
-    await saveState();
-    renderAll();
-    toast("配套已删除");
-    return;
-  }
-
-  const copyInviteCode = event.target.closest("[data-copy-invite-code]");
-  if (copyInviteCode) {
+  const reader = new FileReader();
+  reader.addEventListener("load", () => {
     try {
-      await copyText(copyInviteCode.dataset.copyInviteCode);
-      toast("推荐码已复制");
-    } catch (error) {
-      toast("复制失败，请手动长按推荐码复制");
-    }
-    return;
-  }
-
-  const retryProof = event.target.closest("[data-retry-proof]");
-  if (retryProof) {
-    if (!firebaseUser) return toast("请先使用 Google 登录");
-    const order = state.orders.find((item) => item.id === retryProof.dataset.retryProof && item.userId === currentUser().id);
-    if (!order || order.status !== "pending") return toast("只有待确认订单可以补传凭证");
-    const proofFile = document.querySelector("#paymentInfoForm [name='paymentProof']").files[0];
-    if (!proofFile) return toast("请先在付款资料选择付款证明文件");
-    try {
-      toast("正在补传付款证明...");
-      Object.assign(order, await uploadPaymentProofForOrder(proofFile, order.id));
-      await saveState();
-      renderAll();
-      toast("付款证明已补传");
-    } catch (error) {
-      order.proofName = proofFile.name;
-      order.proofStatus = "failed";
-      order.proofError = uploadErrorMessage(error);
-      await saveState();
-      renderAll();
-      toast(uploadErrorMessage(error));
-    }
-    return;
-  }
-
-  const buyPlan = event.target.closest("[data-buy-plan]");
-  if (buyPlan) {
-    if (!firebaseUser) return toast("请先使用 Google 登录");
-    const paymentForm = new FormData(document.querySelector("#paymentInfoForm"));
-    const paymentInfo = {
-      method: paymentForm.get("paymentMethod"),
-      ref: paymentForm.get("paymentRef").trim(),
-      note: paymentForm.get("paymentNote").trim(),
-    };
-    if (!paymentInfo.ref) return toast("请先填写付款参考号");
-    const user = currentUser();
-    const duplicateRefOrder = duplicatePaymentRef(paymentInfo.ref, user.id);
-    if (duplicateRefOrder && !window.confirm(`付款参考号已在订单 ${duplicateRefOrder.id} 使用过。\n\n如果这是同一笔付款，请不要重复申请；如果确认是新付款，点“确定”继续。`)) return;
-    const orderType = actualOrderType(state, user.id);
-    if (orderType === "repeat" && repeatCooldownRemaining(user) > 0) {
-      return toast(`复购冷却中，请 ${repeatCooldownText(user)} 后再申请`);
-    }
-    if (orderType === "repeat" && state.orders.some((order) => order.userId === user.id && order.type === "repeat" && order.status === "pending")) {
-      return toast("你已有待确认的复购订单，请先等待后台处理");
-    }
-    toast("正在提交配套申请...");
-    const order = createOrder(state, user.id, buyPlan.dataset.buyPlan, orderType, "pending", new Date().toISOString(), paymentInfo);
-    if (!order) return toast(`配套金额不符合 RM${PACKAGE_UNIT_AMOUNT} 单位规则，请联系管理员更新配套`);
-    const proofFile = document.querySelector("#paymentInfoForm [name='paymentProof']").files[0];
-    if (proofFile) {
-      const duplicateProofOrder = duplicateProofName(proofFile.name, user.id);
-      if (duplicateProofOrder && !window.confirm(`付款凭证文件名已在订单 ${duplicateProofOrder.id} 使用过。\n\n请确认不是重复上传同一张凭证。确定继续提交吗？`)) {
-        state.orders = state.orders.filter((item) => item.id !== order.id);
-        renderAll();
+      const backup = JSON.parse(String(reader.result || "{}"));
+      const validation = validateBackupData(backup);
+      if (!validation.ok) {
+        alert(`备份验证失败，当前资料没有改变：\n\n${validation.issues.slice(0, 8).join("\n")}`);
         return;
       }
+      const summary = validation.summary;
+      const exportedAt = summary.exportedAt ? new Date(summary.exportedAt).toLocaleString() : "未知时间";
+      if (!confirm(`备份验证通过。\n\n导出时间：${exportedAt}\n分行：${summary.branches}\n员工：${summary.users}\n商品：${summary.products}\n订单：${summary.sales}\n交班：${summary.shifts}\n待同步：${summary.pendingCount}\n\n确定覆盖当前本机资料吗？`)) return;
+
+      const restored = buildRestoredState(backup);
+      const stored = saveStorageBatch([
+        [STORAGE_KEYS.branches, restored.branches],
+        [STORAGE_KEYS.authorizedUsers, restored.authorizedUsers],
+        [STORAGE_KEYS.products, restored.products],
+        [STORAGE_KEYS.sales, restored.sales],
+        [STORAGE_KEYS.pendingSales, restored.pendingSales],
+        [STORAGE_KEYS.pendingSaleUpdates, restored.pendingSaleUpdates],
+        [STORAGE_KEYS.pendingProducts, restored.pendingProducts],
+        [STORAGE_KEYS.pendingStockAdjustments, restored.pendingStockAdjustments],
+        [STORAGE_KEYS.pendingAuditLogs, restored.pendingAuditLogs],
+        [STORAGE_KEYS.pendingManagement, restored.pendingManagement],
+        [STORAGE_KEYS.stockAdjustments, restored.stockAdjustments],
+        [STORAGE_KEYS.auditLogs, restored.auditLogs],
+        [STORAGE_KEYS.currentShift, restored.currentShift],
+        [STORAGE_KEYS.shifts, restored.shifts],
+        [STORAGE_KEYS.settings, restored.appSettings]
+      ], { allowProtected: true });
+      if (!stored) {
+        alert("恢复未执行：本机无法完整写入备份，原资料已经回滚。");
+        return;
+      }
+
+      branches = restored.branches;
+      authorizedUsers = restored.authorizedUsers;
+      products = restored.products;
+      sales = restored.sales;
+      pendingSales = restored.pendingSales;
+      pendingSaleUpdates = restored.pendingSaleUpdates;
+      pendingProducts = restored.pendingProducts;
+      pendingStockAdjustments = restored.pendingStockAdjustments;
+      pendingAuditLogs = restored.pendingAuditLogs;
+      pendingManagement = restored.pendingManagement;
+      stockAdjustments = restored.stockAdjustments;
+      auditLogs = restored.auditLogs;
+      currentShift = restored.currentShift;
+      shifts = restored.shifts;
+      appSettings = restored.appSettings;
+      preferredPaymentMethod = restored.paymentMethod;
+      paymentMethodInitialized = false;
       try {
-        toast("正在上传付款证明...");
-        Object.assign(order, await uploadPaymentProofForOrder(proofFile, order.id));
+        localStorage.setItem(STORAGE_KEYS.paymentMethod, preferredPaymentMethod);
       } catch (error) {
-        console.warn("Payment proof upload skipped.", error);
-        order.proofName = proofFile.name;
-        order.proofStatus = "failed";
-        order.proofError = uploadErrorMessage(error);
-        order.paymentNote = `${order.paymentNote || ""} / 付款证明暂未上传：${uploadErrorMessage(error)}`.trim();
-        toast(uploadErrorMessage(error));
+        reportStorageError(error);
       }
-    }
-    await saveState();
-    renderAll();
-    toast("配套申请已提交，等待后台确认付款");
-    return;
-  }
-
-  if (event.target.closest("#copyInviteBtn")) {
-    try {
-      await copyText(document.querySelector("#inviteLink").textContent);
-      toast("推荐链接已复制");
-    } catch (error) {
-      toast("复制失败，请手动长按推荐链接复制");
-    }
-    return;
-  }
-
-  if (event.target.closest("#copyInviteTextBtn")) {
-    try {
-      await copyText(inviteMessage(currentUser()));
-      toast("邀请文案已复制");
-    } catch (error) {
-      toast("复制失败，请手动复制推荐码和链接");
-    }
-    return;
-  }
-
-  const confirmOrder = event.target.closest("[data-confirm-order]");
-  if (confirmOrder) {
-    if (!requireAdmin()) return;
-    const order = state.orders.find((item) => item.id === confirmOrder.dataset.confirmOrder);
-    if (!order || order.status !== "pending") return toast("订单状态不可确认");
-    if (!window.confirm(orderConfirmPreview(order))) return;
-    const risks = orderRiskLabels(order);
-    const riskNote = risks.length ? "已核对风控风险：" : "";
-    const note = window.prompt("请输入确认付款备注（可留空）", order.reviewNote || riskNote);
-    if (note === null) return;
-    if (risks.length && note.trim().length <= riskNote.length) return toast("有风控风险的订单必须填写审核备注");
-    order.reviewNote = note.trim();
-    order.reviewedAt = new Date().toISOString();
-    try {
-      await callConfirmOrderFunction(order.id);
-      state = await loadState();
-      const syncedOrder = state.orders.find((item) => item.id === order.id);
-      if (syncedOrder) {
-        syncedOrder.reviewNote = order.reviewNote;
-        syncedOrder.reviewedAt = order.reviewedAt;
-        await saveState();
-      }
+      migrateManagementData();
+      migrateProductsForBranches();
       renderAll();
-      toast("订单已由云函数确认，积分和奖励已生成");
+      writeAuditLog("backup.restore", {
+        branches: branches.length,
+        users: authorizedUsers.length,
+        products: products.length,
+        sales: sales.length
+      });
+      alert("备份已恢复到本机。需要同步到云端时，请点击初始化云端数据。");
     } catch (error) {
-      console.error(error);
-      applyPaidOrder(state, order);
-      addAdminLog("确认付款", order.id, `金额 ${money(order.amount)} / 前端管理员确认 / ${order.confirmSummary || "无处理摘要"} / ${order.reviewNote || "无备注"}`);
-      await saveState();
-      renderAll();
-      toast("云函数未启用，已使用管理员前端确认付款");
+      alert(`恢复失败：${error.message}`);
     }
-    return;
-  }
-
-  const cancelOrder = event.target.closest("[data-cancel-order]");
-  if (cancelOrder) {
-    if (!requireAdmin()) return;
-    const order = state.orders.find((item) => item.id === cancelOrder.dataset.cancelOrder);
-    if (!order || order.status !== "pending") return toast("订单状态不可取消");
-    const note = window.prompt("请输入取消订单原因（可留空）", order.reviewNote || "");
-    if (note === null) return;
-    order.status = "cancelled";
-    order.reviewNote = note.trim();
-    order.cancelledAt = new Date().toISOString();
-    addAdminLog("取消订单", order.id, `金额 ${money(order.amount)} / ${order.reviewNote || "无备注"}`);
-    await saveState();
-    renderAll();
-    toast("订单已取消");
-    return;
-  }
-
-  const recalcOrder = event.target.closest("[data-recalc-order]");
-  if (recalcOrder) {
-    if (!requireAdmin()) return;
-    const order = state.orders.find((item) => item.id === recalcOrder.dataset.recalcOrder);
-    if (!order) return toast("找不到订单");
-    if (!window.confirm(`确定重算订单奖励：${order.id}？\n只会处理待确认奖励，已确认/已释放奖励不会自动改动。`)) return;
-    const result = recalculateOrderRewards(state, order);
-    if (!result.ok) return toast(result.message);
-    addAdminLog("重算订单奖励", order.id, result.message);
-    await saveState();
-    renderAll();
-    toast(result.message);
-    return;
-  }
-
-  const freezeUser = event.target.closest("[data-freeze-user]");
-  if (freezeUser) {
-    if (!requireAdmin()) return;
-    const user = findUser(freezeUser.dataset.freezeUser);
-    user.frozen = !user.frozen;
-    addAdminLog(user.frozen ? "冻结用户" : "解冻用户", user.name, user.account);
-    await saveState();
-    renderAll();
-    toast(user.frozen ? "用户已冻结" : "用户已解冻");
-    return;
-  }
-
-  const rewardAction = event.target.closest("[data-confirm-reward], [data-cancel-reward], [data-freeze-reward]");
-  if (rewardAction) {
-    if (!requireAdmin()) return;
-    const rewardId = rewardAction.dataset.confirmReward || rewardAction.dataset.cancelReward || rewardAction.dataset.freezeReward;
-    const reward = state.rewards.find((item) => item.id === rewardId);
-    if (!reward) return toast("找不到奖励记录");
-    const actionLabel = rewardAction.dataset.confirmReward ? "确认" : rewardAction.dataset.cancelReward ? "取消" : "冻结";
-    const note = window.prompt(`请输入奖励${actionLabel}备注（可留空）`, reward.reviewNote || "");
-    if (note === null) return;
-    if (!window.confirm(`确定${actionLabel}这笔奖励？\n\n订单：${reward.orderId}\n金额：${money(reward.amount)}\n备注：${note.trim() || "无"}`)) return;
-    if (rewardAction.dataset.confirmReward) {
-      if (TEST_INSTANT_MODE) {
-        settleRewardNow(reward);
-      } else if (Array.isArray(reward.releasePlan)) {
-        releaseDueRewardParts(reward);
-      } else {
-        reward.status = "confirmed";
-      }
-    }
-    if (rewardAction.dataset.cancelReward) reward.status = "cancelled";
-    if (rewardAction.dataset.freezeReward) reward.status = "frozen";
-    reward.reviewNote = note.trim();
-    reward.reviewedAt = new Date().toISOString();
-    addAdminLog("更新奖励状态", reward.orderId, `${actionLabel} / ${reward.status} / ${money(reward.amount)} / ${reward.reviewNote || "无备注"}`);
-    await saveState();
-    renderAll();
-    toast("奖励状态已更新");
-    return;
-  }
-
-  const withdrawAction = event.target.closest("[data-approve-withdraw], [data-reject-withdraw], [data-pay-withdraw]");
-  if (withdrawAction) {
-    if (!requireAdmin()) return;
-    const withdrawId = withdrawAction.dataset.approveWithdraw || withdrawAction.dataset.rejectWithdraw || withdrawAction.dataset.payWithdraw;
-    const withdraw = state.withdraws.find((item) => item.id === withdrawId);
-    if (!withdraw) return toast("找不到提现申请");
-    const actionLabel = withdrawAction.dataset.approveWithdraw ? "通过" : withdrawAction.dataset.rejectWithdraw ? "拒绝" : "标记打款";
-    const risks = withdrawRiskLabels(withdraw);
-    const riskNote = risks.length && !withdrawAction.dataset.rejectWithdraw ? "已核对提现风控风险：" : "";
-    const note = window.prompt(`请输入提现${actionLabel}备注（可留空）`, withdraw.reviewNote || riskNote);
-    if (note === null) return;
-    if (risks.length && !withdrawAction.dataset.rejectWithdraw && note.trim().length <= riskNote.length) return toast("有风控风险的提现必须填写审核备注");
-    if (!window.confirm(`确定${actionLabel}这笔提现吗？\n\n编号：${withdraw.id}\n金额：${money(withdraw.amount)}\n收款：${withdraw.method} / ${withdraw.account}\n备注：${note.trim() || "无"}`)) return;
-    if (withdrawAction.dataset.approveWithdraw) {
-      withdraw.status = "approved";
-      withdraw.reviewedAt = new Date().toISOString();
-    }
-    if (withdrawAction.dataset.rejectWithdraw) {
-      withdraw.status = "rejected";
-      withdraw.reviewedAt = new Date().toISOString();
-    }
-    if (withdrawAction.dataset.payWithdraw) {
-      withdraw.status = "paidout";
-      withdraw.paidAt = new Date().toISOString();
-    }
-    withdraw.reviewNote = note.trim();
-    addAdminLog("更新提现状态", withdraw.id, `${actionLabel} / ${money(withdraw.amount)} / ${withdraw.reviewNote || "无备注"}`);
-    await saveState();
-    renderAll();
-    toast("提现状态已更新");
-  }
-});
-
-document.querySelector("#exportBtn").addEventListener("click", () => {
-  if (!requireAdmin()) return;
-  exportBundle();
-  toast("完整备份包已导出");
-});
-
-function backupStateFromJson(text) {
-  const parsed = JSON.parse(text);
-  const data = parsed?.data || parsed;
-  if (!data || !Array.isArray(data.users) || !Array.isArray(data.plans)) {
-    throw new Error("invalid-amsystem-backup");
-  }
-  return prepareLoadedState(data);
+  });
+  reader.readAsText(file, "utf-8");
 }
 
-document.querySelector("#restoreBackupBtn")?.addEventListener("click", () => {
-  if (!requireAdmin()) return;
-  document.querySelector("#restoreBackupInput")?.click();
-});
+function csvCell(value) {
+  return `"${String(value ?? "").replaceAll('"', '""')}"`;
+}
 
-document.querySelector("#restoreBackupInput")?.addEventListener("change", async (event) => {
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function updateNetworkStatus() {
+  els.networkStatus.textContent = navigator.onLine ? "在线" : "离线可用";
+  els.networkStatus.style.color = navigator.onLine ? "#0f766e" : "#8a5a00";
+}
+
+function resetAllData() {
   if (!requireAdmin()) return;
-  const input = event.target;
-  const file = input.files?.[0];
-  input.value = "";
-  if (!file) return;
-  try {
-    const restoredState = backupStateFromJson(await file.text());
-    const answer = window.prompt("导入备份包会先导出当前状态，然后用备份内容覆盖云端数据。\n\n如果确定继续，请输入 RESTORE");
-    if (answer !== "RESTORE") {
-      toast("已取消导入");
-      return;
-    }
-    exportBundle();
-    state = restoredState;
-    addAdminLog("导入备份包", file.name, `用户 ${state.users.length} / 订单 ${state.orders.length} / 奖励 ${state.rewards.length}`);
-    await saveState();
-    renderAll();
-    toast("备份包已导入，导入前状态已下载");
-  } catch (error) {
-    console.warn("Restore backup failed.", error);
-    toast("导入失败：请选择系统导出的 JSON 备份包");
+  if (!confirm("确定重置本机商品、订单、分行、员工授权、库存流水、班次和购物车吗？此操作不会自动删除云端资料。")) return;
+  if (prompt('请输入 RESET 确认清空本机数据。') !== "RESET") {
+    alert("已取消清空。");
+    return;
   }
-});
-
-function clearBusinessTestData() {
-  editingPlanId = "";
-  state.testDataClearedAt = new Date().toISOString();
-  state.orders = [];
-  state.rewards = [];
-  state.withdraws = [];
-  state.pointLogs = [];
-  state.repeatCreditLogs = [];
-  state.adminLogs = [];
-  state.users = (state.users || []).map((user) => ({
-    ...user,
-    points: 0,
-    slots: 0,
-    repeatCredits: 0,
-    repeatCreditQueueAt: "",
-    repeatCooldownUntil: "",
-    packageUntil: "",
-    level: "普通用户",
+  const nextBranches = structuredClone(defaultBranches);
+  const nextProducts = sampleProducts.map((product) => ({
+    ...structuredClone(product),
+    branchStock: Object.fromEntries(
+      nextBranches.map((branch) => [branch.id, Number(product.branchStock?.[branch.id] || 0)])
+    )
   }));
-  state.referrals = referralDocsForState(state);
+  const nextPendingManagement = normalizePendingManagement();
+  const resetSaved = saveStorageBatch([
+    [STORAGE_KEYS.products, nextProducts],
+    [STORAGE_KEYS.sales, []],
+    [STORAGE_KEYS.pendingSales, []],
+    [STORAGE_KEYS.pendingSaleUpdates, []],
+    [STORAGE_KEYS.pendingProducts, []],
+    [STORAGE_KEYS.pendingStockAdjustments, []],
+    [STORAGE_KEYS.pendingAuditLogs, []],
+    [STORAGE_KEYS.pendingManagement, nextPendingManagement],
+    [STORAGE_KEYS.stockAdjustments, []],
+    [STORAGE_KEYS.auditLogs, []],
+    [STORAGE_KEYS.currentShift, null],
+    [STORAGE_KEYS.shifts, []],
+    [STORAGE_KEYS.branches, nextBranches],
+    [STORAGE_KEYS.authorizedUsers, structuredClone(defaultAuthorizedUsers)]
+  ]);
+  if (!resetSaved) {
+    alert("重置未执行：本机无法完整保存重置结果，原资料已经回滚。");
+    return;
+  }
+  products = nextProducts;
+  sales = [];
+  pendingSales = [];
+  pendingSaleUpdates = [];
+  cart = [];
+  branches = nextBranches;
+  authorizedUsers = structuredClone(defaultAuthorizedUsers);
+  pendingProducts = [];
+  pendingStockAdjustments = [];
+  pendingAuditLogs = [];
+  pendingManagement = nextPendingManagement;
+  stockAdjustments = [];
+  auditLogs = [];
+  currentShift = null;
+  shifts = [];
+  currentBranchId = "hq";
+  localStorage.setItem(STORAGE_KEYS.branchId, currentBranchId);
+  writeAuditLog("data.reset", {});
+  renderAll();
 }
 
-document.querySelector("#clearTestDataBtn")?.addEventListener("click", async () => {
-  if (!requireAdmin()) return;
-  const answer = window.prompt("清理测试数据会先导出备份包，然后清空订单、奖励、提现、积分流水、奖励池资格流水和操作日志；会保留用户、推荐关系和配套规则。\n\n如果确定继续，请输入 CLEAR");
-  if (answer !== "CLEAR") {
-    toast("已取消清理");
+els.searchInput.addEventListener("input", renderProducts);
+els.categoryFilter.addEventListener("change", () => {
+  renderProducts();
+  renderCategoryFilter();
+});
+els.refreshCloudBtn.addEventListener("click", syncThenLoadCloudData);
+els.menuToggleBtn.addEventListener("click", () => {
+  const open = !els.appMenu.classList.contains("open");
+  els.appMenu.classList.toggle("open", open);
+  els.menuToggleBtn.setAttribute("aria-expanded", String(open));
+  if (open) {
+    els.cashierMenu.classList.remove("open");
+    els.cashierToggleBtn.setAttribute("aria-expanded", "false");
+  }
+});
+els.cashierToggleBtn.addEventListener("click", () => {
+  const open = !els.cashierMenu.classList.contains("open");
+  els.cashierMenu.classList.toggle("open", open);
+  els.cashierToggleBtn.setAttribute("aria-expanded", String(open));
+  if (open) {
+    els.appMenu.classList.remove("open");
+    els.menuToggleBtn.setAttribute("aria-expanded", "false");
+  }
+});
+document.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!els.appMenu.contains(target) && !els.cashierMenu.contains(target)) {
+    els.appMenu.classList.remove("open");
+    els.cashierMenu.classList.remove("open");
+    els.menuToggleBtn.setAttribute("aria-expanded", "false");
+    els.cashierToggleBtn.setAttribute("aria-expanded", "false");
+  }
+});
+for (const button of document.querySelectorAll("[data-app-view]")) {
+  button.addEventListener("click", () => setAppView(button.dataset.appView));
+}
+els.branchSelect.addEventListener("change", () => {
+  if (hasOpenShift()) {
+    currentBranchId = currentShift.branchId;
+    localStorage.setItem(STORAGE_KEYS.branchId, currentBranchId);
+    alert(`当前班次属于 ${getCurrentShiftLabel()}，请先完成交班再切换分行。`);
+    renderAll();
     return;
   }
-  exportBundle();
-  clearBusinessTestData();
-  resetPlanForm();
-  addAdminLog("清理测试数据", "系统", "保留用户、推荐关系和配套规则；清空订单、奖励、提现和流水");
-  await saveState();
-  renderAll();
-  toast("测试数据已清理，清理前备份包已下载");
-});
-
-document.querySelector("#exportRiskReportBtn")?.addEventListener("click", async () => {
-  if (!requireAdmin()) return;
-  exportRiskReport();
-  addAdminLog("导出异常报告", "风控规则", "导出上线自检与数据一致性报告");
-  await saveState();
-  renderAll();
-  toast("异常报告已导出");
-});
-
-document.querySelector("#exportTodosBtn")?.addEventListener("click", async () => {
-  if (!requireAdmin()) return;
-  exportTodoReport();
-  addAdminLog("导出待办清单", "待办中心", "导出当前后台待办事项");
-  await saveState();
-  renderAll();
-  toast("待办清单已导出");
-});
-
-document.querySelector("#exportFinanceSummaryBtn")?.addEventListener("click", async () => {
-  if (!requireAdmin()) return;
-  exportFinanceSummary();
-  addAdminLog("导出财务汇总", "待办中心", "导出充值、奖励、提现与可提现余额汇总");
-  await saveState();
-  renderAll();
-  toast("财务汇总已导出");
-});
-
-document.querySelector("#resetBtn").addEventListener("click", async () => {
-  if (!requireAdmin()) return;
-  const answer = window.prompt("清空演示数据会先导出备份包，然后清空订单、奖励、提现、积分流水、奖励池资格流水、操作日志，并移除旧演示用户（李明、王芳、陈杰）；会保留真实用户、推荐关系和配套规则。\n\n如果确定继续，请输入 CLEAR");
-  if (answer !== "CLEAR") {
-    toast("已取消清空");
+  if (isBranchLockedToOperator()) {
+    const operator = getOperator();
+    currentBranchId = operator.branchId;
+    localStorage.setItem(STORAGE_KEYS.branchId, currentBranchId);
+    alert(`此收银员只被授权使用 ${getBranchName(operator.branchId)}，不能切换到其他分行。`);
+    renderAll();
     return;
   }
-  exportBundle();
-  purgeLegacyDemoUsers(state);
-  clearBusinessTestData();
-  resetPlanForm();
-  addAdminLog("清空演示数据", "系统", "移除旧演示用户；保留真实用户、推荐关系和配套规则；清空订单、奖励、提现和流水");
-  await saveState();
+  syncCurrentBranchFromSelect();
+  cart = [];
   renderAll();
-  toast("演示数据已清空，清空前备份包已下载");
+});
+els.operatorLoginForm.addEventListener("submit", loginOperator);
+els.googleLoginBtn.addEventListener("click", signInWithGoogle);
+els.operatorLogoutBtn.addEventListener("click", logoutOperator);
+els.closeShiftBtn.addEventListener("click", closeCurrentShift);
+els.cashMovementBtn.addEventListener("click", () => openCashMovementDialog(false));
+els.cashMovementForm.addEventListener("submit", recordCashMovement);
+els.closeCashMovementBtn.addEventListener("click", closeCashMovementDialog);
+els.cashMovementDialog.addEventListener("close", handleCashMovementDialogClosed);
+els.shiftSettlementForm.addEventListener("submit", confirmShiftSettlement);
+els.closeSettlementBtn.addEventListener("click", closeShiftSettlementDialog);
+els.settlementCashMovementBtn.addEventListener("click", () => openCashMovementDialog(true));
+els.settlementCountedCash.addEventListener("input", updateSettlementDifference);
+els.settlementOpeningCash.addEventListener("input", updateSettlementDifference);
+els.settlementCashIn.addEventListener("input", updateSettlementDifference);
+els.settlementCashOut.addEventListener("input", updateSettlementDifference);
+els.exportCurrentSettlementBtn.addEventListener("click", () => exportCurrentShiftSettlement());
+els.clearCartBtn.addEventListener("click", () => {
+  cart = [];
+  autoFillPaid = true;
+  els.paidInput.value = "";
+  renderCart();
+});
+els.orderOptionsToggle.addEventListener("click", () => {
+  els.orderOptionsPanel.classList.toggle("hidden");
+});
+els.discountInput.addEventListener("input", renderCart);
+els.paidInput.addEventListener("input", () => {
+  autoFillPaid = false;
+  renderCart();
+});
+els.quickPaidButtons.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-quick-paid]");
+  if (!button) return;
+  if (button.dataset.quickPaid === "custom") {
+    els.customPaidPanel.classList.remove("hidden");
+    els.paidInput.focus();
+    els.paidInput.select();
+    return;
+  }
+  els.customPaidPanel.classList.add("hidden");
+  const value = button.dataset.quickPaid === "due" ? getCartDueAmount() : Number(button.dataset.quickPaid);
+  els.paidInput.value = Number(value || 0).toFixed(2);
+  autoFillPaid = false;
+  renderCart();
+});
+els.paymentMethodInput.addEventListener("change", () => {
+  preferredPaymentMethod = els.paymentMethodInput.value;
+  localStorage.setItem(STORAGE_KEYS.paymentMethod, preferredPaymentMethod);
+  renderCart();
+});
+els.quickPaymentButtons.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-payment-method]");
+  if (!button) return;
+  preferredPaymentMethod = button.dataset.paymentMethod;
+  els.paymentMethodInput.value = preferredPaymentMethod;
+  localStorage.setItem(STORAGE_KEYS.paymentMethod, preferredPaymentMethod);
+  renderCart();
+});
+els.salesDateInput.addEventListener("change", () => {
+  showAllSalesDates = false;
+  renderSales();
+});
+els.salesSearchInput.addEventListener("input", renderSales);
+els.salesBranchFilter.addEventListener("change", renderSales);
+els.salesPaymentFilter.addEventListener("change", renderSales);
+els.salesIntegrationFilter.addEventListener("change", renderSales);
+els.exportDailySettlementBtn.addEventListener("click", exportDailySettlement);
+els.exportIntegrationQueueBtn.addEventListener("click", exportIntegrationQueue);
+els.menuSearchInput.addEventListener("input", renderMenuProductList);
+els.inventoryBranchFilter.addEventListener("change", renderInventoryOverview);
+els.inventorySearchInput.addEventListener("input", renderInventoryOverview);
+els.toggleSalesLimitBtn.addEventListener("click", () => {
+  showMoreSales = !showMoreSales;
+  renderSales();
+});
+els.todaySalesBtn.addEventListener("click", () => {
+  showAllSalesDates = false;
+  els.salesDateInput.value = inputDate();
+  renderSales();
+});
+els.allSalesDatesBtn.addEventListener("click", () => {
+  showAllSalesDates = true;
+  renderSales();
+});
+els.runDiagnosticsBtn.addEventListener("click", runLocalDiagnostics);
+els.quickCheckoutBtn.addEventListener("click", () => {
+  setAppView("order");
+  if (!isOperatorAllowedForCurrentBranch()) {
+    els.cashierMenu.classList.add("open");
+    els.cashierToggleBtn.setAttribute("aria-expanded", "true");
+    els.operatorEmailInput.focus();
+  } else if (cart.length) {
+    openPaymentDialog();
+  } else {
+    if (!ensureCurrentShift()) return;
+    renderAll();
+    els.searchInput.focus();
+  }
+});
+els.reportStartInput.addEventListener("change", renderGlobalDashboard);
+els.reportEndInput.addEventListener("change", renderGlobalDashboard);
+els.reportTodayBtn.addEventListener("click", () => setReportRange(inputDate(), inputDate()));
+els.reportMonthBtn.addEventListener("click", () => setReportRange(monthStartDate(), monthEndDate()));
+els.reportAllBtn.addEventListener("click", () => setReportRange("", ""));
+els.checkoutBtn.addEventListener("click", openPaymentDialog);
+els.confirmPaymentBtn.addEventListener("click", checkout);
+els.closePaymentBtn.addEventListener("click", () => els.paymentDialog.close());
+els.adminLoginForm.addEventListener("submit", loginAdmin);
+els.adminGoogleLoginBtn.addEventListener("click", signInWithGoogle);
+els.adminLogoutBtn.addEventListener("click", logoutAdmin);
+els.branchForm.addEventListener("submit", addBranch);
+els.userForm.addEventListener("submit", addAuthorizedUser);
+els.settingsForm.addEventListener("submit", saveSettings);
+els.adminOfflinePasswordForm.addEventListener("submit", saveAdminOfflinePassword);
+els.productForm.addEventListener("submit", saveProduct);
+els.cancelProductEditBtn.addEventListener("click", resetProductFormEditor);
+els.initCloudBtn.addEventListener("click", initializeCloudData);
+els.syncPendingBtn.addEventListener("click", syncPendingChanges);
+els.exportBtn.addEventListener("click", exportSales);
+els.exportSummaryBtn.addEventListener("click", exportBranchSummary);
+els.exportPaymentSummaryBtn.addEventListener("click", exportPaymentSummary);
+els.exportProductSalesBtn.addEventListener("click", exportProductSales);
+els.exportInventoryBtn.addEventListener("click", exportInventory);
+els.exportCustomersBtn.addEventListener("click", exportCustomers);
+els.exportAuditBtn.addEventListener("click", exportAuditLogs);
+els.exportStockBtn.addEventListener("click", exportStockAdjustments);
+els.exportShiftsBtn.addEventListener("click", exportShifts);
+els.backupBtn.addEventListener("click", exportBackup);
+els.restoreBtn.addEventListener("click", () => els.restoreInput.click());
+els.restoreInput.addEventListener("change", () => {
+  const [file] = els.restoreInput.files;
+  if (file) restoreBackupFile(file);
+  els.restoreInput.value = "";
+});
+els.resetDataBtn.addEventListener("click", resetAllData);
+els.seedBtn.addEventListener("click", () => {
+  if (!requireAdmin()) return;
+  products = cloneSampleProductsForBranches();
+  save(STORAGE_KEYS.products, products);
+  renderAll();
+});
+els.closeReceiptBtn.addEventListener("click", () => els.receiptDialog.close());
+els.receiptCheckPaymentBtn.addEventListener("click", () => {
+  if (lastReceiptSale) refreshSimplePayPayment(lastReceiptSale.id, els.receiptCheckPaymentBtn);
+});
+els.printReceiptBtn.addEventListener("click", () => window.print());
+els.integrationForm.addEventListener("submit", saveIntegrationDetails);
+els.closeIntegrationBtn.addEventListener("click", closeIntegrationEditor);
+els.copyIntegrationOrderIdBtn.addEventListener("click", copyIntegrationOrderId);
+els.bluetoothPrintReceiptBtn.addEventListener("click", () => printBluetoothReceipt());
+els.printerPaperWidth.addEventListener("change", savePrinterSettings);
+els.printerAutoPrint.addEventListener("change", savePrinterSettings);
+els.printerConnectBtn.addEventListener("click", reconnectBluetoothPrinter);
+els.printerPairBtn.addEventListener("click", pairBluetoothPrinter);
+els.printerTestBtn.addEventListener("click", testBluetoothPrinter);
+els.printerForgetBtn.addEventListener("click", forgetBluetoothPrinter);
+window.addEventListener("thermal-printer-status", (event) => {
+  const { state, message, deviceId, deviceName } = event.detail;
+  if (deviceId) {
+    printerSettings.deviceId = deviceId;
+    printerSettings.deviceName = deviceName;
+    save(STORAGE_KEYS.printerSettings, printerSettings);
+  }
+  updatePrinterStatus(message, state);
+  renderPrinterSettings();
+});
+window.addEventListener("online", async () => {
+  updateNetworkStatus();
+  if (lockOfflineSessionForOnlineVerification()) return;
+  const authorized = await refreshCloudAuthorization({ force: true });
+  if (authorized) syncThenLoadCloudData();
+});
+window.addEventListener("offline", updateNetworkStatus);
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") refreshCloudAuthorization();
 });
 
-onAuthStateChanged(auth, async (user) => {
-  firebaseUser = user;
-  firebaseReady = true;
-  renderAll();
-  if (!state) state = await loadState();
-  if (user) {
-    try {
-      state = await loadState();
-      cloudAvailable = true;
-    } catch (error) {
-      console.warn("Could not reload cloud state after login.", error);
-      syncMessage = `Firestore：读取失败 ${error.code || error.name || "unknown"} - ${error.message || ""}`;
+setInterval(() => {
+  refreshCloudAuthorization();
+}, AUTHORIZATION_REFRESH_INTERVAL_MS);
+
+window.addEventListener("cloud-ready", (event) => {
+  updateCloudStatus(`云端已连接：${event.detail.projectId}`, true);
+});
+
+window.addEventListener("cloud-auth-change", (event) => {
+  const { firebaseUser, appUser } = event.detail;
+  if (!firebaseUser) {
+    if (navigator.onLine && lockOfflineSessionForOnlineVerification()) return;
+    if (cloudSessionActive) {
+      adminEmail = "";
+      operatorEmail = "";
+      currentCloudUser = null;
+      lastAuthorizationCheckAt = 0;
+      cart = [];
+      clearSessionEmail(STORAGE_KEYS.adminEmail);
+      clearSessionEmail(STORAGE_KEYS.operatorEmail);
+      cloudSessionActive = false;
     }
-    upsertFirebaseUser(user);
-    await saveState();
+    updateCloudStatus("云端未登录");
+    renderAll();
+    return;
   }
-  renderAll();
+  applyCloudUser(appUser, firebaseUser);
 });
 
-setAuthStatusText("脚本已加载，正在等待 Firebase 登录状态...");
-setSyncStatusText("Firestore：等待登录后检测");
+window.addEventListener("cloud-error", (event) => {
+  updateCloudStatus("云端错误");
+  console.warn("Cloud error", event.detail.message);
+});
 
-state = localStorage.getItem(STORAGE_KEY) ? JSON.parse(localStorage.getItem(STORAGE_KEY)) : createSeedData();
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  els.installBtn.classList.remove("hidden");
+});
+
+els.installBtn.addEventListener("click", async () => {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  els.installBtn.classList.add("hidden");
+});
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js");
+  });
+}
+
+setAppView("order");
+migrateManagementData();
+migrateProductsForBranches();
 renderAll();
-
-setTimeout(() => {
-  if (!firebaseReady) {
-    setAuthStatusText("Firebase 登录状态未返回，请强制刷新或检查浏览器缓存。");
-    setSyncStatusText("Firestore：尚未开始检测");
-  }
-}, 5000);
-
-
-
-
-
-
+if (window.thermalPrinter?.isSupported()) {
+  window.thermalPrinter.restore(printerSettings.deviceId).catch((error) => {
+    console.warn("Bluetooth printer restore failed", error);
+  });
+}

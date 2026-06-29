@@ -1,0 +1,17 @@
+{
+  "name": "简单POS",
+  "short_name": "简单POS",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f6f8f7",
+  "theme_color": "#0f766e",
+  "description": "一款可上线、可离线使用的简单收银 POS 系统。",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
