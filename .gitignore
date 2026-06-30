@@ -1,7 +1,0 @@
-firebase-config.local.js
-functions/node_modules/
-.pnpm-store/
-server*.log
-firebase-debug.log
-firestore-debug.log
-ui-debug.log
