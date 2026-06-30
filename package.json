@@ -1,6 +1,6 @@
 {
-  "name": "simple-pos-functions",
-  "description": "Cross-project integration worker for Simple POS",
+  "name": "amsystem-functions",
+  "description": "Cloud Functions for AMSYSTEM",
   "main": "index.js",
   "private": true,
   "engines": {

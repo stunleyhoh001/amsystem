@@ -1,711 +1,512 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0f766e">
-  <title>简单POS</title>
-  <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="styles.css">
-</head>
-<body data-view="order">
-  <header class="app-header">
-    <div>
-      <p class="eyebrow">可上线 / 可离线</p>
-      <h1>简单POS</h1>
-    </div>
-    <div class="status-row">
-      <span id="networkStatus" class="status">检测中</span>
-      <span id="cloudStatus" class="status">云端未连接</span>
-      <span id="branchStatus" class="status">总店</span>
-      <span id="operatorStatus" class="status">POS未登录</span>
-      <span id="adminStatus" class="status">后台未登录</span>
-      <span id="versionStatus" class="status">版本检测中</span>
-      <button id="installBtn" class="ghost hidden" type="button">安装到电脑</button>
-    </div>
-  </header>
-
-  <main class="app-shell">
-    <section class="panel catalog-panel" data-view-panel="order" aria-labelledby="catalogTitle">
-      <div class="panel-header pos-catalog-header">
-        <div>
-          <h2 id="catalogTitle">商品</h2>
-          <p>点击商品加入购物车</p>
-        </div>
-        <button id="seedBtn" class="ghost" type="button">恢复示例商品</button>
-      </div>
-
-      <div class="toolbar pos-toolbar">
-        <input id="searchInput" type="search" placeholder="搜索商品名称或条码">
-        <select id="categoryFilter" aria-label="按分类筛选">
-          <option value="all">全部分类</option>
-        </select>
-        <select id="branchSelect" aria-label="当前分行">
-          <option value="hq">总店</option>
-          <option value="branch-1">分行 1</option>
-          <option value="branch-2">分行 2</option>
-        </select>
-        <button id="refreshCloudBtn" class="ghost" type="button">刷新云端资料</button>
-      </div>
-
-      <div class="pos-sales-area">
-        <div id="categoryRail" class="category-rail" aria-label="商品分类"></div>
-        <div id="productGrid" class="product-grid" aria-live="polite"></div>
-      </div>
-    </section>
-
-    <section class="panel cart-panel" data-view-panel="order" aria-labelledby="cartTitle">
-      <div class="panel-header pos-order-header">
-        <div>
-          <h2 id="cartTitle">当前订单</h2>
-          <p id="cartHint">还没有商品</p>
-        </div>
-        <button id="clearCartBtn" class="ghost danger" type="button">清空</button>
-      </div>
-
-      <div id="cartItems" class="cart-items"></div>
-
-      <div class="totals">
-        <button id="orderOptionsToggle" class="ghost" type="button">订单设置：客户资料 / 推荐码 / 折扣</button>
-        <div id="orderOptionsPanel" class="order-options-panel hidden">
-          <div class="customer-box">
-            <strong>客户资料</strong>
-            <input id="customerNameInput" placeholder="客户姓名">
-            <input id="customerPhoneInput" placeholder="电话 / WhatsApp">
-            <input id="affiliateReferralCodeInput" autocomplete="off" placeholder="联盟推荐码（选填）">
-          </div>
-          <label>
-            折扣
-            <input id="discountInput" type="number" min="0" step="0.01" value="0">
-          </label>
-        </div>
-        <div class="total-line">
-          <span>小计</span>
-          <strong id="subtotalText">RM 0.00</strong>
-        </div>
-        <div class="total-line">
-          <span>应收</span>
-          <strong id="totalText">RM 0.00</strong>
-        </div>
-        <div class="total-line">
-          <span>找零</span>
-          <strong id="changeText">RM 0.00</strong>
-        </div>
-        <button id="checkoutBtn" class="primary" type="button">进入收款</button>
-      </div>
-    </section>
-
-    <section class="panel admin-panel" data-admin-shell aria-labelledby="adminTitle">
-      <div class="panel-header">
-        <div>
-          <h2 id="adminTitle">后台管理</h2>
-          <p id="adminSubtitle">唯一管理员：已隐藏</p>
-        </div>
-        <button id="adminLogoutBtn" class="ghost hidden" type="button">退出后台</button>
-      </div>
-
-      <form id="adminLoginForm" class="admin-login">
-        <input id="adminEmailInput" type="email" autocomplete="username" required placeholder="输入管理员邮箱（不会显示）">
-        <input id="adminPasswordInput" type="password" autocomplete="current-password" minlength="8" required placeholder="管理员离线密码（断网时使用）">
-        <button class="ghost" type="submit">离线进入后台</button>
-        <button id="adminGoogleLoginBtn" class="primary" type="button">Google 管理员登录</button>
-        <p id="adminLoginMessage" class="form-message">管理员仅负责设置与全局总览；分行业务由授权员工处理。</p>
-      </form>
-
-      <div id="adminContent" class="hidden">
-        <div class="toolbar report-toolbar" data-view-panel="report" aria-label="报表日期范围">
-          <input id="reportStartInput" type="date" aria-label="报表开始日期">
-          <input id="reportEndInput" type="date" aria-label="报表结束日期">
-          <button id="reportTodayBtn" class="ghost" type="button">今天</button>
-          <button id="reportMonthBtn" class="ghost" type="button">本月</button>
-          <button id="reportAllBtn" class="ghost" type="button">全部</button>
-        </div>
-        <div class="global-dashboard" data-view-panel="report">
-          <div class="metric-card">
-            <span id="reportRevenueLabel">全局销售额</span>
-            <strong id="globalRevenueText">RM 0.00</strong>
-          </div>
-          <div class="metric-card">
-            <span id="reportOrdersLabel">全局订单</span>
-            <strong id="globalOrdersText">0</strong>
-          </div>
-          <div class="metric-card">
-            <span>客户数</span>
-            <strong id="globalCustomersText">0</strong>
-          </div>
-          <div class="metric-card">
-            <span>总库存</span>
-            <strong id="globalStockText">0</strong>
-          </div>
-        </div>
-
-        <div class="panel-subsection" data-view-panel="report">
-          <h3>分行表现</h3>
-          <div id="branchOverview" class="branch-overview"></div>
-        </div>
-
-        <div class="panel-subsection" data-view-panel="report">
-          <h3>热销商品</h3>
-          <div id="topProductsList" class="management-list"></div>
-        </div>
-
-        <div class="panel-subsection" data-view-panel="report">
-          <h3>每日销售趋势</h3>
-          <div id="dailyTrendList" class="management-list"></div>
-        </div>
-
-        <div class="panel-subsection" data-view-panel="report">
-          <h3>付款方式汇总</h3>
-          <div id="paymentSummaryList" class="management-list"></div>
-        </div>
-
-        <div class="panel-subsection" data-view-panel="report" data-admin-only>
-          <div class="panel-header">
-            <div>
-              <h3>三系统订单追踪</h3>
-              <p class="helper-text">输入 POS 订单号，只读核对三边状态，不会重试或修改订单。</p>
-            </div>
-          </div>
-          <div class="toolbar">
-            <input id="integrationTraceOrderInput" placeholder="POS 订单号">
-            <button id="traceIntegrationOrderBtn" class="ghost" type="button">追踪订单</button>
-          </div>
-          <div id="integrationTraceOverview" class="management-list compact-list">
-            <div class="empty compact-empty">尚未追踪订单</div>
-          </div>
-        </div>
-
-        <div class="admin-actions" data-view-panel="report" data-employee-tools>
-          <button id="exportBtn" class="ghost" type="button">导出销售记录</button>
-          <button id="exportSummaryBtn" class="ghost" type="button">导出分行汇总</button>
-          <button id="exportPaymentSummaryBtn" class="ghost" type="button">导出付款汇总</button>
-          <button id="exportProductSalesBtn" class="ghost" type="button">导出商品排行</button>
-          <button id="exportCustomersBtn" class="ghost" type="button">导出客户名单</button>
-        </div>
-
-        <div class="panel-subsection" data-view-panel="settings">
-          <h3>同步状态</h3>
-          <div id="syncOverview" class="management-list"></div>
-        </div>
-
-        <div class="panel-subsection" data-view-panel="settings">
-          <div class="panel-header">
-            <div>
-              <h3>三系统融合准备</h3>
-              <p class="helper-text">采用按需同步，不持续读取其他项目，也不会阻塞POS收银。</p>
-            </div>
-            <div class="row-actions">
-              <button id="checkIntegrationConnectionsBtn" class="ghost" type="button">检查三系统连接</button>
-              <button id="checkIntegrationJobsBtn" class="ghost" type="button">检查整合任务</button>
-              <button id="refreshAffiliateCatalogBtn" class="ghost" type="button">同步联盟价格</button>
-            </div>
-          </div>
-          <div id="integrationOverview" class="management-list"></div>
-          <div id="integrationConnectionOverview" class="management-list compact-list"></div>
-          <div id="integrationJobOverview" class="management-list compact-list"></div>
-        </div>
-
-        <div class="panel-subsection" data-view-panel="settings">
-          <div class="panel-header">
-            <div>
-              <h3>本机数据自检</h3>
-              <p>不连接云端，不产生 Firebase 读取。</p>
-            </div>
-            <button id="runDiagnosticsBtn" class="ghost" type="button">运行自检</button>
-          </div>
-          <div id="diagnosticsOverview" class="management-list">
-            <div class="empty">尚未运行本机自检</div>
-          </div>
-        </div>
-
-        <div class="panel-subsection" data-view-panel="settings">
-          <h3>交班记录</h3>
-          <div id="shiftList" class="management-list"></div>
-        </div>
-
-        <div class="panel-subsection" data-view-panel="settings">
-          <h3>最近审计</h3>
-          <div id="auditList" class="management-list"></div>
-        </div>
-
-        <div class="panel-subsection" data-view-panel="inventory">
-          <h3>库存流水</h3>
-          <div id="stockAdjustmentList" class="management-list"></div>
-        </div>
-
-        <div class="panel-subsection" data-view-panel="transactions">
-          <h3>客户跟进</h3>
-          <div id="followUpList" class="management-list"></div>
-        </div>
-
-        <div class="panel-subsection" data-view-panel="inventory">
-          <h3>低库存提醒</h3>
-          <div id="lowStockList" class="management-list"></div>
-        </div>
-
-        <div class="panel-subsection" data-view-panel="settings">
-          <h3>业务设置</h3>
-          <form id="settingsForm" class="settings-form">
-            <input id="businessNameInput" required placeholder="品牌 / 小票标题">
-            <input id="defaultServiceNameInput" required placeholder="默认计划名称">
-            <input id="serviceDaysInput" required type="number" min="1" step="1" placeholder="服务天数">
-            <input id="lowStockThresholdInput" required type="number" min="0" step="1" placeholder="低库存提醒阈值">
-            <input id="receiptFooterInput" required placeholder="小票结尾">
-            <button class="primary" type="submit">保存设置</button>
-          </form>
-        </div>
-
-        <div class="panel-subsection" data-view-panel="settings">
-          <h3>管理员离线密码</h3>
-          <p class="helper-text">必须先使用 Google 管理员登录。一个管理员邮箱和离线密码适用于总店及所有分行，不需要逐个分行设置。密码只保存加盐哈希，断网时才使用。</p>
-          <form id="adminOfflinePasswordForm" class="settings-form">
-            <input id="adminOfflinePasswordInput" required type="password" minlength="8" autocomplete="new-password" placeholder="新离线密码（至少 8 位）">
-            <input id="adminOfflinePasswordConfirm" required type="password" minlength="8" autocomplete="new-password" placeholder="再次输入新离线密码">
-            <button class="primary" type="submit">设置管理员离线密码</button>
-            <p id="adminOfflinePasswordStatus" class="form-message">尚未设置</p>
-          </form>
-          <p class="helper-text">其他收银设备必须先联网登录并完成资料同步一次，之后才可在该设备断网登录。</p>
-        </div>
-
-        <div class="panel-subsection" data-view-panel="settings">
-          <h3>蓝牙小票打印机</h3>
-          <p class="helper-text">适用于支持 BLE 的 ESC/POS 58mm / 80mm 热敏打印机。打印机配对资料只保存在这台收银设备。</p>
-          <div class="printer-settings">
-            <label>
-              纸张宽度
-              <select id="printerPaperWidth">
-                <option value="58">58mm</option>
-                <option value="80">80mm</option>
-              </select>
-            </label>
-            <label class="printer-checkbox">
-              <input id="printerAutoPrint" type="checkbox">
-              收款后自动打印
-            </label>
-            <div class="printer-actions">
-              <button id="printerConnectBtn" class="primary" type="button">连接已配对打印机</button>
-              <button id="printerPairBtn" class="ghost" type="button">配对 / 更换</button>
-              <button id="printerTestBtn" class="ghost" type="button">测试打印</button>
-              <button id="printerForgetBtn" class="ghost danger" type="button">移除打印机</button>
-            </div>
-            <p id="printerStatus" class="form-message">尚未连接打印机</p>
-          </div>
-        </div>
-
-        <div class="panel-subsection" data-view-panel="settings">
-          <h3>开设新分行</h3>
-          <p class="helper-text">管理员负责建立分行及授权员工；员工登录后自动锁定所属分行并处理日常业务。</p>
-          <form id="branchForm" class="branch-form">
-            <input id="branchNameInput" required placeholder="分行名称，例如：槟城分行">
-            <input id="branchSimplePayMerchantIdInput" placeholder="SimplePay 商家 ID（可稍后设置）">
-            <button class="primary" type="submit">新增分行</button>
-          </form>
-          <p class="helper-text">每个分行可对应独立的 SimplePay 商家。未设置商家 ID 时，POS 仍可使用其他付款方式。</p>
-          <div id="branchList" class="management-list"></div>
-        </div>
-
-        <div class="panel-subsection" data-view-panel="settings">
-          <h3>授权 POS 用户</h3>
-          <p class="helper-text">员工离线密码在这里设置或更新。联网时员工仍使用 Google 登录，只有断网时才使用邮箱和离线密码。</p>
-          <form id="userForm" class="user-form">
-            <input id="userNameInput" required placeholder="使用者姓名">
-            <input id="userEmailInput" required type="email" placeholder="使用者邮箱">
-            <input id="userPasswordInput" required type="password" minlength="6" autocomplete="new-password" placeholder="离线密码（至少 6 位）">
-            <select id="userBranchSelect" required aria-label="授权分行"></select>
-            <button class="primary" type="submit">授权 / 更新</button>
-          </form>
-          <div id="userList" class="management-list"></div>
-        </div>
-
-        <form id="productForm" class="product-form" data-view-panel="settings">
-          <p class="helper-text">商品名称与售价属于全局设置。库存由各分行员工在库存页调整。</p>
-          <label>
-            商品名称
-            <input id="nameInput" required placeholder="商品名称">
-          </label>
-          <label>
-            条码 / SKU
-            <input id="barcodeInput" placeholder="条码 / SKU">
-          </label>
-          <label>
-            分类
-            <input id="categoryInput" required placeholder="分类">
-          </label>
-          <label>
-            售价（RM）
-            <input id="priceInput" required type="number" min="0" step="0.01" placeholder="例如：150.00">
-          </label>
-          <div class="product-form-actions">
-            <button id="saveProductBtn" class="primary" type="submit">新增商品</button>
-            <button id="cancelProductEditBtn" class="ghost hidden" type="button">取消编辑</button>
-          </div>
-        </form>
-
-        <div class="panel-subsection" data-view-panel="menu settings">
-          <h3>现有菜单</h3>
-          <input id="menuSearchInput" type="search" placeholder="搜索菜单商品 / SKU / 分类">
-          <div id="menuProductList" class="management-list"></div>
-        </div>
-
-        <div class="panel-subsection" data-view-panel="inventory">
-          <h3>库存总览</h3>
-          <p class="helper-text">先选择分行，再点击商品右侧的库存按钮调整数量。</p>
-          <div class="inventory-toolbar">
-            <select id="inventoryBranchFilter" aria-label="库存分行筛选"></select>
-            <input id="inventorySearchInput" type="search" placeholder="搜索库存商品 / SKU / 分类">
-          </div>
-          <div id="inventoryOverviewList" class="management-list"></div>
-          <div class="admin-actions" data-employee-tools>
-            <button id="exportInventoryBtn" class="ghost" type="button">导出本分行库存</button>
-            <button id="exportStockBtn" class="ghost" type="button">导出库存流水</button>
-          </div>
-        </div>
-
-        <div class="admin-actions" data-view-panel="settings">
-          <button id="initCloudBtn" class="ghost" type="button">初始化云端数据</button>
-          <button id="syncPendingBtn" class="ghost" type="button">补传离线订单</button>
-          <button id="exportAuditBtn" class="ghost" type="button">导出审计日志</button>
-          <button id="backupBtn" class="ghost" type="button">导出完整备份</button>
-          <button id="restoreBtn" class="ghost danger" type="button">从备份恢复</button>
-          <input id="restoreInput" class="hidden" type="file" accept="application/json">
-          <button id="resetDataBtn" class="ghost danger" type="button">清空全部数据</button>
-        </div>
-      </div>
-    </section>
-
-    <section class="panel history-panel" data-view-panel="transactions" aria-labelledby="historyTitle">
-      <div class="panel-header">
-        <div>
-          <h2 id="historyTitle">转账记录</h2>
-          <p id="salesSummary">暂无销售</p>
-        </div>
-      </div>
-      <div class="toolbar">
-        <input id="salesDateInput" type="date" aria-label="销售日期">
-        <input id="salesSearchInput" placeholder="搜索客户 / 电话 / 订单号 / 推荐码" aria-label="搜索销售记录">
-        <select id="salesBranchFilter" aria-label="按分行筛选"></select>
-        <select id="salesPaymentFilter" aria-label="按付款方式筛选">
-          <option value="all">全部付款</option>
-          <option value="现金">现金</option>
-          <option value="银行转账">银行转账</option>
-          <option value="Touch n Go">Touch n Go</option>
-          <option value="DuitNow">DuitNow</option>
-          <option value="银行卡">银行卡</option>
-          <option value="简单支付 / SimplePay">简单支付 / SimplePay</option>
-        </select>
-        <select id="salesIntegrationFilter" aria-label="按关联状态筛选">
-          <option value="all">全部关联状态</option>
-          <option value="pending">全部待处理</option>
-          <option value="simplepay-pending">SimplePay 待确认</option>
-          <option value="affiliate-pending">联盟待关联</option>
-          <option value="linked">已有外部关联</option>
-          <option value="failed">关联异常</option>
-          <option value="inventory-review">库存待复核</option>
-          <option value="inventory-resolved">库存已复核</option>
-        </select>
-        <button id="todaySalesBtn" class="ghost" type="button">今天</button>
-        <button id="allSalesDatesBtn" class="ghost" type="button">全部日期</button>
-        <button id="exportDailySettlementBtn" class="ghost" type="button">导出当天结算</button>
-        <button id="exportIntegrationQueueBtn" class="ghost" type="button">导出待关联清单</button>
-      </div>
-      <div id="dailyPaymentSummaryList" class="management-list compact-list"></div>
-      <div id="salesList" class="sales-list"></div>
-      <div class="admin-actions" data-employee-tools>
-        <button id="exportShiftsBtn" class="ghost" type="button">导出本分行交班记录</button>
-      </div>
-      <button id="toggleSalesLimitBtn" class="ghost hidden" type="button">显示更多</button>
-    </section>
-  </main>
-
-  <nav id="appMenu" class="app-menu" aria-label="主菜单">
-    <button id="menuToggleBtn" class="menu-toggle" type="button" aria-expanded="false">菜单</button>
-    <div class="menu-items" aria-label="功能菜单">
-      <button class="active" type="button" data-app-view="order">下单</button>
-      <button type="button" data-app-view="menu">菜单</button>
-      <button type="button" data-app-view="inventory">库存</button>
-      <button type="button" data-app-view="transactions">转账记录</button>
-      <button type="button" data-app-view="report">报告</button>
-      <button type="button" data-app-view="settings">设置</button>
-    </div>
-  </nav>
-
-  <nav id="cashierMenu" class="cashier-menu" aria-label="收银菜单">
-    <button id="cashierToggleBtn" class="cashier-toggle" type="button" aria-expanded="false">收银</button>
-    <div class="cashier-panel" aria-label="收银员菜单">
-      <div class="cashier-status">
-        <strong>已登录操作员</strong>
-        <span id="cashierOperatorText">未登录</span>
-        <span id="shiftStatusText">未开班</span>
-      </div>
-      <label id="shiftOpeningCashPanel">
-        开班备用金（RM）
-        <input id="shiftOpeningCashInput" type="number" min="0" step="0.01" value="0.00">
-      </label>
-      <button id="quickCheckoutBtn" class="primary" type="button">开始收银 / 结算</button>
-      <button id="closeShiftBtn" class="ghost" type="button">结束班次 / 交班</button>
-      <button id="cashMovementBtn" class="ghost" type="button">现金存入 / 取出</button>
-      <form id="operatorLoginForm" class="operator-login">
-        <strong>员工登录 / 登出</strong>
-        <input id="operatorEmailInput" type="email" autocomplete="username" required placeholder="授权用户邮箱">
-        <input id="operatorPasswordInput" type="password" autocomplete="current-password" placeholder="离线密码（断网时使用）">
-        <button class="primary" type="submit">登录收银</button>
-        <button id="googleLoginBtn" class="ghost" type="button">联网 Google 登录</button>
-        <button id="operatorLogoutBtn" class="ghost hidden" type="button">退出收银</button>
-        <p id="operatorMessage" class="form-message">请使用管理员授权的邮箱登录后收银。</p>
-      </form>
-    </div>
-  </nav>
-
-  <dialog id="cashMovementDialog">
-    <form id="cashMovementForm" class="cash-movement-form">
-      <div class="panel-header">
-        <div>
-          <h2>班次现金流水</h2>
-          <p id="cashMovementShiftInfo">当前班次</p>
-        </div>
-        <button id="closeCashMovementBtn" class="ghost" type="button">关闭</button>
-      </div>
-      <div class="integration-grid">
-        <label>
-          类型
-          <select id="cashMovementType">
-            <option value="in">现金存入</option>
-            <option value="out">现金取出 / 支出</option>
-          </select>
-        </label>
-        <label>
-          金额（RM）
-          <input id="cashMovementAmount" required type="number" min="0.01" step="0.01" placeholder="0.00">
-        </label>
-      </div>
-      <label>
-        原因
-        <input id="cashMovementReason" required maxlength="120" placeholder="例如：增加找零钱、现金存银行">
-      </label>
-      <button id="cashMovementSubmitBtn" class="primary" type="submit">登记现金流水</button>
-      <div class="settlement-metrics">
-        <div>
-          <span>累计存入</span>
-          <strong id="cashMovementInTotal">RM 0.00</strong>
-        </div>
-        <div>
-          <span>累计取出</span>
-          <strong id="cashMovementOutTotal">RM 0.00</strong>
-        </div>
-      </div>
-      <div id="cashMovementList" class="management-list compact-list"></div>
-    </form>
-  </dialog>
-
-  <dialog id="shiftSettlementDialog">
-    <form id="shiftSettlementForm" class="settlement-form">
-      <div class="panel-header">
-        <div>
-          <h2>班次结算 / 交班</h2>
-          <p id="settlementShiftInfo">当前班次</p>
-        </div>
-        <button id="closeSettlementBtn" class="ghost" type="button">返回</button>
-      </div>
-      <div class="settlement-metrics">
-        <div>
-          <span>有效订单</span>
-          <strong id="settlementOrders">0</strong>
-        </div>
-        <div>
-          <span>销售总额</span>
-          <strong id="settlementTotal">RM 0.00</strong>
-        </div>
-        <div>
-          <span>应有现金</span>
-          <strong id="settlementExpectedCash">RM 0.00</strong>
-        </div>
-        <div>
-          <span>作废订单</span>
-          <strong id="settlementVoids">0</strong>
-        </div>
-      </div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>简单的联盟营销系统</title>
+    <link rel="stylesheet" href="./styles.css?v=20260628-69" />
+  </head>
+  <body>
+    <header class="app-header">
       <div>
-        <h3>付款方式</h3>
-        <div id="settlementPaymentList" class="management-list compact-list"></div>
+        <p class="eyebrow">Firebase 联盟系统</p>
+        <h1>简单的联盟营销系统</h1>
+        <p class="subtitle">Firebase Google 登录、云端数据、用户端和后台端双界面。</p>
       </div>
-      <div id="settlementWarnings" class="settlement-warnings"></div>
-      <button id="settlementCashMovementBtn" class="ghost" type="button">登记现金存入 / 取出</button>
-      <div class="integration-grid">
-        <label>
-          开班备用金（RM）
-          <input id="settlementOpeningCash" required type="number" min="0" step="0.01">
-        </label>
-        <label>
-          其他现金存入（RM）
-          <input id="settlementCashIn" readonly type="number" min="0" step="0.01" value="0">
-        </label>
-        <label>
-          现金取出 / 支出（RM）
-          <input id="settlementCashOut" readonly type="number" min="0" step="0.01" value="0">
-        </label>
-        <label>
-          现金实点金额（RM）
-          <input id="settlementCountedCash" required type="number" min="0" step="0.01">
-        </label>
-        <div class="settlement-difference">
-          <span>现金差额</span>
-          <strong id="settlementCashDifference">RM 0.00</strong>
-        </div>
+      <div class="header-actions">
+        <button class="switch active" data-view="memberView">用户界面</button>
+        <button class="switch" data-view="adminView">后台界面</button>
+        <button id="exportBtn" class="button ghost admin-tool">导出备份包</button>
+        <button id="restoreBackupBtn" class="button ghost admin-tool">导入备份包</button>
+        <input id="restoreBackupInput" type="file" accept="application/json,.json" hidden />
+        <button id="clearTestDataBtn" class="button ghost admin-tool">清理测试数据</button>
+        <button id="resetBtn" class="button danger admin-tool">清空演示数据</button>
       </div>
-      <label>
-        交班备注
-        <input id="settlementNote" maxlength="200" placeholder="选填，例如：现金短少原因">
-      </label>
-      <div class="receipt-actions">
-        <button id="exportCurrentSettlementBtn" class="ghost" type="button">导出本班结算</button>
-        <button class="primary" type="submit">确认结束班次</button>
-      </div>
-    </form>
-  </dialog>
+    </header>
 
-  <dialog id="paymentDialog">
-    <div class="payment-screen">
-      <div class="panel-header">
-        <div>
-          <h2>确认收款</h2>
-          <p>确认金额和付款方式后完成订单</p>
-        </div>
-        <button id="closePaymentBtn" class="ghost" type="button">返回订单</button>
-      </div>
-      <div class="payment-due" id="paymentDueText">RM 0.00</div>
-      <div id="customPaidPanel" class="custom-paid-panel hidden">
-        <label>
-          自定义实收金额
-        <input id="paidInput" type="number" min="0" step="0.01" placeholder="客户付款金额">
-        </label>
-      </div>
-      <div id="quickPaidButtons" class="quick-paid-buttons" aria-label="快捷实收金额">
-        <button class="ghost" type="button" data-quick-paid="due">刚好</button>
-        <button class="ghost" type="button" data-quick-paid="15">15</button>
-        <button class="ghost" type="button" data-quick-paid="20">20</button>
-        <button class="ghost" type="button" data-quick-paid="50">50</button>
-        <button class="ghost" type="button" data-quick-paid="100">100</button>
-        <button class="ghost" type="button" data-quick-paid="custom">自定义</button>
-      </div>
-      <label>
-        付款方式
-        <select id="paymentMethodInput">
-          <option value="现金">现金</option>
-          <option value="银行转账">银行转账</option>
-          <option value="Touch n Go">Touch n Go</option>
-          <option value="DuitNow">DuitNow</option>
-          <option value="银行卡">银行卡</option>
-          <option value="简单支付 / SimplePay">简单支付 / SimplePay</option>
-        </select>
-      </label>
-      <div id="quickPaymentButtons" class="quick-payment-buttons" aria-label="快捷付款方式">
-        <button class="ghost" type="button" data-payment-method="现金">现金</button>
-        <button class="ghost" type="button" data-payment-method="简单支付 / SimplePay">SimplePay</button>
-        <button class="ghost" type="button" data-payment-method="DuitNow">DuitNow</button>
-        <button class="ghost" type="button" data-payment-method="Touch n Go">TNG</button>
-      </div>
-      <label>
-        参考号
-        <input id="paymentReferenceInput" placeholder="转账 / 收据参考号">
-      </label>
-      <div class="payment-change">
-        <span>找零</span>
-        <strong id="paymentChangePreview">RM 0.00</strong>
-      </div>
-      <button id="confirmPaymentBtn" class="primary" type="button">确认收款</button>
-    </div>
-  </dialog>
+    <main>
+      <section id="memberView" class="view active">
+        <section class="member-hero">
+          <div class="panel login-panel">
+            <h2>用户登录</h2>
+            <div class="google-login">
+              <button id="firebaseLoginBtn" class="button primary" type="button">使用 Google 登录</button>
+              <button id="firebaseLogoutBtn" class="button ghost" type="button">退出登录</button>
+              <button id="testFirestoreBtn" class="button ghost" type="button">测试云端保存</button>
+              <p id="authStatus" class="help-text">正在连接 Firebase...</p>
+              <p id="syncStatus" class="help-text">Firestore：等待检测</p>
+            </div>
+            <form id="registerForm" class="stack split-form">
+              <label>推荐码<input name="inviteCode" placeholder="可选：推荐人邀请码" /></label>
+              <button class="button ghost" type="submit">绑定推荐人</button>
+            </form>
+          </div>
 
-  <dialog id="integrationDialog">
-    <form id="integrationForm" class="integration-form">
-      <div class="panel-header">
-        <div>
-          <h2>订单关联资料</h2>
-          <p id="integrationOrderNo">订单号</p>
-        </div>
-        <button id="closeIntegrationBtn" class="ghost" type="button">关闭</button>
-      </div>
-      <label>
-        POS 订单号
-        <span class="integration-id-row">
-          <input id="integrationPosOrderId" readonly>
-          <button id="copyIntegrationOrderIdBtn" class="ghost" type="button">复制</button>
-        </span>
-      </label>
-      <div class="integration-grid">
-        <label>
-          SimplePay 参考号
-          <input id="integrationSimplePayReference" autocomplete="off" placeholder="付款或交易参考号">
-        </label>
-        <label>
-          SimplePay 状态
-          <select id="integrationSimplePayStatus">
-            <option value="not-used">未使用</option>
-            <option value="pending">待确认</option>
-            <option value="linked">已关联</option>
-            <option value="refunded">已退款</option>
-            <option value="refund-failed">退款异常</option>
-            <option value="canceled">已取消</option>
-            <option value="failed">关联异常</option>
-          </select>
-        </label>
-        <label>
-          联盟推荐码
-          <input id="integrationAffiliateReferralCode" autocomplete="off" placeholder="推荐码">
-        </label>
-        <label>
-          联盟订单号
-          <input id="integrationAffiliateOrderId" autocomplete="off" placeholder="联盟订单号">
-        </label>
-        <label>
-          联盟状态
-          <select id="integrationAffiliateStatus">
-            <option value="not-used">未使用</option>
-            <option value="pending">待关联</option>
-            <option value="linked">已关联</option>
-            <option value="reversed">已撤销</option>
-            <option value="review-required">需人工复核</option>
-            <option value="canceled">已取消</option>
-            <option value="failed">关联异常</option>
-          </select>
-        </label>
-      </div>
-      <p class="helper-text">这些资料只随订单保存，不会主动查询 SimplePay 或联盟系统。</p>
-      <button class="primary" type="submit">保存关联资料</button>
-    </form>
-  </dialog>
+          <div class="panel account-card">
+            <p class="eyebrow">当前用户</p>
+            <h2 id="memberName">-</h2>
+            <button id="exportMyRecordsBtn" class="button ghost compact-button" type="button">导出我的记录</button>
+            <div class="mini-grid">
+              <span>积分余额<strong id="memberPoints">0</strong></span>
+              <span>可提现奖励<strong id="memberConfirmed">RM0</strong></span>
+              <span>直接推荐<strong id="memberSlots">0 / 开放</strong></span>
+              <span>奖励池资格<strong id="memberRepeatCredits">0</strong></span>
+              <span>配套状态<strong id="memberPlanStatus">未开通</strong></span>
+            </div>
+          </div>
 
-  <dialog id="receiptDialog">
-    <div class="receipt">
-      <div class="panel-header">
-        <div>
-          <h2 id="receiptTitle">收款成功</h2>
-          <p id="receiptNo"></p>
-        </div>
-        <button id="closeReceiptBtn" class="ghost" type="button">关闭</button>
-      </div>
-      <pre id="receiptText"></pre>
-      <div id="receiptSimplePayPanel" class="receipt-simplepay hidden">
-        <img id="receiptSimplePayQr" alt="SimplePay 付款二维码">
-        <div>
-          <strong>等待顾客确认 SimplePay 付款</strong>
-          <small>付款意图编号</small>
-          <code id="receiptSimplePayIntent"></code>
-        </div>
-      </div>
-      <p id="receiptPaymentStatus" class="helper-text hidden"></p>
-      <p id="receiptPrinterStatus" class="helper-text">蓝牙打印机尚未连接</p>
-      <div class="receipt-actions">
-        <button id="receiptCheckPaymentBtn" class="primary hidden" type="button">检查付款状态</button>
-        <button id="bluetoothPrintReceiptBtn" class="primary" type="button">蓝牙打印</button>
-        <button id="printReceiptBtn" class="ghost" type="button">系统打印</button>
-      </div>
-    </div>
-  </dialog>
+          <div class="panel profile-card">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">用户资料</p>
+                <h2>联系与收款资料</h2>
+              </div>
+            </div>
+            <form id="profileForm" class="stack">
+              <label>显示名称<input name="name" placeholder="用于后台和推荐记录显示" required /></label>
+              <label>手机号码<input name="phone" placeholder="例如：0123456789" /></label>
+              <label>默认收款方式<input name="withdrawMethod" placeholder="银行 / Touch n Go / USDT" /></label>
+              <label>默认收款账号<input name="withdrawAccount" placeholder="银行账号 / 钱包号码 / USDT 地址" /></label>
+              <button class="button primary" type="submit">保存资料</button>
+            </form>
+          </div>
+        </section>
 
-  <script src="integration-contract.js"></script>
-  <script src="bluetooth-printer.js"></script>
-  <script src="app.js"></script>
-  <script type="module" src="firebase-cloud.js"></script>
-</body>
+        <nav class="tabs" aria-label="用户模块">
+          <button class="tab active" data-tab="memberPlans">申请充值配套</button>
+          <button class="tab" data-tab="memberReferral">推荐朋友</button>
+          <button class="tab" data-tab="memberRewards">奖励说明与计算</button>
+          <button class="tab" data-tab="memberWithdraw">奖励提现</button>
+        </nav>
+
+        <section id="memberPlans" class="tab-panel active">
+          <div class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>付款资料</h2>
+                <p>申请充值配套前，请填写付款方式和参考号，方便后台核对。</p>
+              </div>
+            </div>
+            <form id="paymentInfoForm" class="grid-form compact">
+              <label>付款方式
+                <select name="paymentMethod">
+                  <option value="bank">银行转账</option>
+                  <option value="tng">Touch n Go</option>
+                  <option value="usdt">USDT</option>
+                  <option value="cash">现金</option>
+                </select>
+              </label>
+              <label>付款参考号<input name="paymentRef" placeholder="交易编号 / 收据编号" /></label>
+              <label>备注<input name="paymentNote" placeholder="例如付款人姓名、银行名称" /></label>
+              <label>付款证明<input name="paymentProof" type="file" accept="image/*,.pdf" /></label>
+            </form>
+          </div>
+          <div class="plan-grid" id="memberPlanCards"></div>
+          <div class="panel">
+            <div class="panel-head"><h2>我的充值订单</h2></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>订单号</th><th>配套</th><th>类型</th><th>金额</th><th>积分</th><th>状态</th><th>时间</th><th>操作</th></tr></thead>
+                <tbody id="memberOrderTable"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="memberReferral" class="tab-panel">
+          <div class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>我的推荐链接</h2>
+                <p>推荐关系固定，朋友注册后不可随意更换推荐人。</p>
+              </div>
+              <div class="actions">
+                <button id="copyInviteTextBtn" class="button ghost" type="button">复制邀请文案</button>
+                <button id="copyInviteBtn" class="button primary" type="button">复制推荐链接</button>
+              </div>
+            </div>
+            <div class="referral-box" id="inviteLink">-</div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>我的直接推荐</h2></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>用户</th><th>账号</th><th>配套状态</th><th>累计充值</th><th>是否占用名额</th></tr></thead>
+                <tbody id="memberReferralTable"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="memberRewards" class="tab-panel">
+          <div class="panel">
+            <h2>奖励规则</h2>
+            <div class="rule-grid" id="rewardRules"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>我的奖励记录</h2></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>来源用户</th><th>订单</th><th>类型</th><th>比例</th><th>奖励金额</th><th>状态</th><th>可确认日</th><th>操作</th></tr></thead>
+                <tbody id="memberRewardTable"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>我的奖励池资格流水</h2></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>时间</th><th>变动</th><th>余额</th><th>原因</th><th>来源 / 备注</th></tr></thead>
+                <tbody id="memberRepeatCreditLogTable"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="memberWithdraw" class="tab-panel">
+          <div class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>申请提现</h2>
+                <p>只有已确认奖励可以申请提现，提现需要后台审核。</p>
+              </div>
+            </div>
+            <p id="withdrawEligibilityText" class="help-text">提现条件：有效配套、账户正常、资料完整、可提现余额满 RM50。测试期提现冷却为 0 小时。</p>
+            <form id="withdrawForm" class="grid-form compact">
+              <label>提现金额 RM<input name="amount" type="number" min="1" step="1" required /></label>
+              <label>收款方式<input name="method" placeholder="银行 / Touch n Go / USDT" required /></label>
+              <label>收款账号<input name="account" placeholder="收款账号" required /></label>
+              <button class="button primary" type="submit">提交提现</button>
+            </form>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>提现记录</h2></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>编号</th><th>金额</th><th>来源</th><th>方式</th><th>账号</th><th>状态</th><th>申请时间</th><th>打款时间</th><th>操作</th></tr></thead>
+                <tbody id="memberWithdrawTable"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <section id="adminView" class="view">
+        <section class="metrics" aria-label="后台指标">
+          <article><button class="metric-button" type="button" data-open-admin-tab="adminUsers" data-todo-focus="allUsers"><span>总用户</span><strong id="metricUsers">0</strong></button></article>
+          <article><button class="metric-button" type="button" data-open-admin-tab="adminOrders" data-todo-focus="paidOrders"><span>总充值</span><strong id="metricSales">RM0</strong></button></article>
+          <article><button class="metric-button" type="button" data-open-admin-tab="adminOrders" data-todo-focus="pendingOrders"><span>待审订单</span><strong id="metricPendingOrders">0</strong></button></article>
+          <article><button class="metric-button" type="button" data-open-admin-tab="adminRewards" data-todo-focus="pendingRewards"><span>待审核奖励</span><strong id="metricPendingRewards">RM0</strong></button></article>
+          <article><button class="metric-button" type="button" data-open-admin-tab="adminWithdraws" data-todo-focus="pendingWithdraws"><span>待处理提现</span><strong id="metricWithdraws">RM0</strong></button></article>
+          <article><button class="metric-button" type="button" data-open-admin-tab="adminRisk" data-todo-focus="readiness"><span>上线状态</span><strong id="metricReadiness">待检测</strong></button></article>
+        </section>
+
+        <section class="layout">
+          <aside class="panel sidebar">
+            <div class="panel-head compact-head">
+              <h2>配套与奖励设置</h2>
+              <button id="exportPlansBtn" class="button ghost compact-button" type="button">导出配套</button>
+            </div>
+            <form id="planForm" class="stack">
+              <label>配套名称<input name="name" required /></label>
+              <label>充值金额 RM<input name="amount" type="number" min="180" step="180" placeholder="180 / 360 / 720" required /></label>
+              <label>发放积分<input name="points" type="number" min="0" step="1" readonly required /></label>
+              <label>推荐名额（开放后仅记录）<input name="slots" type="number" min="0" step="1" required /></label>
+              <label>奖励池资格上限<input name="repeatCredits" type="number" min="0" max="10" step="1" value="10" required /></label>
+              <label>有效期天数<input name="validDays" type="number" min="1" step="1" required /></label>
+              <label>推荐奖励 %<input name="firstRate" type="number" min="0" max="100" step="0.1" required /></label>
+              <label>下线复购奖励 %<input name="directRepeatRate" type="number" min="0" max="100" step="0.1" value="10" required /></label>
+              <label>奖励池奖励 %<input name="repeatRate" type="number" min="0" max="100" step="0.1" required /></label>
+              <button class="button primary" type="submit">新增配套</button>
+            </form>
+            <div id="adminPlanList" class="list"></div>
+          </aside>
+
+          <section class="content">
+            <nav class="tabs" aria-label="后台模块">
+              <button class="tab active" data-tab="adminTodos">待办中心</button>
+              <button class="tab" data-tab="adminUsers">用户管理</button>
+              <button class="tab" data-tab="adminOrders">订单管理</button>
+              <button class="tab" data-tab="adminRewards">奖励审核</button>
+              <button class="tab" data-tab="adminWithdraws">提现审核</button>
+              <button class="tab" data-tab="adminLogs">操作日志</button>
+              <button class="tab" data-tab="adminRisk">风控规则</button>
+            </nav>
+
+            <section id="adminTodos" class="tab-panel active">
+              <div class="panel">
+                <div class="panel-head">
+                  <h2>待办中心</h2>
+                  <div class="actions">
+                    <button id="exportFinanceSummaryBtn" class="button ghost" type="button">导出财务汇总</button>
+                    <button id="exportTodosBtn" class="button ghost" type="button">导出待办清单</button>
+                  </div>
+                </div>
+                <div id="adminTodoList" class="todo-grid"></div>
+              </div>
+            </section>
+
+            <section id="adminUsers" class="tab-panel">
+              <div class="panel">
+                <div class="panel-head">
+                  <h2>用户管理</h2>
+                  <div class="actions">
+                    <button id="exportUsersBtn" class="button ghost" type="button">导出用户</button>
+                    <button id="exportReferralsBtn" class="button ghost" type="button">导出推荐关系</button>
+                  </div>
+                </div>
+                <div class="filter-bar">
+                  <label>搜索用户<input id="userSearchInput" placeholder="姓名 / 账号 / 手机 / 邀请码 / 推荐人" /></label>
+                  <label>配套状态
+                    <select id="userPackageFilter">
+                      <option value="all">全部配套</option>
+                      <option value="active">有效配套</option>
+                      <option value="expired">未开通/已过期</option>
+                    </select>
+                  </label>
+                  <label>账号状态
+                    <select id="userAccountFilter">
+                      <option value="all">全部账号</option>
+                      <option value="normal">正常</option>
+                      <option value="frozen">已冻结</option>
+                    </select>
+                  </label>
+                  <label>收款风险
+                    <select id="userPayoutRiskFilter">
+                      <option value="all">全部收款</option>
+                      <option value="shared">共享账号</option>
+                      <option value="clean">无共享</option>
+                    </select>
+                  </label>
+                  <label>资料状态
+                    <select id="userProfileFilter">
+                      <option value="all">全部资料</option>
+                      <option value="complete">资料完整</option>
+                      <option value="incomplete">资料不完整</option>
+                    </select>
+                  </label>
+                  <button id="clearUserFiltersBtn" class="button ghost" type="button">清除筛选</button>
+                </div>
+                <form id="pointsForm" class="grid-form compact">
+                  <label>用户<select name="userId" required></select></label>
+                  <label>积分调整<input name="points" type="number" step="1" required /></label>
+                  <label>备注<input name="note" required /></label>
+                  <button class="button primary" type="submit">修改积分</button>
+                </form>
+                <form id="repeatCreditsForm" class="grid-form compact">
+                  <label>用户<select name="userId" required></select></label>
+                  <label>资格调整<input name="credits" type="number" step="1" required /></label>
+                  <label>备注<input name="note" placeholder="例如：旧用户补资格" required /></label>
+                  <button class="button primary" type="submit">修改奖励池资格</button>
+                </form>
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>用户</th><th>账号</th><th>手机</th><th>邀请码</th><th>推荐人</th><th>积分</th><th>配套状态</th><th>直接推荐</th><th>奖励池资格</th><th>收款风险</th><th>状态</th><th>操作</th></tr></thead>
+                    <tbody id="adminUserTable"></tbody>
+                  </table>
+                </div>
+                <h3 class="subhead">奖励池资格流水</h3>
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>时间</th><th>用户</th><th>变动</th><th>余额</th><th>原因</th><th>来源 / 备注</th></tr></thead>
+                    <tbody id="repeatCreditLogTable"></tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+
+            <section id="adminOrders" class="tab-panel">
+              <div class="panel">
+                <div class="panel-head">
+                  <h2>订单管理</h2>
+                  <div class="actions">
+                    <button id="exportOrdersBtn" class="button ghost" type="button">导出订单</button>
+                  </div>
+                </div>
+                <p id="externalIntegrationSummary" class="muted">POS 外部订单：尚未读取</p>
+                <div class="filter-bar">
+                  <label>搜索订单<input id="orderSearchInput" placeholder="订单号 / 用户 / 配套 / 付款参考号" /></label>
+                  <label>订单状态
+                    <select id="orderStatusFilter">
+                      <option value="all">全部状态</option>
+                      <option value="pending">待处理</option>
+                      <option value="paid">已支付</option>
+                      <option value="reversal-review">退款待复核</option>
+                      <option value="refunded">已退款</option>
+                      <option value="cancelled">已取消</option>
+                    </select>
+                  </label>
+                  <label>订单类型
+                    <select id="orderTypeFilter">
+                      <option value="all">全部类型</option>
+                      <option value="first">首充</option>
+                      <option value="repeat">复购</option>
+                    </select>
+                  </label>
+                  <label>凭证状态
+                    <select id="orderProofFilter">
+                      <option value="all">全部凭证</option>
+                      <option value="uploaded">已上传</option>
+                      <option value="inline">本地小图</option>
+                      <option value="failed">上传失败</option>
+                      <option value="none">未上传</option>
+                    </select>
+                  </label>
+                  <label>风控
+                    <select id="orderRiskFilter">
+                      <option value="all">全部</option>
+                      <option value="risk">只看风险</option>
+                      <option value="normal">只看正常</option>
+                    </select>
+                  </label>
+                  <button id="clearOrderFiltersBtn" class="button ghost" type="button">清除筛选</button>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>订单号</th><th>用户</th><th>配套</th><th>类型</th><th>金额</th><th>付款资料</th><th>积分</th><th>状态</th><th>时间</th><th>操作</th></tr></thead>
+                    <tbody id="adminOrderTable"></tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+
+            <section id="adminRewards" class="tab-panel">
+              <div class="panel">
+                <div class="panel-head">
+                  <h2>奖励审核</h2>
+                  <div class="actions">
+                    <button id="exportRewardsBtn" class="button ghost" type="button">导出奖励</button>
+                    <button id="confirmDueBtn" class="button primary">确认到期奖励</button>
+                  </div>
+                </div>
+                <div class="filter-bar">
+                  <label>搜索奖励<input id="rewardSearchInput" placeholder="奖励人 / 来源用户 / 订单号" /></label>
+                  <label>奖励状态
+                    <select id="rewardStatusFilter">
+                      <option value="all">全部状态</option>
+                      <option value="due">到期可处理</option>
+                      <option value="pending">待确认</option>
+                      <option value="confirmed">已确认</option>
+                      <option value="cancelled">已取消</option>
+                      <option value="frozen">已冻结</option>
+                    </select>
+                  </label>
+                  <label>奖励类型
+                    <select id="rewardTypeFilter">
+                      <option value="all">全部类型</option>
+                      <option value="first">推荐奖励</option>
+                      <option value="repeat">全部复购奖励</option>
+                      <option value="repeatDirect">下线复购奖励</option>
+                      <option value="repeatPool">奖励池奖励</option>
+                    </select>
+                  </label>
+                  <label>风控
+                    <select id="rewardRiskFilter">
+                      <option value="all">全部</option>
+                      <option value="risk">只看异常</option>
+                      <option value="normal">只看正常</option>
+                    </select>
+                  </label>
+                  <button id="clearRewardFiltersBtn" class="button ghost" type="button">清除筛选</button>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>奖励人</th><th>来源用户</th><th>订单</th><th>类型</th><th>金额</th><th>状态</th><th>可确认日</th><th>操作</th></tr></thead>
+                    <tbody id="adminRewardTable"></tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+
+            <section id="adminWithdraws" class="tab-panel">
+              <div class="panel">
+                <div class="panel-head">
+                  <h2>提现审核</h2>
+                  <div class="actions">
+                    <button id="exportWithdrawsBtn" class="button ghost" type="button">导出提现</button>
+                  </div>
+                </div>
+                <div class="filter-bar">
+                  <label>搜索提现<input id="withdrawSearchInput" placeholder="编号 / 用户 / 手机 / 收款方式 / 收款账号" /></label>
+                  <label>提现状态
+                    <select id="withdrawStatusFilter">
+                      <option value="all">全部状态</option>
+                      <option value="pending">待处理</option>
+                      <option value="approved">已通过</option>
+                      <option value="rejected">已拒绝</option>
+                      <option value="paidout">已打款</option>
+                    </select>
+                  </label>
+                  <label>风控
+                    <select id="withdrawRiskFilter">
+                      <option value="all">全部</option>
+                      <option value="risk">只看风险</option>
+                      <option value="normal">只看正常</option>
+                    </select>
+                  </label>
+                  <label>最低金额 RM<input id="withdrawMinAmount" type="number" min="0" step="1" placeholder="可选" /></label>
+                  <button id="clearWithdrawFiltersBtn" class="button ghost" type="button">清除筛选</button>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>编号</th><th>用户</th><th>金额</th><th>来源</th><th>方式</th><th>账号</th><th>状态</th><th>时间</th><th>操作</th></tr></thead>
+                    <tbody id="adminWithdrawTable"></tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+
+            <section id="adminRisk" class="tab-panel">
+              <div class="panel">
+                <div class="panel-head">
+                  <h2>风控规则</h2>
+                  <button id="exportRiskReportBtn" class="button ghost" type="button">导出异常报告</button>
+                </div>
+                <div class="risk-grid" id="adminRiskList"></div>
+              </div>
+            </section>
+
+            <section id="adminLogs" class="tab-panel">
+              <div class="panel">
+                <div class="panel-head">
+                  <h2>操作日志</h2>
+                  <div class="actions">
+                    <button id="exportLogsBtn" class="button ghost" type="button">导出日志</button>
+                  </div>
+                </div>
+                <div class="filter-bar">
+                  <label>搜索日志<input id="logSearchInput" placeholder="管理员 / 动作 / 对象 / 详情" /></label>
+                  <label>动作类型
+                    <select id="logActionFilter">
+                      <option value="all">全部动作</option>
+                    </select>
+                  </label>
+                  <label>显示数量
+                    <select id="logLimitFilter">
+                      <option value="50">最新 50 条</option>
+                      <option value="100">最新 100 条</option>
+                      <option value="200" selected>最新 200 条</option>
+                      <option value="all">全部</option>
+                    </select>
+                  </label>
+                  <button id="clearLogFiltersBtn" class="button ghost" type="button">清除筛选</button>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>时间</th><th>管理员</th><th>动作</th><th>对象</th><th>详情</th></tr></thead>
+                    <tbody id="adminLogTable"></tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="./app.js?v=20260628-69"></script>
+  </body>
 </html>
+
+
