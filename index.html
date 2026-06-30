@@ -109,7 +109,7 @@
         <input id="adminPasswordInput" type="password" autocomplete="current-password" minlength="8" required placeholder="管理员离线密码（断网时使用）">
         <button class="ghost" type="submit">离线进入后台</button>
         <button id="adminGoogleLoginBtn" class="primary" type="button">Google 管理员登录</button>
-        <p id="adminLoginMessage" class="form-message">商品管理、导出销售记录和清空数据仅管理员可用。</p>
+        <p id="adminLoginMessage" class="form-message">管理员仅负责设置与全局总览；分行业务由授权员工处理。</p>
       </form>
 
       <div id="adminContent" class="hidden">
@@ -122,11 +122,11 @@
         </div>
         <div class="global-dashboard" data-view-panel="report">
           <div class="metric-card">
-            <span>全局销售额</span>
+            <span id="reportRevenueLabel">全局销售额</span>
             <strong id="globalRevenueText">RM 0.00</strong>
           </div>
           <div class="metric-card">
-            <span>全局订单</span>
+            <span id="reportOrdersLabel">全局订单</span>
             <strong id="globalOrdersText">0</strong>
           </div>
           <div class="metric-card">
@@ -159,15 +159,50 @@
           <div id="paymentSummaryList" class="management-list"></div>
         </div>
 
+        <div class="panel-subsection" data-view-panel="report" data-admin-only>
+          <div class="panel-header">
+            <div>
+              <h3>三系统订单追踪</h3>
+              <p class="helper-text">输入 POS 订单号，只读核对三边状态，不会重试或修改订单。</p>
+            </div>
+          </div>
+          <div class="toolbar">
+            <input id="integrationTraceOrderInput" placeholder="POS 订单号">
+            <button id="traceIntegrationOrderBtn" class="ghost" type="button">追踪订单</button>
+          </div>
+          <div id="integrationTraceOverview" class="management-list compact-list">
+            <div class="empty compact-empty">尚未追踪订单</div>
+          </div>
+        </div>
+
+        <div class="admin-actions" data-view-panel="report" data-employee-tools>
+          <button id="exportBtn" class="ghost" type="button">导出销售记录</button>
+          <button id="exportSummaryBtn" class="ghost" type="button">导出分行汇总</button>
+          <button id="exportPaymentSummaryBtn" class="ghost" type="button">导出付款汇总</button>
+          <button id="exportProductSalesBtn" class="ghost" type="button">导出商品排行</button>
+          <button id="exportCustomersBtn" class="ghost" type="button">导出客户名单</button>
+        </div>
+
         <div class="panel-subsection" data-view-panel="settings">
           <h3>同步状态</h3>
           <div id="syncOverview" class="management-list"></div>
         </div>
 
         <div class="panel-subsection" data-view-panel="settings">
-          <h3>三系统融合准备</h3>
-          <p class="helper-text">当前采用低成本手动关联，不会持续读取 SimplePay 或联盟项目，也不会阻塞 POS 收银。</p>
+          <div class="panel-header">
+            <div>
+              <h3>三系统融合准备</h3>
+              <p class="helper-text">采用按需同步，不持续读取其他项目，也不会阻塞POS收银。</p>
+            </div>
+            <div class="row-actions">
+              <button id="checkIntegrationConnectionsBtn" class="ghost" type="button">检查三系统连接</button>
+              <button id="checkIntegrationJobsBtn" class="ghost" type="button">检查整合任务</button>
+              <button id="refreshAffiliateCatalogBtn" class="ghost" type="button">同步联盟价格</button>
+            </div>
+          </div>
           <div id="integrationOverview" class="management-list"></div>
+          <div id="integrationConnectionOverview" class="management-list compact-list"></div>
+          <div id="integrationJobOverview" class="management-list compact-list"></div>
         </div>
 
         <div class="panel-subsection" data-view-panel="settings">
@@ -259,7 +294,7 @@
 
         <div class="panel-subsection" data-view-panel="settings">
           <h3>开设新分行</h3>
-          <p class="helper-text">管理员拥有全部分行权限，可在 POS 顶部的“当前分行”切换；员工账号仍只绑定一个授权分行。</p>
+          <p class="helper-text">管理员负责建立分行及授权员工；员工登录后自动锁定所属分行并处理日常业务。</p>
           <form id="branchForm" class="branch-form">
             <input id="branchNameInput" required placeholder="分行名称，例如：槟城分行">
             <input id="branchSimplePayMerchantIdInput" placeholder="SimplePay 商家 ID（可稍后设置）">
@@ -282,8 +317,8 @@
           <div id="userList" class="management-list"></div>
         </div>
 
-        <form id="productForm" class="product-form" data-view-panel="menu">
-          <p class="helper-text">新增商品，或从下方现有菜单点击“编辑资料 / 价格”。商品库存请到库存页调整。</p>
+        <form id="productForm" class="product-form" data-view-panel="settings">
+          <p class="helper-text">商品名称与售价属于全局设置。库存由各分行员工在库存页调整。</p>
           <label>
             商品名称
             <input id="nameInput" required placeholder="商品名称">
@@ -306,7 +341,7 @@
           </div>
         </form>
 
-        <div class="panel-subsection" data-view-panel="menu">
+        <div class="panel-subsection" data-view-panel="menu settings">
           <h3>现有菜单</h3>
           <input id="menuSearchInput" type="search" placeholder="搜索菜单商品 / SKU / 分类">
           <div id="menuProductList" class="management-list"></div>
@@ -320,20 +355,16 @@
             <input id="inventorySearchInput" type="search" placeholder="搜索库存商品 / SKU / 分类">
           </div>
           <div id="inventoryOverviewList" class="management-list"></div>
+          <div class="admin-actions" data-employee-tools>
+            <button id="exportInventoryBtn" class="ghost" type="button">导出本分行库存</button>
+            <button id="exportStockBtn" class="ghost" type="button">导出库存流水</button>
+          </div>
         </div>
 
         <div class="admin-actions" data-view-panel="settings">
           <button id="initCloudBtn" class="ghost" type="button">初始化云端数据</button>
           <button id="syncPendingBtn" class="ghost" type="button">补传离线订单</button>
-          <button id="exportBtn" class="ghost" type="button">导出销售记录</button>
-          <button id="exportSummaryBtn" class="ghost" type="button">导出分行汇总</button>
-          <button id="exportPaymentSummaryBtn" class="ghost" type="button">导出付款汇总</button>
-          <button id="exportProductSalesBtn" class="ghost" type="button">导出商品排行</button>
-          <button id="exportInventoryBtn" class="ghost" type="button">导出库存总表</button>
-          <button id="exportCustomersBtn" class="ghost" type="button">导出客户名单</button>
           <button id="exportAuditBtn" class="ghost" type="button">导出审计日志</button>
-          <button id="exportStockBtn" class="ghost" type="button">导出库存流水</button>
-          <button id="exportShiftsBtn" class="ghost" type="button">导出交班记录</button>
           <button id="backupBtn" class="ghost" type="button">导出完整备份</button>
           <button id="restoreBtn" class="ghost danger" type="button">从备份恢复</button>
           <input id="restoreInput" class="hidden" type="file" accept="application/json">
@@ -379,6 +410,9 @@
       </div>
       <div id="dailyPaymentSummaryList" class="management-list compact-list"></div>
       <div id="salesList" class="sales-list"></div>
+      <div class="admin-actions" data-employee-tools>
+        <button id="exportShiftsBtn" class="ghost" type="button">导出本分行交班记录</button>
+      </div>
       <button id="toggleSalesLimitBtn" class="ghost hidden" type="button">显示更多</button>
     </section>
   </main>
@@ -609,6 +643,9 @@
             <option value="not-used">未使用</option>
             <option value="pending">待确认</option>
             <option value="linked">已关联</option>
+            <option value="refunded">已退款</option>
+            <option value="refund-failed">退款异常</option>
+            <option value="canceled">已取消</option>
             <option value="failed">关联异常</option>
           </select>
         </label>
@@ -626,6 +663,9 @@
             <option value="not-used">未使用</option>
             <option value="pending">待关联</option>
             <option value="linked">已关联</option>
+            <option value="reversed">已撤销</option>
+            <option value="review-required">需人工复核</option>
+            <option value="canceled">已取消</option>
             <option value="failed">关联异常</option>
           </select>
         </label>

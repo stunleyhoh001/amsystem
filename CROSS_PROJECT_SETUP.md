@@ -2,6 +2,29 @@
 
 当前状态：代码与本机测试已完成，尚未部署云函数，也尚未启用跨项目 IAM。
 
+## 本地部署预检
+
+部署前先在简单POS目录运行：
+
+```powershell
+node scripts/integration-preflight.js
+```
+
+预检会只读检查三个项目编号、Functions来源与导出、Rules文件、Hosting公开范围、
+跨项目目标和服务账号私钥。`0 errors` 才可进入部署步骤。
+
+SimplePay安全资金开关保持关闭，以及跨项目IAM尚未云端验证，会显示为提醒而不是错误；
+IAM必须在部署后使用POS后台的“检查三系统连接”确认。
+
+查看完整部署计划（不会连接Firebase或修改云端）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/deploy-three-systems.ps1
+```
+
+真实部署脚本具有三层保护：`-Execute`、费用确认和固定确认文字。只有项目拥有者明确确认部署后，
+才可使用执行模式。不要在预检有错误时绕过脚本直接部署。
+
 ## 项目边界
 
 | 系统 | Firebase 项目 | 保存的主要资料 |

@@ -104,6 +104,7 @@ service cloud.firestore {
             "syncStatus",
             "integrationOutbox",
             "inventoryReview",
+            "followUp",
             "updatedAt",
             "syncedAt"
           ])

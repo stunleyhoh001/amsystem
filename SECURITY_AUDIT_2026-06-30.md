@@ -27,9 +27,8 @@
 ## 上线阻挡项
 
 1. SimplePay 的 `secureMoneyFunctionsEnabled` 仍为 `false`。此状态只适合迁移和测试，不能作为正式资金安全模式。
-2. SimplePay 与联盟旧前端仍有多处数据库文字直接写入 `innerHTML`，需要完成统一 HTML 转义或安全 DOM 重构。
-3. 最新 Firestore Rules 与三个项目的云函数尚未部署，当前测试只验证本机代码，不能代表线上规则已经生效。
-4. 跨项目 IAM 尚未配置，付款、退款、联盟入单和撤销尚未完成真实端到端测试。
+2. 最新 Firestore Rules 与三个项目的云函数尚未部署，当前测试只验证本机代码，不能代表线上规则已经生效。
+3. 跨项目 IAM 尚未配置，付款、退款、联盟入单和撤销尚未完成真实端到端测试。
 5. Firebase Rules 尚未通过 Emulator 或线上 Rules Playground 执行规则级测试。
 
 ## 已完成验证
@@ -38,6 +37,7 @@
 - 简单POS全部自动测试通过。
 - SimplePay 安全契约测试通过。
 - 联盟 POS 整合契约测试通过。
+- SimplePay 与联盟前端动态 HTML 已统一经过清洗器，并新增 XSS 渲染契约测试。
 - PBKDF2 新密码与旧密码兼容测试通过。
 - 三个项目未发现服务账号私钥或 `BEGIN PRIVATE KEY` 内容。
 - 简单POS本地 HTTP 页面及 `v0.88` 脚本读取正常。

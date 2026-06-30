@@ -22,7 +22,7 @@ const STORAGE_KEYS = {
 };
 
 const ADMIN_EMAIL_HASH = "967c8833b2067bcf8ad711b817f9662dc8fd48e79e82992bfd56d5af919a6915";
-const APP_VERSION = "v0.88";
+const APP_VERSION = "v0.94";
 const AUTHORIZATION_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 const OFFLINE_PASSWORD_ITERATIONS = 210000;
 const defaultBranches = [
@@ -105,17 +105,26 @@ let pendingSyncPromise = null;
 let cloudDataLoadPromise = null;
 let checkoutInProgress = false;
 let cashMovementInProgress = false;
+let integrationJobs = [];
+let integrationJobsLoadedAt = "";
+let integrationJobsLoading = false;
+let integrationConnectionStatus = null;
+let integrationConnectionLoading = false;
+let integrationTraceStatus = null;
+let integrationTraceLoading = false;
 
 const VIEW_META = {
   order: { title: "下单", subtitle: "选择商品并完成当前订单" },
-  menu: { title: "菜单管理", subtitle: "新增商品和维护售价，库存请到库存页调整" },
+  menu: { title: "菜单", subtitle: "查看本分行可售商品与当前售价" },
   inventory: { title: "库存", subtitle: "查看库存流水和低库存提醒" },
   transactions: { title: "转账记录", subtitle: "查看销售记录、客户跟进和收款状态" },
-  report: { title: "报告", subtitle: "查看全局指标、分行表现和销售趋势" },
+  report: { title: "报告", subtitle: "查看销售指标、商品表现和付款趋势" },
   settings: { title: "设置", subtitle: "管理分行、员工、同步、备份和业务设置" }
 };
 
 function setAppView(view) {
+  if (isAdmin() && !["report", "settings"].includes(view)) view = "report";
+  if (!isAdmin() && getOperator() && view === "settings") view = "order";
   currentView = view;
   document.body.dataset.view = view;
   for (const button of document.querySelectorAll("[data-app-view]")) {
@@ -137,8 +146,16 @@ function setAppView(view) {
 
 function updateViewHeadings() {
   const meta = VIEW_META[currentView] || VIEW_META.order;
-  if (els.adminTitle) els.adminTitle.textContent = meta.title;
-  if (els.adminSubtitle) els.adminSubtitle.textContent = meta.subtitle;
+  if (els.adminTitle) {
+    els.adminTitle.textContent = currentView === "report"
+      ? (isAdmin() ? "全局总览" : "分行报告")
+      : meta.title;
+  }
+  if (els.adminSubtitle) {
+    els.adminSubtitle.textContent = currentView === "report" && !isAdmin() && getOperator()
+      ? `${getBranchName(getOperationalBranchId())} · 仅显示授权分行资料`
+      : meta.subtitle;
+  }
 }
 
 const els = {
@@ -235,6 +252,8 @@ const els = {
   reportAllBtn: document.querySelector("#reportAllBtn"),
   globalRevenueText: document.querySelector("#globalRevenueText"),
   globalOrdersText: document.querySelector("#globalOrdersText"),
+  reportRevenueLabel: document.querySelector("#reportRevenueLabel"),
+  reportOrdersLabel: document.querySelector("#reportOrdersLabel"),
   globalCustomersText: document.querySelector("#globalCustomersText"),
   globalStockText: document.querySelector("#globalStockText"),
   branchOverview: document.querySelector("#branchOverview"),
@@ -248,6 +267,14 @@ const els = {
   inventoryOverviewList: document.querySelector("#inventoryOverviewList"),
   syncOverview: document.querySelector("#syncOverview"),
   integrationOverview: document.querySelector("#integrationOverview"),
+  integrationConnectionOverview: document.querySelector("#integrationConnectionOverview"),
+  checkIntegrationConnectionsBtn: document.querySelector("#checkIntegrationConnectionsBtn"),
+  integrationTraceOrderInput: document.querySelector("#integrationTraceOrderInput"),
+  traceIntegrationOrderBtn: document.querySelector("#traceIntegrationOrderBtn"),
+  integrationTraceOverview: document.querySelector("#integrationTraceOverview"),
+  integrationJobOverview: document.querySelector("#integrationJobOverview"),
+  checkIntegrationJobsBtn: document.querySelector("#checkIntegrationJobsBtn"),
+  refreshAffiliateCatalogBtn: document.querySelector("#refreshAffiliateCatalogBtn"),
   runDiagnosticsBtn: document.querySelector("#runDiagnosticsBtn"),
   diagnosticsOverview: document.querySelector("#diagnosticsOverview"),
   shiftList: document.querySelector("#shiftList"),
@@ -769,13 +796,14 @@ function isAdmin() {
 }
 
 function canUseOperations() {
-  return isAdmin() || Boolean(getOperator());
+  return Boolean(getOperator()) && !isAdmin();
 }
 
 function canAccessView(view = currentView) {
+  if (isAdmin()) return view === "report" || view === "settings";
   if (view === "order") return true;
-  if (view === "inventory" || view === "transactions") return canUseOperations();
-  return isAdmin();
+  if (["menu", "inventory", "transactions", "report"].includes(view)) return canUseOperations();
+  return false;
 }
 
 function getOperationalBranchId() {
@@ -1037,20 +1065,36 @@ function renderBranchSelect() {
 function renderAdminAccess() {
   const adminAllowed = isAdmin();
   const viewAllowed = canAccessView();
-  const operationalAllowed = !adminAllowed && canUseOperations() && (currentView === "inventory" || currentView === "transactions");
-  els.adminStatus.textContent = adminAllowed ? "后台管理员" : operationalAllowed ? "员工营运权限" : "后台未登录";
+  const operationalAllowed = canUseOperations() && ["menu", "inventory", "transactions", "report"].includes(currentView);
+  els.adminStatus.textContent = adminAllowed ? "管理员 · 设置/总览" : operationalAllowed ? "分行员工权限" : "后台未登录";
   els.adminStatus.style.color = adminAllowed || operationalAllowed ? "#0f766e" : "#66756f";
   els.adminLoginForm.classList.toggle("hidden", adminAllowed || operationalAllowed);
   els.adminLogoutBtn.classList.toggle("hidden", !adminAllowed);
   els.adminContent.classList.toggle("hidden", !viewAllowed);
+  els.productForm.classList.toggle("hidden", !adminAllowed);
+  for (const button of document.querySelectorAll("[data-app-view]")) {
+    const view = button.dataset.appView;
+    const visible = adminAllowed
+      ? ["report", "settings"].includes(view)
+      : canUseOperations()
+        ? view !== "settings"
+        : ["order", "settings"].includes(view);
+    button.classList.toggle("hidden", !visible);
+  }
+  for (const tools of document.querySelectorAll("[data-employee-tools]")) {
+    tools.classList.toggle("hidden", !canUseOperations());
+  }
+  for (const section of document.querySelectorAll("[data-admin-only]")) {
+    section.classList.toggle("hidden", !adminAllowed);
+  }
   if (adminAllowed) {
     els.adminLoginMessage.classList.remove("error");
     els.adminLoginMessage.textContent = isCloudAdmin()
-      ? "Google 管理员已授权"
-      : "本机管理员已授权";
+      ? "Google 管理员已授权；仅开放设置与全局总览。"
+      : "本机管理员已授权；仅开放设置与全局总览。";
   } else if (operationalAllowed) {
     els.adminLoginMessage.classList.remove("error");
-    els.adminLoginMessage.textContent = "员工可处理本分行库存和退款/作废。";
+    els.adminLoginMessage.textContent = "员工可处理本分行下单、库存、交易与报告。";
   }
 }
 
@@ -1093,7 +1137,7 @@ function isCurrentShiftOwner() {
 }
 
 function canManageCurrentShift() {
-  return hasOpenShift() && (isAdmin() || isCurrentShiftOwner());
+  return hasOpenShift() && isCurrentShiftOwner();
 }
 
 function getCurrentShiftLabel() {
@@ -1102,7 +1146,7 @@ function getCurrentShiftLabel() {
 }
 
 function isOperatorAllowedForCurrentBranch() {
-  if (isAdmin()) return true;
+  if (isAdmin()) return false;
   const operator = getOperator();
   return Boolean(operator && operator.branchId === currentBranchId);
 }
@@ -1737,7 +1781,11 @@ function renderOperatorAccess() {
   const posOperator = getOperator();
   const allowed = isOperatorAllowedForCurrentBranch();
   const shiftLocked = hasOpenShift() && !isCurrentShiftOwner();
-  els.operatorStatus.textContent = shiftLocked
+  els.cashierToggleBtn.classList.toggle("hidden", isAdmin());
+  els.cashierMenu.classList.toggle("hidden", isAdmin());
+  els.operatorStatus.textContent = isAdmin()
+    ? "管理模式"
+    : shiftLocked
     ? "班次待交接"
     : allowed
     ? `收银：${operator.name}`
@@ -1770,7 +1818,7 @@ function renderOperatorAccess() {
   } else if (shiftLocked) {
     els.operatorMessage.textContent = `当前班次属于 ${getCurrentShiftLabel()}。请由原员工重新登录恢复，或请管理员完成交班。`;
   } else if (isAdmin()) {
-    els.operatorMessage.textContent = `${operator.name} 拥有全局权限，可切换总店与所有分行。`;
+    els.operatorMessage.textContent = "管理员仅使用设置与全局总览，不参与分行收银和交班。";
   } else if (allowed) {
     els.operatorMessage.textContent = hasOpenShift()
       ? `${operator.name} 已恢复 ${getBranchName(operator.branchId)} 的进行中班次。`
@@ -1832,6 +1880,7 @@ async function loginOperator(event) {
   els.operatorPasswordInput.value = "";
   cart = [];
   if (!ensureCurrentShift()) return;
+  setAppView("order");
   renderAll();
 }
 
@@ -1925,18 +1974,21 @@ function applyRefreshedAuthorization(appUser) {
   currentCloudUser = cachedUser;
   cloudSessionActive = true;
   operatorEmail = cachedUser.email;
-  persistSessionEmail(STORAGE_KEYS.operatorEmail, operatorEmail);
   if (cachedUser.role === "admin") {
     adminEmail = cachedUser.email;
     persistSessionEmail(STORAGE_KEYS.adminEmail, adminEmail);
+    operatorEmail = "";
+    clearSessionEmail(STORAGE_KEYS.operatorEmail);
   } else {
     adminEmail = "";
     clearSessionEmail(STORAGE_KEYS.adminEmail);
+    persistSessionEmail(STORAGE_KEYS.operatorEmail, operatorEmail);
     currentBranchId = cachedUser.branchId || "hq";
     localStorage.setItem(STORAGE_KEYS.branchId, currentBranchId);
     if (currentBranchId !== previousBranchId) cart = [];
   }
   updateCloudStatus(`授权已核对：${cachedUser.email}`, true);
+  setAppView(cachedUser.role === "admin" ? "report" : (canAccessView(currentView) ? currentView : "order"));
   renderAll();
   return true;
 }
@@ -2473,19 +2525,22 @@ async function applyCloudUser(appUser, firebaseUser = null) {
     adminEmail = normalizeEmail(appUser.email);
     ensureAdminAuthorized(adminEmail);
     persistSessionEmail(STORAGE_KEYS.adminEmail, adminEmail);
+    operatorEmail = "";
+    clearSessionEmail(STORAGE_KEYS.operatorEmail);
     currentBranchId = branches.some((branch) => branch.id === currentBranchId) ? currentBranchId : "hq";
   } else {
     adminEmail = "";
     clearSessionEmail(STORAGE_KEYS.adminEmail);
+    operatorEmail = appUser.email;
+    persistSessionEmail(STORAGE_KEYS.operatorEmail, operatorEmail);
     currentBranchId = appUser.branchId || "hq";
     if (currentBranchId !== previousBranchId) cart = [];
   }
 
-  operatorEmail = appUser.email;
-  persistSessionEmail(STORAGE_KEYS.operatorEmail, operatorEmail);
   localStorage.setItem(STORAGE_KEYS.branchId, currentBranchId);
-  if (!hasOpenShift() || isShiftIdentity(appUser.email, currentBranchId)) ensureCurrentShift();
+  if (appUser.role !== "admin" && (!hasOpenShift() || isShiftIdentity(appUser.email, currentBranchId))) ensureCurrentShift();
   updateCloudStatus(`云端已登录：${appUser.email}`, true);
+  setAppView(appUser.role === "admin" ? "report" : "order");
   renderAll();
   const sessionEmail = normalizeEmail(appUser.email);
   await syncPendingChanges();
@@ -2549,14 +2604,13 @@ async function loginAdmin(event) {
   }
   adminEmail = adminUser.email;
   persistSessionEmail(STORAGE_KEYS.adminEmail, adminEmail);
-  if (!operatorEmail) {
-    operatorEmail = adminUser.email;
-    persistSessionEmail(STORAGE_KEYS.operatorEmail, operatorEmail);
-  }
+  operatorEmail = "";
+  clearSessionEmail(STORAGE_KEYS.operatorEmail);
   els.adminEmailInput.value = "";
   els.adminPasswordInput.value = "";
   els.adminLoginMessage.textContent = "管理员离线身份已验证。";
   els.adminLoginMessage.classList.remove("error");
+  setAppView("report");
   renderAll();
 }
 
@@ -2568,7 +2622,7 @@ function logoutAdmin() {
     operatorEmail = "";
     clearSessionEmail(STORAGE_KEYS.operatorEmail);
   }
-  els.adminLoginMessage.textContent = "商品管理、导出销售记录和清空数据仅管理员可用。";
+  els.adminLoginMessage.textContent = "管理员仅负责设置与全局总览；分行业务由授权员工处理。";
   els.adminLoginMessage.classList.remove("error");
   logoutCloudIfReady();
   renderAll();
@@ -2894,11 +2948,24 @@ function getReportSales() {
   const startDate = els.reportStartInput.value;
   const endDate = els.reportEndInput.value;
   return getActiveSales().filter((sale) => {
+    if (!canManageBranch(sale.branchId || "hq")) return false;
     const saleDate = inputDate(new Date(sale.createdAt));
     if (startDate && saleDate < startDate) return false;
     if (endDate && saleDate > endDate) return false;
     return true;
   });
+}
+
+function getAccessibleBranches() {
+  if (isAdmin()) return branches;
+  const branchId = getOperationalBranchId();
+  return branches.filter((branch) => branch.id === branchId);
+}
+
+function getReportStock() {
+  if (isAdmin()) return getTotalStock();
+  const branchId = getOperationalBranchId();
+  return products.reduce((total, product) => total + getBranchStock(product, branchId), 0);
 }
 
 function getReportRangeLabel() {
@@ -3030,7 +3097,7 @@ function renderSalesBranchFilter() {
 }
 
 function renderMenuProductList() {
-  if (!isAdmin()) return;
+  if (!isAdmin() && !canUseOperations()) return;
   els.menuProductList.innerHTML = "";
   const keyword = els.menuSearchInput.value.trim().toLowerCase();
   const filteredProducts = products.filter((product) => {
@@ -3051,11 +3118,11 @@ function renderMenuProductList() {
         <small>${escapeHtml(product.category || "-")} · SKU ${escapeHtml(product.barcode || "-")}</small>
       </div>
       <div class="row-actions">
-        <small>${money(product.price)} · ${escapeHtml(getBranchName(currentBranchId))}库存 ${getBranchStock(product)}</small>
-        <button class="ghost" type="button" data-edit-product>编辑资料 / 价格</button>
+        <small>${money(product.price)} · ${escapeHtml(getBranchName(getOperationalBranchId()))}库存 ${getBranchStock(product, getOperationalBranchId())}</small>
+        ${isAdmin() ? '<button class="ghost" type="button" data-edit-product>编辑资料 / 价格</button>' : ""}
       </div>
     `;
-    row.querySelector("[data-edit-product]").addEventListener("click", () => fillProductForm(product));
+    row.querySelector("[data-edit-product]")?.addEventListener("click", () => fillProductForm(product));
     els.menuProductList.append(row);
   }
 }
@@ -3292,11 +3359,15 @@ function renderIntegrationOverview() {
   const simplePayPending = simplePayRows.filter((item) => item.simplePayStatus === "pending").length;
   const affiliatePending = affiliateRows.filter((item) => item.affiliateStatus === "pending").length;
   const markedFailedCount = references.filter((item) =>
-    item.simplePayStatus === "failed" || item.affiliateStatus === "failed"
+    isIntegrationFailureStatus(item.simplePayStatus)
+    || isIntegrationFailureStatus(item.affiliateStatus)
   ).length;
   const integrityIssues = getIntegrationIssues(activeSales);
   const failedCount = markedFailedCount + integrityIssues.length;
   const inventoryReviewCount = sales.filter(requiresInventoryReview).length;
+  const affiliateProduct = products.find((product) =>
+    product.affiliatePlanId || String(product.barcode || "").startsWith("AFF-PLAN-")
+  );
   const issueHint = integrityIssues[0]?.message || "在交易记录打开“关联资料”处理";
   els.integrationOverview.innerHTML = `
     <div class="management-row">
@@ -3344,9 +3415,9 @@ function renderIntegrationOverview() {
     <div class="management-row">
       <div>
         <strong>价格来源</strong>
-        <small>POS 当前仍使用本机菜单价格；正式融合后以联盟配套为准</small>
+        <small>管理员按需读取联盟配套价格，联盟入单时仍会再次核对</small>
       </div>
-      <span>联盟配套 RM 180</span>
+      <span>${affiliateProduct ? money(affiliateProduct.price) : "未设置联盟商品"}</span>
     </div>
     <div class="row-actions integration-review-actions">
       <button class="primary" type="button" data-review-integration="pending">处理待关联</button>
@@ -3356,6 +3427,323 @@ function renderIntegrationOverview() {
   `;
   for (const button of els.integrationOverview.querySelectorAll("[data-review-integration]")) {
     button.addEventListener("click", () => openIntegrationQueue(button.dataset.reviewIntegration));
+  }
+  renderIntegrationConnectionOverview();
+  renderIntegrationJobOverview();
+}
+
+function renderIntegrationConnectionOverview() {
+  if (!els.integrationConnectionOverview) return;
+  els.integrationConnectionOverview.innerHTML = "";
+  if (!isAdmin() || !integrationConnectionStatus) return;
+  const status = integrationConnectionStatus;
+  const simplePayBranches = Array.isArray(status.simplePay?.branches) ? status.simplePay.branches : [];
+  const branchIssues = simplePayBranches.filter((branch) =>
+    !branch.merchantConfigured || !branch.merchantExists || !branch.merchantApproved
+  );
+  const secureMode = status.simplePay?.secureMoneyFunctionsEnabled === true;
+  const rows = [
+    {
+      title: "SimplePay 项目",
+      detail: status.simplePay?.reachable
+        ? `积分汇率 ${Number(status.simplePay.pointsPerMyr || 0)} / RM`
+        : `无法读取${status.simplePay?.errorCode ? ` · ${status.simplePay.errorCode}` : ""}`,
+      value: status.simplePay?.reachable ? "可连接" : "不可连接",
+      warning: !status.simplePay?.reachable
+    },
+    {
+      title: "SimplePay 安全资金模式",
+      detail: secureMode ? "资金变动由安全云函数处理" : "仍是迁移 / 测试模式，不能正式上线",
+      value: secureMode ? "已启用" : "未启用",
+      warning: !secureMode
+    },
+    {
+      title: "分行 SimplePay 商家",
+      detail: branchIssues.length
+        ? branchIssues.map((branch) => branch.branchName || branch.branchId).join("、")
+        : `${simplePayBranches.length} 个分行均已配置并通过`,
+      value: `${branchIssues.length} 个问题`,
+      warning: branchIssues.length > 0
+    },
+    {
+      title: "联盟项目",
+      detail: status.affiliate?.reachable
+        ? `${status.affiliate.activePlans?.length || 0} 个有效配套`
+        : `无法读取${status.affiliate?.errorCode ? ` · ${status.affiliate.errorCode}` : ""}`,
+      value: status.affiliate?.reachable ? "可连接" : "不可连接",
+      warning: !status.affiliate?.reachable || !(status.affiliate?.activePlans?.length)
+    }
+  ];
+  for (const item of rows) {
+    const row = document.createElement("div");
+    row.className = `management-row ${item.warning ? "diagnostic-warning" : ""}`;
+    row.innerHTML = `
+      <div>
+        <strong>${escapeHtml(item.title)}</strong>
+        <small>${escapeHtml(item.detail)}</small>
+      </div>
+      <span>${escapeHtml(item.value)}</span>
+    `;
+    els.integrationConnectionOverview.append(row);
+  }
+}
+
+async function checkIntegrationConnectionsFromCloud() {
+  if (!requireCloudAdmin() || integrationConnectionLoading) return;
+  if (!window.cloudPOS?.checkIntegrationConnections) {
+    alert("三系统连接诊断模块尚未加载，请刷新页面后重试。");
+    return;
+  }
+  integrationConnectionLoading = true;
+  els.checkIntegrationConnectionsBtn.disabled = true;
+  els.checkIntegrationConnectionsBtn.textContent = "正在检查...";
+  try {
+    const result = await window.cloudPOS.checkIntegrationConnections();
+    integrationConnectionStatus = result && typeof result === "object" ? result : {};
+    renderIntegrationConnectionOverview();
+  } catch (error) {
+    alert(`三系统连接检查失败：${getErrorMessage(error)}`);
+  } finally {
+    integrationConnectionLoading = false;
+    els.checkIntegrationConnectionsBtn.disabled = false;
+    els.checkIntegrationConnectionsBtn.textContent = "检查三系统连接";
+  }
+}
+
+function renderIntegrationTraceOverview() {
+  if (!els.integrationTraceOverview) return;
+  els.integrationTraceOverview.innerHTML = "";
+  if (!isAdmin() || !integrationTraceStatus) {
+    els.integrationTraceOverview.innerHTML = '<div class="empty compact-empty">尚未追踪订单</div>';
+    return;
+  }
+  const trace = integrationTraceStatus;
+  const jobs = Array.isArray(trace.jobs) ? trace.jobs : [];
+  const unresolvedJobs = jobs.filter((job) => !["completed", "canceled"].includes(job.status));
+  const simplePayParts = [
+    trace.simplePay?.paymentIntent?.status && `付款意图 ${trace.simplePay.paymentIntent.status}`,
+    trace.simplePay?.merchantOrder?.status && `商家订单 ${trace.simplePay.merchantOrder.status}`,
+    trace.simplePay?.refundIntent?.status && `退款意图 ${trace.simplePay.refundIntent.status}`,
+    ...(trace.simplePay?.refundRequests || []).map((item) => `退款 ${item.status}`)
+  ].filter(Boolean);
+  const affiliateParts = [
+    trace.affiliate?.externalOrder?.status && `联盟订单 ${trace.affiliate.externalOrder.status}`,
+    trace.affiliate?.reversalCase?.status && `撤销 ${trace.affiliate.reversalCase.status}`,
+    ...(trace.affiliate?.commands || []).map((item) => `${item.operation || "命令"} ${item.status}`)
+  ].filter(Boolean);
+  const rows = [
+    {
+      title: `POS ${trace.sale?.id || "-"}`,
+      detail: `${trace.sale?.branchId || "-"} · ${money(trace.sale?.amount)} · ${trace.sale?.paymentMethod || "-"}`,
+      value: trace.sale?.status || "未知",
+      warning: trace.sale?.status === "voided"
+    },
+    {
+      title: "整合任务",
+      detail: jobs.length
+        ? jobs.map((job) => `${job.operation || job.id}: ${job.status || "未知"}${job.errorCode ? ` (${job.errorCode})` : ""}`).join(" · ")
+        : "没有建立整合任务",
+      value: `${unresolvedJobs.length} 项未结束`,
+      warning: unresolvedJobs.some((job) => ["retry", "needs-attention", "failed"].includes(job.status))
+    },
+    {
+      title: "SimplePay",
+      detail: trace.simplePay?.reachable
+        ? (simplePayParts.join(" · ") || "项目可连接，本订单没有 SimplePay 记录")
+        : `无法读取${trace.simplePay?.errorCode ? ` · ${trace.simplePay.errorCode}` : ""}`,
+      value: trace.simplePay?.reachable ? "已读取" : "不可连接",
+      warning: !trace.simplePay?.reachable
+    },
+    {
+      title: "简单联盟",
+      detail: trace.affiliate?.reachable
+        ? (affiliateParts.join(" · ") || "项目可连接，本订单没有联盟记录")
+        : `无法读取${trace.affiliate?.errorCode ? ` · ${trace.affiliate.errorCode}` : ""}`,
+      value: trace.affiliate?.reachable ? "已读取" : "不可连接",
+      warning: !trace.affiliate?.reachable
+    }
+  ];
+  for (const item of rows) {
+    const row = document.createElement("div");
+    row.className = `management-row ${item.warning ? "diagnostic-warning" : ""}`;
+    row.innerHTML = `
+      <div>
+        <strong>${escapeHtml(item.title)}</strong>
+        <small>${escapeHtml(item.detail)}</small>
+      </div>
+      <span>${escapeHtml(item.value)}</span>
+    `;
+    els.integrationTraceOverview.append(row);
+  }
+}
+
+async function traceIntegrationOrderFromCloud() {
+  if (!requireCloudAdmin() || integrationTraceLoading) return;
+  if (!window.cloudPOS?.traceIntegrationOrder) {
+    alert("订单追踪模块尚未加载，请刷新页面后重试。");
+    return;
+  }
+  const posOrderId = els.integrationTraceOrderInput.value.trim();
+  if (!posOrderId) {
+    alert("请输入 POS 订单号。");
+    els.integrationTraceOrderInput.focus();
+    return;
+  }
+  integrationTraceLoading = true;
+  els.traceIntegrationOrderBtn.disabled = true;
+  els.traceIntegrationOrderBtn.textContent = "正在追踪...";
+  try {
+    const result = await window.cloudPOS.traceIntegrationOrder(posOrderId);
+    integrationTraceStatus = result && typeof result === "object" ? result : {};
+    renderIntegrationTraceOverview();
+  } catch (error) {
+    integrationTraceStatus = null;
+    renderIntegrationTraceOverview();
+    alert(`订单追踪失败：${getErrorMessage(error)}`);
+  } finally {
+    integrationTraceLoading = false;
+    els.traceIntegrationOrderBtn.disabled = false;
+    els.traceIntegrationOrderBtn.textContent = "追踪订单";
+  }
+}
+
+function getIntegrationJobStatusText(status) {
+  const labels = {
+    pending: "等待处理",
+    processing: "处理中",
+    retry: "等待重试",
+    blocked: "等待前置任务",
+    "awaiting-customer-authorization": "等待顾客付款",
+    "awaiting-refund-approval": "等待退款审批",
+    dispatched: "已派发",
+    completed: "已完成",
+    canceled: "已取消",
+    "needs-attention": "需要处理"
+  };
+  return labels[status] || status || "未知";
+}
+
+function renderIntegrationJobOverview() {
+  if (!els.integrationJobOverview) return;
+  els.integrationJobOverview.innerHTML = "";
+  if (!isAdmin()) return;
+  if (!integrationJobsLoadedAt) {
+    els.integrationJobOverview.innerHTML = '<div class="empty compact-empty">尚未检查云端整合任务</div>';
+    return;
+  }
+  const actionable = integrationJobs.filter((job) => ["retry", "needs-attention"].includes(job.status));
+  const summary = document.createElement("div");
+  summary.className = `management-row ${actionable.length ? "diagnostic-warning" : ""}`;
+  summary.innerHTML = `
+    <div>
+      <strong>云端整合任务</strong>
+      <small>最近检查 ${escapeHtml(new Date(integrationJobsLoadedAt).toLocaleString())} · 最近 ${integrationJobs.length} 条</small>
+    </div>
+    <span>${actionable.length} 条需处理</span>
+  `;
+  els.integrationJobOverview.append(summary);
+  for (const job of actionable.slice(0, 10)) {
+    const row = document.createElement("div");
+    row.className = "management-row diagnostic-warning";
+    row.innerHTML = `
+      <div>
+        <strong>${escapeHtml(job.operation || "未知任务")} · ${escapeHtml(getIntegrationJobStatusText(job.status))}</strong>
+        <small>${escapeHtml(job.posOrderId || "-")} · ${escapeHtml(job.lastError?.message || "可重新执行")}</small>
+      </div>
+      <button class="ghost" type="button" data-retry-integration-job="${escapeHtml(job.id)}">安全重试</button>
+    `;
+    row.querySelector("[data-retry-integration-job]").addEventListener("click", () => {
+      retryIntegrationJobFromCloud(job.id);
+    });
+    els.integrationJobOverview.append(row);
+  }
+}
+
+async function checkIntegrationJobsFromCloud() {
+  if (!requireCloudAdmin()) return;
+  if (integrationJobsLoading) return;
+  if (!window.cloudPOS?.loadIntegrationJobs) {
+    alert("整合任务查询模块尚未加载，请刷新页面后重试。");
+    return;
+  }
+  integrationJobsLoading = true;
+  els.checkIntegrationJobsBtn.disabled = true;
+  els.checkIntegrationJobsBtn.textContent = "正在检查...";
+  try {
+    const loadedJobs = await window.cloudPOS.loadIntegrationJobs();
+    integrationJobs = Array.isArray(loadedJobs) ? loadedJobs : [];
+    integrationJobsLoadedAt = new Date().toISOString();
+    renderIntegrationJobOverview();
+  } catch (error) {
+    alert(`检查整合任务失败：${getErrorMessage(error)}`);
+  } finally {
+    integrationJobsLoading = false;
+    els.checkIntegrationJobsBtn.disabled = false;
+    els.checkIntegrationJobsBtn.textContent = "检查整合任务";
+  }
+}
+
+async function retryIntegrationJobFromCloud(jobId) {
+  if (!requireCloudAdmin() || !jobId || integrationJobsLoading) return;
+  const job = integrationJobs.find((item) => item.id === jobId);
+  if (!job || !["retry", "needs-attention"].includes(job.status)) return;
+  if (!confirm(`确定安全重试 ${job.operation || "整合任务"}（订单 ${job.posOrderId || "-"}）吗？`)) return;
+  try {
+    await window.cloudPOS.retryIntegrationJob(jobId);
+    await checkIntegrationJobsFromCloud();
+  } catch (error) {
+    alert(`整合任务无法重试：${getErrorMessage(error)}`);
+  }
+}
+
+async function refreshAffiliateCatalogFromCloud() {
+  if (!requireCloudAdmin()) return;
+  if (!window.cloudPOS?.refreshAffiliateCatalog) {
+    alert("联盟价格同步模块尚未加载，请刷新页面后重试。");
+    return;
+  }
+  const button = els.refreshAffiliateCatalogBtn;
+  button.disabled = true;
+  button.textContent = "正在同步...";
+  try {
+    const result = await window.cloudPOS.refreshAffiliateCatalog();
+    const catalog = Array.isArray(result?.catalog) ? result.catalog : [];
+    const priceByPlanId = new Map(catalog.map((plan) => [String(plan.planId || ""), Number(plan.price)]));
+    let localUpdatedProducts = 0;
+    const nextProducts = products.map((product) => {
+      const planId = String(product.affiliatePlanId || "");
+      const price = priceByPlanId.get(planId);
+      if (!planId || !Number.isFinite(price) || price <= 0) return product;
+      if (Number(product.price) !== price) localUpdatedProducts += 1;
+      return {
+        ...product,
+        price,
+        affiliatePlanName: catalog.find((plan) => plan.planId === planId)?.name || product.affiliatePlanName || "",
+        affiliatePriceSyncedAt: result.syncedAt || new Date().toISOString()
+      };
+    });
+    if (!save(STORAGE_KEYS.products, nextProducts)) {
+      alert("联盟价格已更新到云端，但本机保存失败；刷新云端资料后会重新取得价格。");
+      return;
+    }
+    products = nextProducts;
+    const productById = new Map(nextProducts.map((product) => [product.id, product]));
+    cart = cart.map((item) => {
+      const product = productById.get(item.id);
+      return product?.affiliatePlanId ? { ...item, price: Number(product.price) } : item;
+    });
+    writeAuditLog("affiliate.catalog.refresh", {
+      plans: catalog.map((plan) => ({ planId: plan.planId, price: plan.price })),
+      updatedProducts: Number(result.updatedProducts || 0),
+      localUpdatedProducts
+    });
+    alert(`联盟价格同步完成，共读取 ${catalog.length} 个有效配套，本机更新 ${localUpdatedProducts} 个商品。`);
+    renderAll();
+  } catch (error) {
+    alert(`联盟价格同步失败：${getErrorMessage(error)}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = "同步联盟价格";
   }
 }
 
@@ -3572,9 +3960,13 @@ function getFollowUpDueText(daysLeft) {
 }
 
 function updateSaleFollowUp(saleId, status) {
-  if (!requireAdmin()) return;
+  if (!requireOperations()) return;
   const sale = sales.find((item) => item.id === saleId);
   if (!sale) return;
+  if (!canManageBranch(sale.branchId || "hq")) {
+    alert("员工只能更新自己授权分行的客户跟进。");
+    return;
+  }
   const nextFollowUp = {
     status,
     updatedAt: new Date().toISOString(),
@@ -3621,9 +4013,18 @@ function getSaleSyncText(sale) {
 
 function getIntegrationStatusText(status, pendingText = "待关联") {
   if (status === "linked") return "已关联";
+  if (status === "refunded") return "已退款";
+  if (status === "reversed") return "已撤销";
+  if (status === "review-required") return "需人工复核";
+  if (status === "refund-failed") return "退款异常";
+  if (status === "canceled") return "已取消";
   if (status === "failed") return "关联异常";
   if (status === "pending") return pendingText;
   return "未使用";
+}
+
+function isIntegrationFailureStatus(status) {
+  return ["failed", "refund-failed", "review-required"].includes(status);
 }
 
 function getSaleIntegrationSummary(sale) {
@@ -3683,8 +4084,8 @@ function matchesIntegrationFilter(sale, filter, issueSaleIds = new Set()) {
     return references.simplePayStatus === "linked" || references.affiliateStatus === "linked";
   }
   if (filter === "failed") {
-    return references.simplePayStatus === "failed"
-      || references.affiliateStatus === "failed"
+    return isIntegrationFailureStatus(references.simplePayStatus)
+      || isIntegrationFailureStatus(references.affiliateStatus)
       || issueSaleIds.has(sale.id);
   }
   return true;
@@ -4000,12 +4401,13 @@ function voidSale(saleId) {
 }
 
 function renderFollowUps() {
-  if (!isAdmin()) {
-    els.followUpList.innerHTML = '<div class="empty compact-empty">客户跟进仅管理员可用</div>';
+  if (!canUseOperations()) {
+    els.followUpList.innerHTML = '<div class="empty compact-empty">请先登录分行员工账号</div>';
     return;
   }
   els.followUpList.innerHTML = "";
   const activePlans = getActiveSales()
+    .filter((sale) => canManageBranch(sale.branchId || "hq"))
     .filter((sale) => sale.service?.endDate)
     .map((sale) => ({ ...sale, daysLeft: daysUntil(sale.service.endDate) }))
     .filter((sale) => sale.followUp?.status !== "completed")
@@ -4826,7 +5228,7 @@ function renderDailyPaymentSummary(selectedSales) {
 }
 
 function renderGlobalDashboard() {
-  if (!isAdmin()) return;
+  if (!canAccessView("report")) return;
   ensureReportRange();
   const reportSales = getReportSales();
   const totalRevenue = reportSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
@@ -4838,11 +5240,13 @@ function renderGlobalDashboard() {
 
   els.globalRevenueText.textContent = money(totalRevenue);
   els.globalOrdersText.textContent = String(reportSales.length);
+  els.reportRevenueLabel.textContent = isAdmin() ? "全局销售额" : "本分行销售额";
+  els.reportOrdersLabel.textContent = isAdmin() ? "全局订单" : "本分行订单";
   els.globalCustomersText.textContent = String(customers.size);
-  els.globalStockText.textContent = String(getTotalStock());
+  els.globalStockText.textContent = String(getReportStock());
   els.branchOverview.innerHTML = "";
 
-  for (const branch of branches) {
+  for (const branch of getAccessibleBranches()) {
     const branchSales = reportSales.filter((sale) => (sale.branchId || "hq") === branch.id);
     const revenue = branchSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
     const branchCustomers = new Set(
@@ -4978,13 +5382,14 @@ function saveProduct(event) {
 }
 
 function exportSales() {
-  if (!requireAdmin()) return;
-  if (!sales.length) {
+  if (!requireOperations()) return;
+  const accessibleSales = sales.filter((sale) => canManageBranch(sale.branchId || "hq"));
+  if (!accessibleSales.length) {
     alert("还没有销售记录可以导出。");
     return;
   }
   const rows = [["订单号", "外部订单号", "班次号", "状态", "作废时间", "分行", "收银员", "收银员邮箱", "同步状态", "库存复核状态", "库存冲突详情", "库存复核人", "时间", "客户姓名", "电话", "联盟推荐码", "付款方式", "付款参考号", "SimplePay参考号", "联盟订单号", "跟进状态", "跟进更新时间", "计划名称", "服务天数", "计划开始", "计划结束", "商品", "小计", "折扣", "应收", "实收", "找零"]];
-  for (const sale of sales) {
+  for (const sale of accessibleSales) {
     rows.push([
       sale.id,
       sale.externalReferences?.posOrderId || sale.id,
@@ -5035,10 +5440,10 @@ function downloadCsv(filename, rows) {
 }
 
 function exportBranchSummary() {
-  if (!requireAdmin()) return;
+  if (!requireOperations()) return;
   const reportSales = getReportSales();
   const rows = [["日期范围", "统计口径", "分行", "订单数", "客户数", "销售额"]];
-  for (const branch of branches) {
+  for (const branch of getAccessibleBranches()) {
     const branchSales = reportSales.filter((sale) => (sale.branchId || "hq") === branch.id);
     const customers = new Set(branchSales.map((sale) => `${sale.customer?.phone || ""}-${sale.customer?.name || ""}`).filter(Boolean));
     const revenue = branchSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
@@ -5048,7 +5453,7 @@ function exportBranchSummary() {
 }
 
 function exportProductSales() {
-  if (!requireAdmin()) return;
+  if (!requireOperations()) return;
   const rows = [["日期范围", "统计口径", "商品", "销量", "销售额"]];
   for (const item of getProductSalesRows()) {
     rows.push([getReportRangeLabel(), "不含已作废订单", item.name, item.qty, item.revenue]);
@@ -5061,7 +5466,7 @@ function exportProductSales() {
 }
 
 function exportPaymentSummary() {
-  if (!requireAdmin()) return;
+  if (!requireOperations()) return;
   const rows = [["日期范围", "统计口径", "付款方式", "订单数", "金额"]];
   for (const item of getPaymentSummaryRows()) {
     rows.push([getReportRangeLabel(), "不含已作废订单", item.method, item.orders, item.total]);
@@ -5074,7 +5479,7 @@ function exportPaymentSummary() {
 }
 
 function exportDailySettlement() {
-  if (!requireAdmin()) return;
+  if (!requireOperations()) return;
   const selectedDate = els.salesDateInput.value || inputDate();
   const branchFilter = els.salesBranchFilter.value || "all";
   const paymentFilter = els.salesPaymentFilter.value;
@@ -5217,10 +5622,10 @@ function exportIntegrationQueue() {
 }
 
 function exportInventory() {
-  if (!requireAdmin()) return;
+  if (!requireOperations()) return;
   const rows = [["商品", "SKU", "分类", "售价", "分行", "库存"]];
   for (const product of products) {
-    for (const branch of branches) {
+    for (const branch of getAccessibleBranches()) {
       rows.push([
         product.name,
         product.barcode || "",
@@ -5235,14 +5640,15 @@ function exportInventory() {
 }
 
 function exportCustomers() {
-  if (!requireAdmin()) return;
-  if (!sales.length) {
+  if (!requireOperations()) return;
+  const accessibleSales = sales.filter((sale) => canManageBranch(sale.branchId || "hq"));
+  if (!accessibleSales.length) {
     alert("还没有客户资料可以导出。");
     return;
   }
   const rows = [["客户姓名", "电话", "联盟推荐码", "最近订单号", "最近分行", "最近消费时间", "计划名称", "计划开始", "计划结束", "到期状态", "跟进状态", "消费次数", "累计消费"]];
   const customerMap = new Map();
-  for (const sale of [...getActiveSales()].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))) {
+  for (const sale of [...getActiveSales(accessibleSales)].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))) {
     const key = `${sale.customer?.phone || ""}-${sale.customer?.name || ""}`.trim() || sale.id;
     const existing = customerMap.get(key) || {
       latestSale: sale,
@@ -5296,13 +5702,14 @@ function exportAuditLogs() {
 }
 
 function exportStockAdjustments() {
-  if (!requireAdmin()) return;
-  if (!stockAdjustments.length) {
+  if (!requireOperations()) return;
+  const accessibleAdjustments = stockAdjustments.filter((item) => canManageBranch(item.branchId || "hq"));
+  if (!accessibleAdjustments.length) {
     alert("还没有库存流水可以导出。");
     return;
   }
   const rows = [["时间", "商品", "SKU", "分行", "调整前", "调整后", "变化", "原因", "操作者", "操作者邮箱"]];
-  for (const adjustment of stockAdjustments) {
+  for (const adjustment of accessibleAdjustments) {
     rows.push([
       new Date(adjustment.createdAt).toLocaleString(),
       adjustment.productName || "",
@@ -5320,13 +5727,14 @@ function exportStockAdjustments() {
 }
 
 function exportShifts() {
-  if (!requireAdmin()) return;
-  if (!shifts.length) {
+  if (!requireOperations()) return;
+  const accessibleShifts = shifts.filter((shift) => canManageBranch(shift.branchId || "hq"));
+  if (!accessibleShifts.length) {
     alert("还没有交班记录可以导出。");
     return;
   }
   const rows = [["班次号", "分行", "操作员", "核对 / 结班人", "结班人邮箱", "开始时间", "结束时间", "订单数", "总金额", "付款汇总", "开班备用金", "现金销售", "其他现金存入", "现金取出", "应有现金", "实点现金", "现金差额", "作废订单", "本机待同步", "库存待复核", "SimplePay待确认", "联盟待关联", "交班备注"]];
-  for (const shift of shifts) {
+  for (const shift of accessibleShifts) {
     const reconciledBy = shift.reconciliation?.reconciledBy || shift.closedBy || {};
     rows.push([
       shift.id,
@@ -5799,6 +6207,10 @@ els.allSalesDatesBtn.addEventListener("click", () => {
   renderSales();
 });
 els.runDiagnosticsBtn.addEventListener("click", runLocalDiagnostics);
+els.checkIntegrationConnectionsBtn.addEventListener("click", checkIntegrationConnectionsFromCloud);
+els.traceIntegrationOrderBtn.addEventListener("click", traceIntegrationOrderFromCloud);
+els.checkIntegrationJobsBtn.addEventListener("click", checkIntegrationJobsFromCloud);
+els.refreshAffiliateCatalogBtn.addEventListener("click", refreshAffiliateCatalogFromCloud);
 els.quickCheckoutBtn.addEventListener("click", () => {
   setAppView("order");
   if (!isOperatorAllowedForCurrentBranch()) {
@@ -5946,7 +6358,7 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-setAppView("order");
+setAppView(isAdmin() ? "report" : "order");
 migrateManagementData();
 migrateProductsForBranches();
 renderAll();

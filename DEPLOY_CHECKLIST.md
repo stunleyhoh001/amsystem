@@ -11,6 +11,7 @@
 
 ## 本地文件
 
+- 运行 `node scripts/integration-preflight.js`，结果为 `0 errors`。
 - `firebase-config.local.js` 存在，并且内容是当前 Firebase 项目的真实配置。
 - `firebase-config.local.js` 不提交到 GitHub。
 - `firebase-config.example.js` 可以提交，用作模板。

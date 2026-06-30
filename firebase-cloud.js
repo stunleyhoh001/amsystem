@@ -13,12 +13,18 @@ import {
   getDoc,
   getDocs,
   getFirestore,
+  limit,
+  orderBy,
   query,
   runTransaction,
   serverTimestamp,
   setDoc,
   where
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import {
+  getFunctions,
+  httpsCallable
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js";
 
 let configModule;
 try {
@@ -39,6 +45,7 @@ if (!firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith("YOUR_")) {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const cloudFunctions = getFunctions(app);
 const provider = new GoogleAuthProvider();
 
 function normalizeEmail(value) {
@@ -457,6 +464,44 @@ async function signOutGoogle() {
   await signOut(auth);
 }
 
+async function refreshAffiliateCatalog() {
+  const result = await httpsCallable(cloudFunctions, "refreshAffiliateCatalog")({});
+  return result.data;
+}
+
+async function loadIntegrationJobs() {
+  const snapshot = await getDocs(query(
+    collection(db, "integrationJobs"),
+    orderBy("cloudUpdatedAt", "desc"),
+    limit(50)
+  ));
+  return snapshot.docs.map((item) => {
+    const data = item.data();
+    return {
+      id: item.id,
+      ...data,
+      cloudUpdatedAt: data.cloudUpdatedAt?.toDate
+        ? data.cloudUpdatedAt.toDate().toISOString()
+        : data.cloudUpdatedAt
+    };
+  });
+}
+
+async function retryIntegrationJob(jobId) {
+  const result = await httpsCallable(cloudFunctions, "retryIntegrationJob")({ jobId });
+  return result.data;
+}
+
+async function checkIntegrationConnections() {
+  const result = await httpsCallable(cloudFunctions, "checkIntegrationConnections")({});
+  return result.data;
+}
+
+async function traceIntegrationOrder(posOrderId) {
+  const result = await httpsCallable(cloudFunctions, "traceIntegrationOrder")({ posOrderId });
+  return result.data;
+}
+
 window.cloudPOS = {
   auth,
   db,
@@ -478,7 +523,12 @@ window.cloudPOS = {
   loadSale,
   saveSale,
   saveCheckout,
-  saveVoid
+  saveVoid,
+  refreshAffiliateCatalog,
+  loadIntegrationJobs,
+  retryIntegrationJob,
+  checkIntegrationConnections,
+  traceIntegrationOrder
 };
 
 onAuthStateChanged(auth, async (firebaseUser) => {
