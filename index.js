@@ -511,3 +511,265 @@ exports.retryIntegrationJob = onCall(async (request) => {
   });
   return { ok: true, jobId };
 });
+
+exports.refreshAffiliateCatalog = onCall(async (request) => {
+  assertAdmin(request);
+  const systemSnapshot = await affiliateDb.collection("amsystem").doc("main").get();
+  if (!systemSnapshot.exists) {
+    throw new HttpsError("not-found", "Affiliate system configuration was not found.");
+  }
+  const plans = Array.isArray(systemSnapshot.data().plans)
+    ? systemSnapshot.data().plans
+    : [];
+  const catalog = plans
+    .map((plan) => ({
+      planId: text(plan.id),
+      name: text(plan.name),
+      price: money(plan.amount),
+      active: plan.active !== false
+    }))
+    .filter((plan) => plan.planId && plan.active && Number.isFinite(plan.price) && plan.price > 0);
+  if (!catalog.length) {
+    throw new HttpsError("failed-precondition", "Affiliate system has no active plans with valid prices.");
+  }
+
+  const batch = posDb.batch();
+  let updatedProducts = 0;
+  for (const plan of catalog) {
+    const productSnapshot = await posDb
+      .collection("products")
+      .where("affiliatePlanId", "==", plan.planId)
+      .get();
+    let productDocs = productSnapshot.docs;
+    if (!productDocs.length && plan.planId === "plan_rm180") {
+      const legacyProduct = await posDb.collection("products").doc("affiliate-plan-rm180").get();
+      if (legacyProduct.exists) productDocs = [legacyProduct];
+    }
+    for (const productDoc of productDocs) {
+      batch.set(productDoc.ref, {
+        price: plan.price,
+        affiliatePlanId: plan.planId,
+        affiliatePlanName: plan.name,
+        affiliatePriceSyncedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      updatedProducts += 1;
+    }
+  }
+  if (updatedProducts) await batch.commit();
+  return {
+    ok: true,
+    catalog,
+    updatedProducts,
+    syncedAt: new Date().toISOString()
+  };
+});
+
+exports.checkIntegrationConnections = onCall(async (request) => {
+  assertAdmin(request);
+  const branchSnapshot = await posDb.collection("branches").get();
+  const branches = branchSnapshot.docs
+    .map((item) => ({ id: item.id, ...item.data() }))
+    .filter((branch) => branch.active !== false);
+  const result = {
+    generatedAt: new Date().toISOString(),
+    simplePay: {
+      reachable: false,
+      secureMoneyFunctionsEnabled: false,
+      pointsPerMyr: 0,
+      branches: []
+    },
+    affiliate: {
+      reachable: false,
+      activePlans: []
+    }
+  };
+
+  try {
+    const configSnapshot = await simplePayDb.collection("systemConfig").doc("main").get();
+    const config = configSnapshot.exists ? configSnapshot.data() : {};
+    result.simplePay.reachable = configSnapshot.exists;
+    result.simplePay.secureMoneyFunctionsEnabled = config.secureMoneyFunctionsEnabled === true;
+    result.simplePay.pointsPerMyr = Number(config.pointsPerMyr || 0);
+    for (const branch of branches) {
+      const merchantId = text(branch.simplePayMerchantId);
+      if (!merchantId) {
+        result.simplePay.branches.push({
+          branchId: branch.id,
+          branchName: text(branch.name),
+          merchantConfigured: false,
+          merchantExists: false,
+          merchantApproved: false
+        });
+        continue;
+      }
+      const merchantSnapshot = await simplePayDb.collection("merchants").doc(merchantId).get();
+      result.simplePay.branches.push({
+        branchId: branch.id,
+        branchName: text(branch.name),
+        merchantConfigured: true,
+        merchantExists: merchantSnapshot.exists,
+        merchantApproved: merchantSnapshot.exists && merchantSnapshot.data().status === "approved"
+      });
+    }
+  } catch (error) {
+    result.simplePay.errorCode = text(error.code || "simplepay-unreachable");
+  }
+
+  try {
+    const systemSnapshot = await affiliateDb.collection("amsystem").doc("main").get();
+    const plans = systemSnapshot.exists && Array.isArray(systemSnapshot.data().plans)
+      ? systemSnapshot.data().plans
+      : [];
+    result.affiliate.reachable = systemSnapshot.exists;
+    result.affiliate.activePlans = plans
+      .filter((plan) => plan.active !== false && money(plan.amount) > 0)
+      .map((plan) => ({
+        planId: text(plan.id),
+        name: text(plan.name),
+        price: money(plan.amount)
+      }));
+  } catch (error) {
+    result.affiliate.errorCode = text(error.code || "affiliate-unreachable");
+  }
+
+  return result;
+});
+
+exports.traceIntegrationOrder = onCall(async (request) => {
+  assertAdmin(request);
+  const posOrderId = text(request.data && request.data.posOrderId);
+  if (!posOrderId || posOrderId.length > 120) {
+    throw new HttpsError("invalid-argument", "A valid posOrderId is required.");
+  }
+
+  const saleSnapshot = await posDb.collection("sales").doc(posOrderId).get();
+  if (!saleSnapshot.exists) throw new HttpsError("not-found", "POS order was not found.");
+  const sale = saleSnapshot.data();
+  const references = sale.externalReferences || {};
+  const paymentJobId = expectedJobId(posOrderId, "simplepay.payment");
+  const refundJobId = expectedJobId(posOrderId, "simplepay.refund");
+  const affiliateJobId = expectedJobId(posOrderId, "affiliate.fulfill");
+  const reversalJobId = expectedJobId(posOrderId, "affiliate.reverse");
+  const jobSnapshot = await posDb
+    .collection("integrationJobs")
+    .where("posOrderId", "==", posOrderId)
+    .limit(10)
+    .get();
+
+  const result = {
+    generatedAt: new Date().toISOString(),
+    sale: {
+      id: saleSnapshot.id,
+      status: text(sale.status || "completed"),
+      branchId: text(sale.branchId || "hq"),
+      amount: money(sale.total),
+      paymentMethod: text(sale.payment && sale.payment.method),
+      paymentReference: text(sale.payment && sale.payment.reference),
+      simplePayStatus: text(references.simplePayStatus || "not-used"),
+      simplePayReference: text(references.simplePayReference),
+      affiliateStatus: text(references.affiliateStatus || "not-used"),
+      affiliateOrderId: text(references.affiliateOrderId),
+      voidedAt: text(sale.voidedAt)
+    },
+    jobs: jobSnapshot.docs.map((item) => {
+      const job = item.data();
+      return {
+        id: item.id,
+        operation: text(job.operation),
+        status: text(job.status),
+        attempts: Number(job.attempts || 0),
+        blockedBy: text(job.blockedBy),
+        targetReference: text(job.targetReference),
+        errorCode: text(job.lastError && job.lastError.code),
+        errorMessage: text(job.lastError && job.lastError.message)
+      };
+    }),
+    simplePay: { reachable: false },
+    affiliate: { reachable: false }
+  };
+
+  try {
+    const [paymentIntent, refundIntent, refundRequests] = await Promise.all([
+      simplePayDb.collection("paymentIntents").doc(paymentJobId).get(),
+      simplePayDb.collection("merchantRefundIntents").doc(refundJobId).get(),
+      simplePayDb.collection("refundRequests").where("posOrderId", "==", posOrderId).limit(10).get()
+    ]);
+    let merchantOrder = null;
+    if (text(references.simplePayReference)) {
+      merchantOrder = await findMerchantOrder(references.simplePayReference);
+    }
+    result.simplePay = {
+      reachable: true,
+      paymentIntent: paymentIntent.exists ? {
+        id: paymentIntent.id,
+        status: text(paymentIntent.data().status),
+        merchantId: text(paymentIntent.data().merchantId),
+        paymentReference: text(paymentIntent.data().paymentReference)
+      } : null,
+      merchantOrder: merchantOrder ? {
+        id: text(merchantOrder.id),
+        status: text(merchantOrder.status),
+        merchantId: text(merchantOrder.merchantId),
+        paymentReference: text(merchantOrder.paymentReference || merchantOrder.id),
+        amount: money(merchantOrder.amount)
+      } : null,
+      refundIntent: refundIntent.exists ? {
+        id: refundIntent.id,
+        status: text(refundIntent.data().status),
+        requestId: text(refundIntent.data().requestId)
+      } : null,
+      refundRequests: refundRequests.docs.map((item) => ({
+        id: item.id,
+        status: text(item.data().status),
+        orderId: text(item.data().orderId),
+        posJobId: text(item.data().posJobId)
+      }))
+    };
+  } catch (error) {
+    result.simplePay = {
+      reachable: false,
+      errorCode: text(error.code || "simplepay-unreachable")
+    };
+  }
+
+  try {
+    const [externalOrder, reversalCase, fulfillCommand, reverseCommand] = await Promise.all([
+      affiliateDb.collection("amsystemExternalOrders").doc(affiliateJobId).get(),
+      affiliateDb.collection("amsystemReversalCases").doc(`REV-${affiliateJobId}`).get(),
+      affiliateDb.collection("amsystemIntegrationCommands").doc(affiliateJobId).get(),
+      affiliateDb.collection("amsystemIntegrationCommands").doc(reversalJobId).get()
+    ]);
+    result.affiliate = {
+      reachable: true,
+      externalOrder: externalOrder.exists ? {
+        id: externalOrder.id,
+        status: text(externalOrder.data().status),
+        affiliateOrderId: text(externalOrder.data().affiliateOrderId),
+        posOrderId: text(externalOrder.data().posOrderId),
+        paymentReference: text(externalOrder.data().paymentReference)
+      } : null,
+      reversalCase: reversalCase.exists ? {
+        id: reversalCase.id,
+        status: text(reversalCase.data().status),
+        affiliateOrderId: text(reversalCase.data().affiliateOrderId),
+        reviewReason: text(reversalCase.data().reviewReason)
+      } : null,
+      commands: [fulfillCommand, reverseCommand]
+        .filter((item) => item.exists)
+        .map((item) => ({
+          id: item.id,
+          operation: text(item.data().operation),
+          status: text(item.data().status),
+          errorCode: text(item.data().lastError && item.data().lastError.code)
+        }))
+    };
+  } catch (error) {
+    result.affiliate = {
+      reachable: false,
+      errorCode: text(error.code || "affiliate-unreachable")
+    };
+  }
+
+  return result;
+});
